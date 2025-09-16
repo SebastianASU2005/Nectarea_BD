@@ -1,4 +1,3 @@
-// models/Usuario.js
 const { sequelize, DataTypes } = require('../config/database');
 const baseAttributes = require('./base');
 
@@ -19,12 +18,12 @@ const Usuario = sequelize.define('Usuario', {
   },
   dni: {
     type: DataTypes.STRING(20),
-    unique: true, // ¡Este campo debe ser único!
+    unique: true,
     allowNull: false,
   },
   nombre_usuario: {
     type: DataTypes.STRING(50),
-    unique: true, // ¡Este campo también debe ser único!
+    unique: true,
     allowNull: false,
   },
   contraseña_hash: {
@@ -34,14 +33,29 @@ const Usuario = sequelize.define('Usuario', {
   rol: {
     type: DataTypes.ENUM('admin', 'cliente'),
     allowNull: false,
+    defaultValue:'cliente'
   },
   fecha_registro: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
-  estado: {
-    type: DataTypes.STRING(50),
-    defaultValue: 'activo',
+  numero_telefono: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+  },
+  // **NUEVOS CAMPOS PARA CONFIRMACIÓN DE EMAIL Y AUTENTICACIÓN**
+  confirmacion_token: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  confirmacion_token_expiracion: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  confirmado_email: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
   },
 }, {
   tableName: 'usuario',

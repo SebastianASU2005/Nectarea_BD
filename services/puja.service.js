@@ -1,4 +1,3 @@
-// services/puja.service.js
 const Puja = require('../models/puja');
 const Lote = require('../models/lote');
 const SuscripcionProyecto = require('../models/suscripcion_proyecto');
@@ -35,6 +34,16 @@ const pujaService = {
     const nuevaPuja = await Puja.create(data);
 
     return nuevaPuja;
+  },
+
+  // **NUEVA FUNCIÓN**: Obtiene las pujas de un usuario específico
+  async findByUserId(userId) {
+    return Puja.findAll({
+      where: {
+        id_usuario: userId,
+        activo: true
+      }
+    });
   },
 
   // Nueva función para gestionar tokens después de que la subasta termina

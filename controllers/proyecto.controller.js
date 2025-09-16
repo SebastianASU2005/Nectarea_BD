@@ -29,6 +29,15 @@ const proyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+  async findMyProjects(req, res) {
+    try {
+      const userId = req.user.id; // ¡Obtenemos el ID del usuario desde el JWT!
+      const proyectos = await proyectoService.findByUserId(userId);
+      res.status(200).json(proyectos);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
 
   async findById(req, res) {
     try {

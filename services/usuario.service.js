@@ -1,5 +1,3 @@
-// services/usuario.service.js
-
 const Usuario = require('../models/usuario');
 
 const usuarioService = {
@@ -8,26 +6,35 @@ const usuarioService = {
     return Usuario.create(data);
   },
 
-  // Función para obtener TODOS los usuarios (para administradores)
+  // Función para encontrar un usuario por su nombre de usuario
+  async findByUsername(nombre_usuario) {
+    return Usuario.findOne({
+      where: {
+        nombre_usuario: nombre_usuario,
+      },
+    });
+  },
+
+  // Función para encontrar un usuario por su token de confirmación
+  async findByConfirmationToken(token) {
+    return Usuario.findOne({
+      where: {
+        confirmacion_token: token,
+      },
+    });
+  },
+
+  // Obtiene todos los usuarios
   async findAll() {
     return Usuario.findAll();
   },
 
-  // Función para encontrar TODOS los usuarios ACTIVOS (para clientes)
-  async findAllActivo() {
-    return Usuario.findAll({
-      where: {
-        activo: true
-      }
-    });
-  },
-
-  // Función para encontrar un usuario por su ID
+  // Obtiene un usuario por su ID
   async findById(id) {
     return Usuario.findByPk(id);
   },
 
-  // Función para actualizar un usuario
+  // Actualiza un usuario
   async update(id, data) {
     const usuario = await this.findById(id);
     if (!usuario) {
@@ -36,13 +43,12 @@ const usuarioService = {
     return usuario.update(data);
   },
 
-  // Función para "eliminar" un usuario (soft delete)
+  // "Elimina" un usuario (soft delete)
   async softDelete(id) {
     const usuario = await this.findById(id);
     if (!usuario) {
       return null;
     }
-    // Actualiza el campo 'activo' a false en lugar de eliminar la fila
     return usuario.update({ activo: false });
   }
 };

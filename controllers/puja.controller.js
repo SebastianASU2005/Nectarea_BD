@@ -1,12 +1,13 @@
-// controllers/puja.controller.js
-
 const pujaService = require('../services/puja.service');
 
 const pujaController = {
   // Controlador para crear una nueva puja
   async create(req, res) {
     try {
-      const nuevaPuja = await pujaService.create(req.body);
+      // Tomamos el ID del usuario directamente del token
+      const id_usuario = req.user.id;
+      const data = { ...req.body, id_usuario };
+      const nuevaPuja = await pujaService.create(data);
       res.status(201).json(nuevaPuja);
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -28,6 +29,17 @@ const pujaController = {
     try {
       const pujasActivas = await pujaService.findAllActivo();
       res.status(200).json(pujasActivas);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // **NUEVA FUNCIÓN**: Obtiene las pujas del usuario autenticado
+  async findMyPujas(req, res) {
+    try {
+      const userId = req.user.id; // Obtenemos el ID del usuario del token
+      const pujas = await pujaService.findByUserId(userId);
+      res.status(200).json(pujas);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

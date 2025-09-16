@@ -8,6 +8,7 @@ const Transaccion = require('./transaccion');
 const Imagen = require('./imagen');
 const Contrato = require('./contrato');
 const SuscripcionProyecto = require('./suscripcion_proyecto');
+const Pago = require('./pago'); // **NUEVO: Importa el modelo Pago**
 
 // Envuelve la lógica de las relaciones en una función y expórtala
 const configureAssociations = () => {
@@ -70,7 +71,6 @@ const configureAssociations = () => {
       as: 'contrato',
     });
     // Un proyecto puede tener muchas suscripciones de usuarios
-    // Se corrige el 'as' para evitar colisión de nombres
     Proyecto.hasMany(SuscripcionProyecto, {
       foreignKey: 'id_proyecto',
       as: 'suscripciones_proyecto',
@@ -142,6 +142,17 @@ const configureAssociations = () => {
     SuscripcionProyecto.belongsTo(Proyecto, {
       foreignKey: 'id_proyecto',
       as: 'proyecto',
+    });
+    // **NUEVO: Una suscripción tiene muchos pagos**
+    SuscripcionProyecto.hasMany(Pago, {
+      foreignKey: 'id_suscripcion',
+      as: 'pagos',
+    });
+    
+    // **NUEVO: Un pago pertenece a una suscripción**
+    Pago.belongsTo(SuscripcionProyecto, {
+      foreignKey: 'id_suscripcion',
+      as: 'suscripcion',
     });
 };
 

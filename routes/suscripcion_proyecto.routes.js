@@ -1,20 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const suscripcionProyectoController = require('../controllers/suscripcion_proyecto.controller');
+const authMiddleware = require('../middleware/auth.middleware');
 
-// Ruta para crear una nueva suscripción
-router.post('/', suscripcionProyectoController.create);
+// Ruta protegida: Solo usuarios autenticados pueden crear una suscripción
+router.post('/', authMiddleware.authenticate, suscripcionProyectoController.create);
 
-// Ruta para obtener todas las suscripciones
-router.get('/', suscripcionProyectoController.findAll);
+// Ruta protegida para administradores: Solo los administradores pueden ver TODAS las suscripciones
+router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, suscripcionProyectoController.findAll);
 
-// Ruta para obtener todas las suscripciones activas
-router.get('/activas', suscripcionProyectoController.findAllActivo);
+// Ruta protegida: Solo usuarios autenticados pueden ver las suscripciones activas
+router.get('/activas', authMiddleware.authenticate, suscripcionProyectoController.findAllActivo);
 
-// Ruta para obtener una suscripción específica por su ID
-router.get('/:id', suscripcionProyectoController.findById);
+// **NUEVA RUTA**: Solo un usuario autenticado puede ver sus propias suscripciones
+router.get('/mis_suscripciones', authMiddleware.authenticate, suscripcionProyectoController.findMySubscriptions);
 
-// Ruta para eliminar (soft delete) una suscripción
-router.delete('/:id', suscripcionProyectoController.softDelete);
+// Ruta protegida: Solo usuarios autenticados pueden ver una suscripción específica
+router.get('/:id', authMiddleware.authenticate, suscripcionProyectoController.findById);
+
+// Ruta protegida para administradores: Solo los administradores pueden "eliminar" una suscripción
+router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, suscripcionProyectoController.softDelete);
 
 module.exports = router;

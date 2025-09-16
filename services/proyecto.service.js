@@ -50,6 +50,14 @@ const proyectoService = {
       ],
     });
   },
+   async findByUserId(userId) {
+    return Proyecto.findAll({
+      where: {
+        usuario_id: userId, // Asume que tu modelo tiene un campo 'usuario_id'
+        activo: true
+      },
+    });
+  },
 
   async findById(id) {
     return Proyecto.findByPk(id, {

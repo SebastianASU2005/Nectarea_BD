@@ -1,9 +1,9 @@
 const express = require("express");
 const app = express();
 const PORT = 3000;
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 // Middleware para parsear el cuerpo de las peticiones JSON
 app.use(express.json());
@@ -12,7 +12,7 @@ app.use(express.json());
 const { sequelize } = require("./config/database");
 
 // Crea el directorio de uploads si no existe
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
@@ -20,11 +20,11 @@ if (!fs.existsSync(uploadsDir)) {
 // Configura multer para guardar archivos en el directorio 'uploads'
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    cb(null, "uploads/");
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
-  }
+    cb(null, Date.now() + "-" + file.originalname);
+  },
 });
 const upload = multer({ storage: storage });
 
@@ -36,8 +36,9 @@ const Proyecto = require("./models/proyecto");
 const Puja = require("./models/puja");
 const Transaccion = require("./models/transaccion");
 const Imagen = require("./models/imagen");
-const Contrato = require('./models/contrato');
-const SuscripcionProyecto = require('./models/suscripcion_proyecto');
+const Contrato = require("./models/contrato");
+const SuscripcionProyecto = require("./models/suscripcion_proyecto");
+const Pago = require("./models/pago");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
@@ -53,25 +54,33 @@ const proyectoRoutes = require("./routes/proyecto.routes");
 const pujaRoutes = require("./routes/puja.routes");
 const imagenRoutes = require("./routes/imagen.routes");
 const transaccionRoutes = require("./routes/transaccion.routes");
-const contratoRoutes = require('./routes/contrato.routes');
-const suscripcionProyectoRoutes = require('./routes/suscripcion_proyecto.routes');
+const contratoRoutes = require("./routes/contrato.routes");
+const suscripcionProyectoRoutes = require("./routes/suscripcion_proyecto.routes");
+const pagoRoutes = require("./routes/pago.routes");
+const authRoutes = require("./routes/auth.routes"); // **NUEVO: Importa la ruta de autenticación**
+
+// Importa el planificador de pagos para iniciar la tarea programada
+const paymentScheduler = require("./tasks/paymentScheduler");
 
 // Usar el router para las rutas de la API, separando la lógica
-app.use("/usuarios", usuarioRoutes);
-app.use("/inversiones", inversionRoutes);
-app.use("/lotes", loteRoutes);
-app.use("/proyectos", proyectoRoutes);
-app.use("/pujas", pujaRoutes);
-app.use("/imagenes", imagenRoutes);
-app.use("/transacciones", transaccionRoutes);
-app.use("/contratos", contratoRoutes);
-app.use("/suscripciones", suscripcionProyectoRoutes);
+app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/inversiones", inversionRoutes);
+app.use("/api/lotes", loteRoutes);
+app.use("/api/proyectos", proyectoRoutes);
+app.use("/api/pujas", pujaRoutes);
+app.use("/api/imagenes", imagenRoutes);
+app.use("/api/transacciones", transaccionRoutes);
+app.use("/api/contratos", contratoRoutes);
+app.use("/api/suscripciones", suscripcionProyectoRoutes);
+app.use("/api/pagos", pagoRoutes);
+app.use("/api/auth", authRoutes); // **NUEVO: Usa la ruta de autenticación**
 
 // Sincroniza todos los modelos con la base de datos
-sequelize.sync({ alter: true })
+sequelize
+  .sync({ alter: true })
   .then(() => {
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
-    // Inicia el servidor solo si la base de datos se sincronizó con éxito
+    paymentScheduler.start();
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);
     });

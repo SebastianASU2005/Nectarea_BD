@@ -1,6 +1,4 @@
-// services/inversion.service.js
-
-const Inversion = require('../models/inversion');
+const Inversion = require("../models/inversion");
 
 const inversionService = {
   // Función para crear una nueva inversión
@@ -8,43 +6,47 @@ const inversionService = {
     return Inversion.create(data);
   },
 
-  // Función para obtener TODAS las inversiones (para administradores)
+  // **NUEVA FUNCIÓN**: Obtiene las inversiones asociadas a un usuario específico
+  async findByUserId(userId) {
+    return Inversion.findAll({
+      where: {
+        id_inversor: userId,
+        activo: true,
+      },
+    });
+  }, // Función para obtener TODAS las inversiones (para administradores)
+
   async findAll() {
     return Inversion.findAll();
-  },
+  }, // Función para encontrar TODAS las inversiones ACTIVAS (para clientes)
 
-  // Función para encontrar TODAS las inversiones ACTIVAS (para clientes)
   async findAllActivo() {
     return Inversion.findAll({
       where: {
-        activo: true
-      }
+        activo: true,
+      },
     });
-  },
+  }, // Función para encontrar una inversión por su ID
 
-  // Función para encontrar una inversión por su ID
   async findById(id) {
     return Inversion.findByPk(id);
-  },
+  }, // Función para actualizar una inversión
 
-  // Función para actualizar una inversión
   async update(id, data) {
     const inversion = await this.findById(id);
     if (!inversion) {
       return null;
     }
     return inversion.update(data);
-  },
+  }, // Función para "eliminar" una inversión (soft delete)
 
-  // Función para "eliminar" una inversión (soft delete)
   async softDelete(id) {
     const inversion = await this.findById(id);
     if (!inversion) {
       return null;
-    }
-    // Actualiza el campo 'activo' a false en lugar de eliminar la fila
+    } // Actualiza el campo 'activo' a false en lugar de eliminar la fila
     return inversion.update({ activo: false });
-  }
+  },
 };
 
 module.exports = inversionService;
