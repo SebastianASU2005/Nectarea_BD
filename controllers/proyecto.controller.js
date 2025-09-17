@@ -1,21 +1,49 @@
-const proyectoService = require("../services/proyecto.service");
+const proyectoService = require('../services/proyecto.service');
 
 const proyectoController = {
+  // Para administradores:
+  // Busca un proyecto por ID (sin importar si está eliminado)
+  async findById(req, res) {
+    try {
+      const proyecto = await proyectoService.findById(req.params.id);
+      if (!proyecto) {
+        return res.status(404).json({ message: 'Proyecto no encontrado.' });
+      }
+      res.json(proyecto);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Para usuarios:
+  // Busca un proyecto activo por ID
+  async findByIdActivo(req, res) {
+    try {
+      const proyecto = await proyectoService.findByIdActivo(req.params.id);
+      if (!proyecto) {
+        return res.status(404).json({ message: 'Proyecto no encontrado.' });
+      }
+      res.json(proyecto);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // El resto de los controladores existentes:
   async create(req, res) {
     try {
-      // Separa los datos del proyecto y los IDs de los lotes
-      const { lotesIds, ...projectData } = req.body;
+      const { projectData, lotesIds } = req.body;
       const nuevoProyecto = await proyectoService.create(projectData, lotesIds);
       res.status(201).json(nuevoProyecto);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(500).json({ error: error.message });
     }
   },
 
   async findAll(req, res) {
     try {
       const proyectos = await proyectoService.findAll();
-      res.status(200).json(proyectos);
+      res.json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -23,29 +51,17 @@ const proyectoController = {
 
   async findAllActivo(req, res) {
     try {
-      const proyectosActivos = await proyectoService.findAllActivo();
-      res.status(200).json(proyectosActivos);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-  async findMyProjects(req, res) {
-    try {
-      const userId = req.user.id; // ¡Obtenemos el ID del usuario desde el JWT!
-      const proyectos = await proyectoService.findByUserId(userId);
-      res.status(200).json(proyectos);
+      const proyectos = await proyectoService.findAllActivo();
+      res.json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
 
-  async findById(req, res) {
+  async findMyProjects(req, res) {
     try {
-      const proyecto = await proyectoService.findById(req.params.id);
-      if (!proyecto) {
-        return res.status(404).json({ error: "Proyecto no encontrado" });
-      }
-      res.status(200).json(proyecto);
+      const proyectos = await proyectoService.findByUserId(req.usuario.id);
+      res.json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -53,16 +69,13 @@ const proyectoController = {
 
   async update(req, res) {
     try {
-      const proyectoActualizado = await proyectoService.update(
-        req.params.id,
-        req.body
-      );
+      const proyectoActualizado = await proyectoService.update(req.params.id, req.body);
       if (!proyectoActualizado) {
-        return res.status(404).json({ error: "Proyecto no encontrado" });
+        return res.status(404).json({ message: 'Proyecto no encontrado.' });
       }
-      res.status(200).json(proyectoActualizado);
+      res.json(proyectoActualizado);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(500).json({ error: error.message });
     }
   },
 
@@ -70,13 +83,13 @@ const proyectoController = {
     try {
       const proyectoEliminado = await proyectoService.softDelete(req.params.id);
       if (!proyectoEliminado) {
-        return res.status(404).json({ error: "Proyecto no encontrado" });
+        return res.status(404).json({ message: 'Proyecto no encontrado.' });
       }
-      res.status(204).send();
+      res.json({ message: 'Proyecto eliminado lógicamente.' });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  },
+  }
 };
 
 module.exports = proyectoController;

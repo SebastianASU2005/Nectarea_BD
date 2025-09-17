@@ -3,20 +3,17 @@ const router = express.Router();
 const loteController = require('../controllers/lote.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// Ruta protegida para administradores: Solo los administradores pueden crear un lote
+// Rutas para administradores
 router.post('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.create);
-
-// Ruta protegida para administradores: Solo los administradores pueden ver TODOS los lotes
 router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.findAll);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver los lotes activos
-router.get('/activos', authMiddleware.authenticate, loteController.findAllActivo);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver un lote específico
-router.get('/:id', authMiddleware.authenticate, loteController.findById);
-
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" lotes
+// Usa findById para que los administradores puedan ver lotes eliminados
+router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.findById);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.softDelete);
+
+// Rutas para usuarios
+router.get('/activos', authMiddleware.authenticate, loteController.findAllActivo);
+// Usa findByIdActivo para que los usuarios solo puedan ver lotes activos
+router.get('/:id', authMiddleware.authenticate, loteController.findByIdActivo);
 
 module.exports = router;

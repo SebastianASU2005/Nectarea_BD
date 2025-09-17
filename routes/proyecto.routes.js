@@ -1,28 +1,20 @@
-// routes/proyecto.routes.js
-
 const express = require('express');
 const router = express.Router();
 const proyectoController = require('../controllers/proyecto.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// Ruta protegida para administradores: Solo los administradores pueden crear un proyecto
+// Rutas para administradores
 router.post('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.create);
-
-// Rutas protegidas para administradores: Solo los administradores pueden ver TODOS los proyectos
 router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.findAll);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver los proyectos activos
-router.get('/activos', authMiddleware.authenticate, proyectoController.findAllActivo);
-
-// NUEVA RUTA: Solo un usuario autenticado puede ver los proyectos asociados a su propio ID.
-// No necesita el ID en la URL porque lo obtendremos del token.
-router.get('/mis_proyectos', authMiddleware.authenticate, proyectoController.findMyProjects);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver un proyecto específico
-router.get('/:id', authMiddleware.authenticate, proyectoController.findById);
-
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" proyectos
+// Usa findById para que los administradores puedan ver proyectos eliminados
+router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.findById);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.softDelete);
+
+// Rutas para usuarios
+router.get('/activos', authMiddleware.authenticate, proyectoController.findAllActivo);
+router.get('/mis_proyectos', authMiddleware.authenticate, proyectoController.findMyProjects);
+// Usa findByIdActivo para que los usuarios solo puedan ver proyectos activos
+router.get('/:id', authMiddleware.authenticate, proyectoController.findByIdActivo);
 
 module.exports = router;

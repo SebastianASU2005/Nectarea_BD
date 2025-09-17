@@ -1,49 +1,48 @@
-// services/imagen.service.js
-
 const Imagen = require('../models/imagen');
 
 const imagenService = {
-  // Función para crear una nueva imagen
+  // Crea una nueva imagen
   async create(data) {
-    return Imagen.create(data);
+    return await Imagen.create(data);
   },
 
-  // Función para obtener TODAS las imágenes (para administradores)
+  // Busca todas las imágenes (para administradores)
   async findAll() {
-    return Imagen.findAll();
+    return await Imagen.findAll();
   },
 
-  // Función para encontrar TODAS las imágenes ACTIVAS (para clientes)
+  // Busca todas las imágenes que no estén eliminadas (para usuarios)
   async findAllActivo() {
-    return Imagen.findAll({
-      where: {
-        activo: true
-      }
-    });
+    return await Imagen.findAll({ where: { eliminado: false } });
   },
 
-  // Función para encontrar una imagen por su ID
+  // NUEVO: Busca una imagen por ID (para administradores)
   async findById(id) {
-    return Imagen.findByPk(id);
+    return await Imagen.findByPk(id);
   },
 
-  // Función para actualizar una imagen
+  // RENOMBRADO: Busca una imagen por ID, verificando que no esté eliminada (para usuarios)
+  async findByIdActivo(id) {
+    return await Imagen.findOne({ where: { id: id, eliminado: false } });
+  },
+
+  // Actualiza una imagen por ID
   async update(id, data) {
-    const imagen = await this.findById(id);
+    const imagen = await Imagen.findByPk(id);
     if (!imagen) {
       return null;
     }
-    return imagen.update(data);
+    return await imagen.update(data);
   },
 
-  // Función para "eliminar" una imagen (soft delete)
+  // Elimina lógicamente una imagen
   async softDelete(id) {
-    const imagen = await this.findById(id);
+    const imagen = await Imagen.findByPk(id);
     if (!imagen) {
       return null;
     }
-    // Actualiza el campo 'activo' a false en lugar de eliminar la fila
-    return imagen.update({ activo: false });
+    imagen.eliminado = true;
+    return await imagen.save();
   }
 };
 

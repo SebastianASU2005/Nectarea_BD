@@ -1,4 +1,5 @@
 const contratoService = require("../services/contrato.service");
+const Inversion = require("../models/inversion");
 
 const contratoController = {
   // Controlador para subir un archivo PDF y crear el registro en la BD
@@ -22,61 +23,79 @@ const contratoController = {
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
-  }, // Controlador para agregar la firma digital a un contrato
+  },
 
+  // Controlador para agregar la firma digital a un contrato
   async sign(req, res) {
     try {
       const { firma_digital } = req.body;
-      // Tomamos el ID del usuario que firma directamente del token
       const id_usuario_firmante = req.user.id;
+      const contratoBaseId = req.params.id;
 
-      const contratoActualizado = await contratoService.update(req.params.id, {
-        firma_digital: firma_digital,
-        id_usuario_firmante: id_usuario_firmante,
-      });
+      // 1. Obtener el contrato base
+      const contratoBase = await contratoService.findById(contratoBaseId);
 
-      if (!contratoActualizado) {
-        return res.status(404).json({ error: "Contrato no encontrado" });
+      if (!contratoBase) {
+        return res.status(404).json({ error: "Contrato base no encontrado" });
       }
 
-      res.status(200).json(contratoActualizado);
+      // 2. Crear un nuevo contrato con la firma y el ID del usuario
+      const nuevoContratoFirmado = await contratoService.createSignedContract(
+        contratoBase,
+        firma_digital,
+        id_usuario_firmante
+      );
+
+      res.status(201).json(nuevoContratoFirmado);
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
   },
 
-  // **NUEVO** - Controlador para obtener los contratos del usuario autenticado
+  // Controlador para obtener los contratos del usuario autenticado
   async findMyContracts(req, res) {
     try {
-      const userId = req.user.id; // Obtenemos el ID del usuario desde el JWT
+      const userId = req.user.id;
       const contratos = await contratoService.findByUserId(userId);
       res.status(200).json(contratos);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }, // Controlador para obtener un contrato por su ID
+  },
 
+  // Controlador para obtener un contrato por su ID
   async findById(req, res) {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id; // ID del usuario autenticado
-    const contrato = await contratoService.findById(id);
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
 
-    if (!contrato) {
-      return res.status(404).json({ error: 'Contrato no encontrado.' });
+      const contrato = await contratoService.findById(id);
+
+      if (!contrato) {
+        return res.status(404).json({ error: "Contrato no encontrado." });
+      }
+
+      // Verificamos si el usuario tiene una inversión en el proyecto asociado a este contrato
+      const inversion = await Inversion.findOne({
+        where: {
+          id_inversor: userId,
+          id_proyecto: contrato.id_proyecto,
+        },
+      });
+
+      // Si no hay una inversión, el acceso es denegado
+      if (!inversion) {
+        return res.status(403).json({ error: "Acceso denegado. No tienes permiso para ver este contrato." });
+      }
+
+      // Si la inversión existe, permitimos el acceso
+      res.status(200).json(contrato);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
+  },
 
-    // Asegurarse de que el contrato pertenece al usuario
-    if (contrato.id_usuario !== userId) {
-      return res.status(403).json({ error: 'Acceso denegado. Este contrato no te pertenece.' });
-    }
-
-    res.status(200).json(contrato);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-  }, // **NUEVO** - Controlador para obtener todos los contratos
-
+  // Controlador para obtener todos los contratos
   async findAll(req, res) {
     try {
       const contratos = await contratoService.findAll();
@@ -84,8 +103,9 @@ const contratoController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }, // **NUEVO** - Controlador para obtener todos los contratos activos
+  },
 
+  // Controlador para obtener todos los contratos activos
   async findAllActivo(req, res) {
     try {
       const contratos = await contratoService.findAllActivo();
@@ -94,7 +114,8 @@ const contratoController = {
       res.status(500).json({ error: error.message });
     }
   },
-  // **NUEVO** - Controlador para eliminar un contrato
+
+  // Controlador para eliminar un contrato
   async softDelete(req, res) {
     try {
       const contratoEliminado = await contratoService.softDelete(req.params.id);

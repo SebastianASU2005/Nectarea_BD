@@ -1,93 +1,78 @@
 const Proyecto = require("../models/proyecto");
-const Imagen = require("../models/imagen");
 const Lote = require("../models/lote");
+const Imagen = require("../models/imagen");
+const Inversion = require("../models/inversion");
 
 const proyectoService = {
-  // Función para crear un nuevo proyecto y asociar lotes existentes por sus IDs
+  // Crea un nuevo proyecto y asocia los lotes
   async create(projectData, lotesIds) {
-    // 1. Crea el nuevo proyecto
-    const nuevoProyecto = await Proyecto.create(projectData); // 2. Si se proporcionaron IDs de lotes, los asociamos al proyecto
-
+    const nuevoProyecto = await Proyecto.create(projectData);
     if (lotesIds && lotesIds.length > 0) {
-      await Lote.update(
-        { id_proyecto: nuevoProyecto.id },
-        { where: { id: lotesIds } }
-      );
-    } // 3. Devolvemos el proyecto completo, incluyendo los lotes para confirmar
-    const proyectoConLotes = await this.findById(nuevoProyecto.id);
-    return proyectoConLotes;
+      const lotes = await Lote.findAll({ where: { id: lotesIds } });
+      await nuevoProyecto.addLotes(lotes);
+    }
+    return nuevoProyecto;
   },
 
+  // Obtiene todos los proyectos (para administradores)
   async findAll() {
-    return Proyecto.findAll({
-      include: [
-        {
-          model: Imagen,
-          as: "imagenes",
-        },
-        {
-          model: Lote,
-          as: "lotes",
-        },
-      ],
-    });
+    return await Proyecto.findAll({ include: [Lote, Imagen] });
   },
 
+  // Obtiene los proyectos activos (para usuarios)
   async findAllActivo() {
-    return Proyecto.findAll({
-      where: {
-        activo: true,
-      },
-      include: [
-        {
-          model: Imagen,
-          as: "imagenes",
-        },
-        {
-          model: Lote,
-          as: "lotes",
-        },
-      ],
-    });
-  },
-   async findByUserId(userId) {
-    return Proyecto.findAll({
-      where: {
-        usuario_id: userId, // Asume que tu modelo tiene un campo 'usuario_id'
-        activo: true
-      },
+    return await Proyecto.findAll({
+      where: { eliminado: false },
+      include: [Lote, Imagen],
     });
   },
 
+  // NUEVO: Obtiene un proyecto por ID (para administradores)
   async findById(id) {
-    return Proyecto.findByPk(id, {
-      include: [
-        {
-          model: Imagen,
-          as: "imagenes",
-        },
-        {
-          model: Lote,
-          as: "lotes",
-        },
-      ],
+    return await Proyecto.findByPk(id, { include: [Lote, Imagen] });
+  },
+
+  // RENOMBRADO: Obtiene un proyecto por ID, verificando que no esté eliminado (para usuarios)
+  async findByIdActivo(id) {
+    return await Proyecto.findOne({
+      where: { id: id, eliminado: false },
+      include: [Lote, Imagen],
     });
   },
 
-  async update(id, data) {
-    const proyecto = await this.findById(id);
-    if (!proyecto) {
-      return null;
-    }
-    return proyecto.update(data);
+  // Busca proyectos por el ID de un usuario
+  async findByUserId(userId) {
+    return await Proyecto.findAll({
+      include: [
+        {
+          model: Inversion,
+          where: { id_inversor: userId },
+          required: true,
+        },
+        Lote,
+        Imagen,
+      ],
+      where: { eliminado: false },
+    });
   },
 
-  async softDelete(id) {
-    const proyecto = await this.findById(id);
+  // Actualiza un proyecto
+  async update(id, data) {
+    const proyecto = await Proyecto.findByPk(id);
     if (!proyecto) {
       return null;
     }
-    return proyecto.update({ activo: false });
+    return await proyecto.update(data);
+  },
+
+  // Elimina lógicamente un proyecto
+  async softDelete(id) {
+    const proyecto = await Proyecto.findByPk(id);
+    if (!proyecto) {
+      return null;
+    }
+    proyecto.eliminado = true;
+    return await proyecto.save();
   },
 };
 

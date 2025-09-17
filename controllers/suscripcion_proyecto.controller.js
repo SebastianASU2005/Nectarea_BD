@@ -3,7 +3,6 @@ const suscripcionProyectoService = require('../services/suscripcion_proyecto.ser
 const suscripcionProyectoController = {
   async create(req, res) {
     try {
-      // Tomamos el ID del usuario directamente del token
       const id_usuario = req.user.id;
       const data = { ...req.body, id_usuario };
       const nuevaSuscripcion = await suscripcionProyectoService.create(data);
@@ -13,10 +12,9 @@ const suscripcionProyectoController = {
     }
   },
 
-  // **NUEVA FUNCIÓN**: Obtiene las suscripciones del usuario autenticado
   async findMySubscriptions(req, res) {
     try {
-      const userId = req.user.id; // Obtenemos el ID del usuario del token
+      const userId = req.user.id;
       const suscripciones = await suscripcionProyectoService.findByUserId(userId);
       res.status(200).json(suscripciones);
     } catch (error) {
@@ -51,6 +49,35 @@ const suscripcionProyectoController = {
       res.status(200).json(suscripcion);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  },
+
+  async findMySubscriptionById(req, res) {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      const suscripcion = await suscripcionProyectoService.findByIdAndUserId(id, userId);
+      if (!suscripcion) {
+        return res.status(404).json({ error: 'Suscripción no encontrada o no te pertenece.' });
+      }
+      res.status(200).json(suscripcion);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async softDeleteMySubscription(req, res) {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      const suscripcion = await suscripcionProyectoService.findByIdAndUserId(id, userId);
+      if (!suscripcion) {
+        return res.status(404).json({ error: 'Suscripción no encontrada o no te pertenece.' });
+      }
+      const suscripcionCancelada = await suscripcionProyectoService.softDelete(id);
+      res.status(200).json({ message: 'Suscripción cancelada correctamente.', suscripcion: suscripcionCancelada });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
   },
 

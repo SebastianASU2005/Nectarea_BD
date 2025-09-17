@@ -33,7 +33,7 @@ const usuarioController = {
     }
   },
 
-  // Controlador para encontrar un usuario por ID
+  // Controlador para encontrar un usuario por ID (versión para administradores)
   async findById(req, res) {
     try {
       const usuario = await usuarioService.findById(req.params.id);
@@ -46,7 +46,20 @@ const usuarioController = {
     }
   },
 
-  // Controlador para actualizar un usuario
+  // **NUEVO** - Obtiene los datos del usuario autenticado
+  async findMe(req, res) {
+    try {
+      const usuario = await usuarioService.findById(req.user.id);
+      if (!usuario) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.status(200).json(usuario);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Controlador para actualizar un usuario (versión para administradores)
   async update(req, res) {
     try {
       const usuarioActualizado = await usuarioService.update(req.params.id, req.body);
@@ -59,7 +72,20 @@ const usuarioController = {
     }
   },
 
-  // Controlador para "eliminar" un usuario (soft delete)
+  // **NUEVO** - Actualizar el perfil del usuario autenticado
+  async updateMe(req, res) {
+    try {
+      const usuarioActualizado = await usuarioService.update(req.user.id, req.body);
+      if (!usuarioActualizado) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.status(200).json(usuarioActualizado);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  // Controlador para "eliminar" un usuario (soft delete) (versión para administradores)
   async softDelete(req, res) {
     try {
       const usuarioEliminado = await usuarioService.softDelete(req.params.id);
@@ -67,6 +93,19 @@ const usuarioController = {
         return res.status(404).json({ error: 'Usuario no encontrado' });
       }
       res.status(204).send(); // 204 No Content para una eliminación exitosa
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // **NUEVO** - Eliminar el perfil del usuario autenticado
+  async softDeleteMe(req, res) {
+    try {
+      const usuarioEliminado = await usuarioService.softDelete(req.user.id);
+      if (!usuarioEliminado) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

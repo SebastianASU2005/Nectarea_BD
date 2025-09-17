@@ -3,20 +3,18 @@ const router = express.Router();
 const transaccionController = require('../controllers/transaccion.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// Ruta protegida: Solo usuarios autenticados pueden crear una transacción
-router.post('/', authMiddleware.authenticate, transaccionController.create);
-
-// Ruta protegida para administradores: Solo los administradores pueden ver TODAS las transacciones
+// Rutas para administradores
 router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.findAll);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver transacciones activas
-router.get('/activas', authMiddleware.authenticate, transaccionController.findAllActivo);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver una transacción específica
-router.get('/:id', authMiddleware.authenticate, transaccionController.findById);
-
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" transacciones
+router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.findById);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.softDelete);
+
+// Rutas para usuarios
+router.post('/', authMiddleware.authenticate, transaccionController.create);
+router.get('/activas', authMiddleware.authenticate, transaccionController.findAllActivo);
+router.get('/mis_transacciones', authMiddleware.authenticate, transaccionController.findMyTransactions);
+router.get('/mis_transacciones/:id', authMiddleware.authenticate, transaccionController.findMyTransactionById);
+router.put('/mis_transacciones/:id', authMiddleware.authenticate, transaccionController.updateMyTransaction);
+router.delete('/mis_transacciones/:id', authMiddleware.authenticate, transaccionController.softDeleteMyTransaction);
 
 module.exports = router;

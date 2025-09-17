@@ -3,23 +3,22 @@ const router = express.Router();
 const pujaController = require('../controllers/puja.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// Ruta protegida: Solo usuarios autenticados pueden crear una puja
-router.post('/', authMiddleware.authenticate, pujaController.create);
-
-// Ruta protegida para administradores: Solo los administradores pueden ver TODAS las pujas
+// Rutas para administradores
 router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pujaController.findAll);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver las pujas activas
-router.get('/activas', authMiddleware.authenticate, pujaController.findAllActivo);
-
-// **NUEVA RUTA**: Solo un usuario autenticado puede ver sus propias pujas
-router.get('/mis_pujas', authMiddleware.authenticate, pujaController.findMyPujas);
-
-// Ruta protegida: Solo usuarios autenticados pueden ver una puja específica
-router.get('/:id', authMiddleware.authenticate, pujaController.findById);
-
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" pujas
+router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pujaController.findById);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pujaController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pujaController.softDelete);
+
+// Rutas para usuarios
+router.post('/', authMiddleware.authenticate, pujaController.create);
+router.get('/activas', authMiddleware.authenticate, pujaController.findAllActivo);
+router.get('/mis_pujas', authMiddleware.authenticate, pujaController.findMyPujas);
+router.get('/mis_pujas/:id', authMiddleware.authenticate, pujaController.findMyPujaById);
+router.put('/mis_pujas/:id', authMiddleware.authenticate, pujaController.updateMyPuja);
+router.delete('/mis_pujas/:id', authMiddleware.authenticate, pujaController.softDeleteMyPuja);
+
+// **NUEVA RUTA para la gestión de tokens al finalizar la subasta**
+// Se recomienda proteger esta ruta solo para administradores
+router.post('/gestionar_finalizacion', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pujaController.manageAuctionEnd);
 
 module.exports = router;

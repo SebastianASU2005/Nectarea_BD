@@ -1,49 +1,49 @@
-// services/lote.service.js
-
 const Lote = require('../models/lote');
-    
+const Imagen = require('../models/imagen');
+
 const loteService = {
-  // Función para crear un nuevo lote
+  // Crea un nuevo lote
   async create(data) {
-    return Lote.create(data);
+    return await Lote.create(data);
   },
 
-  // Función para obtener TODOS los lotes (para administradores)
+  // Busca todos los lotes (para administradores)
   async findAll() {
-    return Lote.findAll();
+    return await Lote.findAll({ include: [Imagen] });
   },
 
-  // Función para encontrar TODOS los lotes ACTIVOS (para clientes)
+  // Busca todos los lotes que no estén eliminados (para usuarios)
   async findAllActivo() {
-    return Lote.findAll({
-      where: {
-        activo: true
-      }
-    });
+    return await Lote.findAll({ where: { eliminado: false }, include: [Imagen] });
   },
 
-  // Función para encontrar un lote por su ID
+  // NUEVO: Busca un lote por ID (para administradores)
   async findById(id) {
-    return Lote.findByPk(id);
+    return await Lote.findByPk(id, { include: [Imagen] });
   },
 
-  // Función para actualizar un lote
+  // RENOMBRADO: Busca un lote por ID, verificando que no esté eliminado (para usuarios)
+  async findByIdActivo(id) {
+    return await Lote.findOne({ where: { id: id, eliminado: false }, include: [Imagen] });
+  },
+
+  // Actualiza un lote por ID
   async update(id, data) {
-    const lote = await this.findById(id);
+    const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
     }
-    return lote.update(data);
+    return await lote.update(data);
   },
 
-  // Función para "eliminar" un lote (soft delete)
+  // Elimina lógicamente un lote
   async softDelete(id) {
-    const lote = await this.findById(id);
+    const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
     }
-    // Actualiza el campo 'activo' a false en lugar de eliminar la fila
-    return lote.update({ activo: false });
+    lote.eliminado = true;
+    return await lote.save();
   }
 };
 
