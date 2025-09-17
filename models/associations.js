@@ -1,4 +1,3 @@
-// Importa todos tus modelos
 const Usuario = require('./usuario');
 const Inversion = require('./inversion');
 const Lote = require('./lote');
@@ -8,40 +7,49 @@ const Transaccion = require('./transaccion');
 const Imagen = require('./imagen');
 const Contrato = require('./contrato');
 const SuscripcionProyecto = require('./suscripcion_proyecto');
-const Pago = require('./pago'); // **NUEVO: Importa el modelo Pago**
+const Pago = require('./pago');
+const Mensaje = require('./mensaje'); // **NUEVO: Importa el modelo Mensaje**
 
-// Envuelve la lógica de las relaciones en una función y expórtala
 const configureAssociations = () => {
     // --- Relaciones de Usuario ---
     Usuario.hasMany(Inversion, {
         foreignKey: 'id_inversor',
         as: 'inversiones',
+        onDelete: 'RESTRICT',
     });
     Usuario.hasMany(Proyecto, {
         foreignKey: 'id_creador_proyecto',
         as: 'proyectos_creados',
+        onDelete: 'RESTRICT',
     });
     Usuario.hasMany(Lote, {
         foreignKey: 'id_ganador',
         as: 'lotes_ganados',
+        onDelete: 'RESTRICT',
     });
     Usuario.hasMany(Puja, {
         foreignKey: 'id_usuario',
         as: 'pujas',
+        onDelete: 'RESTRICT',
     });
     Usuario.hasMany(Transaccion, {
         foreignKey: 'id_usuario',
         as: 'transacciones',
+        onDelete: 'RESTRICT',
     });
     Usuario.hasMany(Contrato, {
         foreignKey: 'id_usuario_firmante',
         as: 'contratos_firmados',
+        onDelete: 'RESTRICT',
     });
-    // Relación de un usuario con las suscripciones a proyectos
     Usuario.hasMany(SuscripcionProyecto, {
       foreignKey: 'id_usuario',
       as: 'suscripciones',
+      onDelete: 'RESTRICT',
     });
+    // **NUEVO: Un usuario puede enviar y recibir muchos mensajes**
+    Usuario.hasMany(Mensaje, { foreignKey: 'id_remitente', as: 'mensajesEnviados' });
+    Usuario.hasMany(Mensaje, { foreignKey: 'id_receptor', as: 'mensajesRecibidos' });
 
     // --- Relaciones de Inversion ---
     Inversion.belongsTo(Usuario, {
@@ -57,23 +65,27 @@ const configureAssociations = () => {
     Proyecto.hasMany(Transaccion, {
         foreignKey: 'id_proyecto',
         as: 'transacciones',
+        onDelete: 'RESTRICT',
     });
     Proyecto.hasMany(Imagen, {
         foreignKey: 'id_proyecto',
         as: 'imagenes',
+        onDelete: 'RESTRICT',
     });
     Proyecto.hasMany(Lote, {
         foreignKey: 'id_proyecto',
         as: 'lotes',
+        onDelete: 'RESTRICT',
     });
     Proyecto.hasOne(Contrato, {
       foreignKey: 'id_proyecto',
       as: 'contrato',
+      onDelete: 'RESTRICT',
     });
-    // Un proyecto puede tener muchas suscripciones de usuarios
     Proyecto.hasMany(SuscripcionProyecto, {
       foreignKey: 'id_proyecto',
       as: 'suscripciones_proyecto',
+      onDelete: 'RESTRICT',
     });
 
     // --- Relaciones de Lote ---
@@ -84,6 +96,7 @@ const configureAssociations = () => {
     Lote.hasMany(Puja, {
         foreignKey: 'id_lote',
         as: 'pujas',
+        onDelete: 'RESTRICT',
     });
     Lote.belongsTo(Proyecto, {
         foreignKey: 'id_proyecto',
@@ -92,6 +105,7 @@ const configureAssociations = () => {
     Lote.hasMany(Imagen, {
         foreignKey: 'id_lote',
         as: 'imagenes',
+        onDelete: 'RESTRICT',
     });
 
     // --- Relaciones de Puja ---
@@ -143,17 +157,21 @@ const configureAssociations = () => {
       foreignKey: 'id_proyecto',
       as: 'proyecto',
     });
-    // **NUEVO: Una suscripción tiene muchos pagos**
     SuscripcionProyecto.hasMany(Pago, {
       foreignKey: 'id_suscripcion',
       as: 'pagos',
+      onDelete: 'RESTRICT',
     });
-    
-    // **NUEVO: Un pago pertenece a una suscripción**
+
+    // --- Relaciones de Pago ---
     Pago.belongsTo(SuscripcionProyecto, {
       foreignKey: 'id_suscripcion',
       as: 'suscripcion',
     });
+
+    // **NUEVO: Relaciones de Mensaje**
+    Mensaje.belongsTo(Usuario, { foreignKey: 'id_remitente', as: 'remitente' });
+    Mensaje.belongsTo(Usuario, { foreignKey: 'id_receptor', as: 'receptor' });
 };
 
 module.exports = configureAssociations;

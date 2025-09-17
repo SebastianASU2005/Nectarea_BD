@@ -50,6 +50,11 @@ const usuarioService = {
       return null;
     }
     return usuario.update({ activo: false });
+  },
+
+  // **NUEVO**: Obtiene todos los usuarios activos
+  async findAllActivos() {
+    return Usuario.findAll({ where: { activo: true } });
   }
 };
 

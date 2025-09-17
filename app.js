@@ -39,6 +39,7 @@ const Imagen = require("./models/imagen");
 const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 const Pago = require("./models/pago");
+const Mensaje = require("./models/mensaje");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
@@ -57,10 +58,12 @@ const transaccionRoutes = require("./routes/transaccion.routes");
 const contratoRoutes = require("./routes/contrato.routes");
 const suscripcionProyectoRoutes = require("./routes/suscripcion_proyecto.routes");
 const pagoRoutes = require("./routes/pago.routes");
-const authRoutes = require("./routes/auth.routes"); // **NUEVO: Importa la ruta de autenticación**
+const authRoutes = require("./routes/auth.routes");
+const mensajeRoutes = require("./routes/mensaje.routes");
 
-// Importa el planificador de pagos para iniciar la tarea programada
+// Importa los planificadores de tareas
 const paymentScheduler = require("./tasks/paymentScheduler");
+const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 
 // Usar el router para las rutas de la API, separando la lógica
 app.use("/api/usuarios", usuarioRoutes);
@@ -73,14 +76,25 @@ app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/contratos", contratoRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
 app.use("/api/pagos", pagoRoutes);
-app.use("/api/auth", authRoutes); // **NUEVO: Usa la ruta de autenticación**
+app.use("/api/auth", authRoutes);
+app.use("/api/mensajes", mensajeRoutes);
 
+console.log('--- INICIANDO PRUEBAS MANUALES DE NOTIFICACIONES ---');
+paymentReminderScheduler.sendPaymentReminders()
+  .then(() => console.log('Prueba de recordatorios de pago finalizada.'))
+  .catch(err => console.error('Error en prueba de recordatorios de pago:', err));
+
+paymentReminderScheduler.sendOverdueNotifications()
+  .then(() => console.log('Prueba de notificaciones de pago vencido finalizada.'))
+  .catch(err => console.error('Error en prueba de pagos vencidos:', err));
+//
 // Sincroniza todos los modelos con la base de datos
 sequelize
   .sync({ alter: true })
   .then(() => {
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
     paymentScheduler.start();
+    paymentReminderScheduler.scheduleJobs();
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);
     });

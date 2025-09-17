@@ -1,6 +1,16 @@
 const pagoService = require('../services/pago.service');
 
 const pagoController = {
+  // **NUEVA FUNCIÓN**: Crea un nuevo pago
+  async create(req, res) {
+    try {
+      const nuevoPago = await pagoService.create(req.body);
+      res.status(201).json(nuevoPago);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
   // Obtiene todos los pagos (para administradores)
   async findAll(req, res) {
     try {

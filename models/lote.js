@@ -1,40 +1,53 @@
-// Archivo: models/Lote.js
-const { sequelize, DataTypes } = require('../config/database');
-const baseAttributes = require('./base');
+const { Sequelize, DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
+const Proyecto = require('./proyecto');
 
 const Lote = sequelize.define('Lote', {
-  ...baseAttributes, // Incluye los campos 'id' y 'activo'
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+  },
+  id_proyecto: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'ID del proyecto al que pertenece el lote.'
+  },
   nombre_lote: {
     type: DataTypes.STRING(255),
     allowNull: false,
+    comment: 'Nombre del lote.'
   },
-  descripcion: {
-    type: DataTypes.TEXT,
-  },
-  valor_inicial_subasta: {
-    type: DataTypes.DECIMAL(15, 2),
+  precio_base: {
+    type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
+    comment: 'Precio base para la subasta.'
   },
-  estado_lote: {
-    type: DataTypes.STRING(50),
+  estado_subasta: {
+    type: DataTypes.ENUM('pendiente', 'activa', 'finalizada'),
+    defaultValue: 'pendiente',
     allowNull: false,
+    // Eliminado temporalmente para evitar el error de sincronización
+    // comment: 'Estado actual de la subasta del lote.'
   },
-  valor_actual_subasta: {
-    type: DataTypes.DECIMAL(15, 2),
-  },
-  fecha_inicio_subasta: {
-    type: DataTypes.DATE, // 'TIMESTAMP' en SQL se mapea a 'DATE' en Sequelize
-    defaultValue: DataTypes.NOW, // Establece la fecha y hora actuales por defecto
-  },
-  fecha_cierre_subasta: {
+  fecha_inicio: {
     type: DataTypes.DATE,
+    comment: 'Fecha de inicio de la subasta.'
   },
-  id_ganador: {
-    type: DataTypes.INTEGER,
-    // La clave foránea se definirá en el archivo de relaciones
+  fecha_fin: {
+    type: DataTypes.DATE,
+    comment: 'Fecha de finalización de la subasta.'
+  },
+  activo: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    comment: 'Indica si el lote está activo.'
   },
 }, {
-  tableName: 'lote', // Nombre de la tabla en la base de datos
+  tableName: 'lote',
+  timestamps: true,
+  createdAt: 'fecha_creacion',
+  updatedAt: 'fecha_actualizacion'
 });
 
 module.exports = Lote;

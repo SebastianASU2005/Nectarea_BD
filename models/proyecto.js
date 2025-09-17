@@ -36,7 +36,13 @@ const Proyecto = sequelize.define(
     },
     obj_suscripciones: {
       type: DataTypes.INTEGER,
-    }, // **NUEVO ESTADO:** Estados mejor definidos para el proyecto
+    }, // **NUEVO CAMPO:** Un booleano para evitar notificaciones duplicadas
+    objetivo_notificado: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    // **NUEVO ESTADO:** Estados mejor definidos para el proyecto
     estado_proyecto: {
       type: DataTypes.ENUM("En Espera", "En proceso", "Finalizado"),
       allowNull: false,

@@ -3,6 +3,9 @@ const router = express.Router();
 const pagoController = require('../controllers/pago.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
+// **NUEVA RUTA**: Permite crear un nuevo pago
+router.post('/', authMiddleware.authenticate, pagoController.create);
+
 // Rutas protegidas para administradores: Solo los administradores pueden ver todos los pagos
 router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.findAll);
 
