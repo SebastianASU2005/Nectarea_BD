@@ -79,15 +79,6 @@ app.use("/api/pagos", pagoRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 
-console.log('--- INICIANDO PRUEBAS MANUALES DE NOTIFICACIONES ---');
-paymentReminderScheduler.sendPaymentReminders()
-  .then(() => console.log('Prueba de recordatorios de pago finalizada.'))
-  .catch(err => console.error('Error en prueba de recordatorios de pago:', err));
-
-paymentReminderScheduler.sendOverdueNotifications()
-  .then(() => console.log('Prueba de notificaciones de pago vencido finalizada.'))
-  .catch(err => console.error('Error en prueba de pagos vencidos:', err));
-//
 // Sincroniza todos los modelos con la base de datos
 sequelize
   .sync({ alter: true })

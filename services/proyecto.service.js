@@ -27,7 +27,7 @@
     // Obtiene los proyectos activos (para usuarios)
     async findAllActivo() {
       return await Proyecto.findAll({
-        where: { eliminado: false },
+        where: { activo:true },
         include: [
           { model: Lote, as: 'lotes' }, // CORRECCIÓN: Se usa el alias 'lotes'
           { model: Imagen, as: 'imagenes' } // CORRECCIÓN: Se usa el alias 'imagenes'
@@ -48,7 +48,7 @@
     // RENOMBRADO: Obtiene un proyecto por ID, verificando que no esté eliminado (para usuarios)
     async findByIdActivo(id) {
       return await Proyecto.findOne({
-        where: { id: id, eliminado: false },
+        where: { id: id, activo: true },
         include: [
           { model: Lote, as: 'lotes' }, // CORRECCIÓN: Se usa el alias 'lotes'
           { model: Imagen, as: 'imagenes' } // CORRECCIÓN: Se usa el alias 'imagenes'
@@ -87,7 +87,7 @@
       if (!proyecto) {
         return null;
       }
-      proyecto.eliminado = true;
+      proyecto.activo = false;
       return await proyecto.save();
     },
   };

@@ -13,7 +13,7 @@ const imagenService = {
 
   // Busca todas las imágenes que no estén eliminadas (para usuarios)
   async findAllActivo() {
-    return await Imagen.findAll({ where: { eliminado: false } });
+    return await Imagen.findAll({ where: { activo: true } });
   },
 
   // NUEVO: Busca una imagen por ID (para administradores)
@@ -23,7 +23,7 @@ const imagenService = {
 
   // RENOMBRADO: Busca una imagen por ID, verificando que no esté eliminada (para usuarios)
   async findByIdActivo(id) {
-    return await Imagen.findOne({ where: { id: id, eliminado: false } });
+    return await Imagen.findOne({ where: { id: id, activo: true } });
   },
 
   // Actualiza una imagen por ID
@@ -41,7 +41,7 @@ const imagenService = {
     if (!imagen) {
       return null;
     }
-    imagen.eliminado = true;
+    imagen.activo = false;
     return await imagen.save();
   }
 };

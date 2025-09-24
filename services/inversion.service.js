@@ -1,51 +1,38 @@
 const Inversion = require("../models/inversion");
+const Proyecto = require('../models/proyecto');
+const TransaccionService = require('./transaccion.service'); // <-- NUEVO
+const { sequelize } = require('../config/database'); // <-- NUEVO
 
 const inversionService = {
-  // Función para crear una nueva inversión
-  async create(data) {
-    return Inversion.create(data);
-  },
+  // ... (funciones existentes) ...
 
-  // **NUEVA FUNCIÓN**: Obtiene las inversiones asociadas a un usuario específico
-  async findByUserId(userId) {
-    return Inversion.findAll({
-      where: {
-        id_inversor: userId,
-        activo: true,
-      },
-    });
-  }, // Función para obtener TODAS las inversiones (para administradores)
+  // NUEVA FUNCIÓN: Procesa una inversión y crea la transacción asociada
+  async processInvestment(inversionId, userId, transactionData) {
+    const t = await sequelize.transaction();
+    try {
+      // 1. Encontrar la inversión
+      const inversion = await this.findById(inversionId, { transaction: t });
+      if (!inversion) {
+        throw new Error('Inversión no encontrada.');
+      }
 
-  async findAll() {
-    return Inversion.findAll();
-  }, // Función para encontrar TODAS las inversiones ACTIVAS (para clientes)
+      // 2. Crear el registro de Transacción
+      await TransaccionService.create({
+        ...transactionData,
+        id_usuario: userId,
+        id_proyecto: inversion.id_proyecto,
+        id_inversion: inversion.id,
+      }, { transaction: t });
 
-  async findAllActivo() {
-    return Inversion.findAll({
-      where: {
-        activo: true,
-      },
-    });
-  }, // Función para encontrar una inversión por su ID
+      // 3. Opcional: Actualizar el estado de la inversión
+      await inversion.update({ estado_inversion: 'confirmada' }, { transaction: t });
 
-  async findById(id) {
-    return Inversion.findByPk(id);
-  }, // Función para actualizar una inversión
-
-  async update(id, data) {
-    const inversion = await this.findById(id);
-    if (!inversion) {
-      return null;
+      await t.commit();
+      return inversion;
+    } catch (error) {
+      await t.rollback();
+      throw error;
     }
-    return inversion.update(data);
-  }, // Función para "eliminar" una inversión (soft delete)
-
-  async softDelete(id) {
-    const inversion = await this.findById(id);
-    if (!inversion) {
-      return null;
-    } // Actualiza el campo 'activo' a false en lugar de eliminar la fila
-    return inversion.update({ activo: false });
   },
 };
 

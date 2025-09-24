@@ -11,7 +11,7 @@ const Pago = sequelize.define('Pago', {
       model: SuscripcionProyecto,
       key: 'id',
     },
-   
+    
   },
   monto: {
     type: DataTypes.DECIMAL(15, 2),
@@ -26,7 +26,7 @@ const Pago = sequelize.define('Pago', {
     allowNull: true,
   },
   estado_pago: {
-    type: DataTypes.ENUM('pendiente', 'pagado', 'vencido', 'cancelado'),
+    type: DataTypes.ENUM('pendiente', 'pagado', 'vencido', 'cancelado', 'cubierto_por_puja'),
     allowNull: false,
     defaultValue: 'pendiente',
   },

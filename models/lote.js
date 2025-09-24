@@ -27,8 +27,6 @@ const Lote = sequelize.define('Lote', {
     type: DataTypes.ENUM('pendiente', 'activa', 'finalizada'),
     defaultValue: 'pendiente',
     allowNull: false,
-    // Eliminado temporalmente para evitar el error de sincronización
-    // comment: 'Estado actual de la subasta del lote.'
   },
   fecha_inicio: {
     type: DataTypes.DATE,
@@ -43,6 +41,23 @@ const Lote = sequelize.define('Lote', {
     defaultValue: true,
     comment: 'Indica si el lote está activo.'
   },
+  id_puja_mas_alta: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'ID de la puja más alta registrada para este lote.',
+  },
+  id_ganador: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'ID del usuario ganador de la subasta.'
+  },
+  // Campo adicional para guardar el excedente de la puja para fines de visualización en el frontend.
+  excedente_visualizacion: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0,
+    allowNull: false,
+    comment: 'Excedente de la puja ganadora para fines de visualización.'
+  }
 }, {
   tableName: 'lote',
   timestamps: true,

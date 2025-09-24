@@ -4,7 +4,8 @@ const usuarioService = require('../services/usuario.service');
 const mensajeService = require('../services/mensaje.service');
 const { sequelize } = require('../config/database');
 const { validate } = require('uuid');
-const SuscripcionProyectoService = require('../services/suscripcion_proyecto.service');
+const suscripcionProyectoService = require('../services/suscripcion_proyecto.service');
+const inversionService=require('../services/inversion.service')
 
 const proyectoController = {
   // Obtiene todos los proyectos (para admin)
@@ -68,6 +69,24 @@ const proyectoController = {
       res.status(400).json({ error: error.message });
     }
   },
+  // Finaliza la subasta de un lote, asigna un ganador y notifica
+  async endAuction(req, res) {
+    try {
+      const { id } = req.params;
+      const transaccion = await loteService.endAuction(id);
+
+      if (transaccion) {
+        const mensaje = `¡Subasta finalizada! Se ha creado una transacción de pago con ID ${transaccion.id}.`;
+        // Aquí podrías agregar la lógica para enviar el mensaje al ganador
+        res.status(200).json({ mensaje });
+      } else {
+        res.status(200).json({ mensaje: 'Subasta finalizada sin pujas. No se ha asignado un ganador.' });
+      }
+
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
 
   // Actualiza un proyecto
   async update(req, res) {
@@ -122,15 +141,31 @@ const proyectoController = {
   },
 
   // Obtiene los proyectos en los que el usuario está suscrito
-  async findMyProjects(req, res) {
-    try {
-      const userId = req.user.id;
-      const proyectos = await SuscripcionProyectoService.findProjectsByUserId(userId);
-      res.status(200).json(proyectos);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
+async findMyProjects(req, res) {
+  try {
+    const userId = req.user.id;
+
+    // 1. Obtener los proyectos a través de las suscripciones
+    const suscripciones = await suscripcionProyectoService.findByUserId(userId);
+    const proyectosSuscritos = suscripciones.map(suscripcion => suscripcion.proyecto);
+
+    // 2. Obtener los proyectos a través de las inversiones
+    const inversiones = await inversionService.findByUserId(userId);
+    const proyectosInvertidos = inversiones.map(inversion => inversion.proyecto);
+
+    // 3. Combinar las listas y eliminar duplicados para obtener un listado único
+    const todosMisProyectos = [...proyectosSuscritos, ...proyectosInvertidos];
+    const proyectosUnicos = Array.from(new Set(todosMisProyectos.map(p => p.id)))
+      .map(id => {
+        return todosMisProyectos.find(p => p.id === id);
+      });
+
+    res.status(200).json(proyectosUnicos);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+},
+
 };
 
 module.exports = proyectoController;

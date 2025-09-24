@@ -6,38 +6,38 @@ const UsuarioService = require('./usuario.service');
 const { sequelize } = require('../config/database');
 
 const suscripcionProyectoService = {
-  // Crea una nueva suscripción y notifica si se alcanza el objetivo del proyecto
+  // Crea una nueva suscripción
   async create(data) {
     const t = await sequelize.transaction();
     try {
-      const nuevaSuscripcion = await SuscripcionProyecto.create(data, { transaction: t });
-
-      // 1. Obtener el proyecto para actualizar el contador
-      const proyecto = await Proyecto.findByPk(nuevaSuscripcion.id_proyecto, { transaction: t });
+      // Obtener el proyecto para inicializar meses_a_pagar
+      const proyecto = await Proyecto.findByPk(data.id_proyecto, { transaction: t });
       if (!proyecto) {
         throw new Error('Proyecto asociado no encontrado.');
       }
 
-      // 2. Incrementar el contador de suscripciones y guardar
-      await proyecto.increment('suscripciones_actuales', { by: 1, transaction: t });
-      await proyecto.reload({ transaction: t }); // Recargar para obtener el valor actualizado
+      // Inicializa los meses a pagar con el plazo total del proyecto
+      data.meses_a_pagar = proyecto.plazo_inversion;
+      data.saldo_a_favor = 0; // Inicializa el saldo a favor en 0
 
-      // 3. Verificar si el objetivo se ha cumplido y si ya se notificó
+      const nuevaSuscripcion = await SuscripcionProyecto.create(data, { transaction: t });
+
+      await proyecto.increment('suscripciones_actuales', { by: 1, transaction: t });
+      await proyecto.reload({ transaction: t });
+
       if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones && !proyecto.objetivo_notificado) {
-        // 4. Si se cumplió, notificar a los suscriptores y actualizar el proyecto
         await proyecto.update({
           objetivo_notificado: true,
           estado_proyecto: 'En proceso',
         }, { transaction: t });
 
-        // 5. Enviar mensajes a todos los usuarios activos
         const todosLosUsuarios = await UsuarioService.findAllActivos();
         const remitente_id = 1;
         const contenido = `¡Objetivo alcanzado! El proyecto "${proyecto.nombre_proyecto}" ha alcanzado el número de suscripciones necesarias y ahora está en proceso.`;
 
         for (const usuario of todosLosUsuarios) {
           if (usuario.id !== remitente_id) {
-            await MensajeService.crear({ // CORRECCIÓN: Se cambió de .create a .crear
+            await MensajeService.crear({
               id_remitente: remitente_id,
               id_receptor: usuario.id,
               contenido: contenido,
@@ -53,7 +53,7 @@ const suscripcionProyectoService = {
       throw error;
     }
   },
-  // Obtiene todos los usuarios suscritos a un proyecto
+
   async findUsersByProjectId(projectId) {
     const suscripciones = await SuscripcionProyecto.findAll({
       where: {
@@ -69,12 +69,10 @@ const suscripcionProyectoService = {
     return suscripciones.map(suscripcion => suscripcion.usuario);
   },
 
-  // Obtiene una suscripción por su ID
   async findById(id) {
     return SuscripcionProyecto.findByPk(id);
   },
 
-  // Obtiene una suscripción por usuario y proyecto
   async findByUserAndProjectId(userId, projectId) {
     return SuscripcionProyecto.findOne({
       where: {
@@ -85,19 +83,21 @@ const suscripcionProyectoService = {
     });
   },
 
-  // Obtiene todas las suscripciones
   async findAll() {
     return SuscripcionProyecto.findAll();
   },
 
-  // Obtiene todas las suscripciones de un usuario
   async findByUserId(userId) {
     return SuscripcionProyecto.findAll({
-      where: { id_usuario: userId, activo: true }
+      where: { id_usuario: userId, activo: true },
+      include: [{
+        model: Proyecto,
+        as: 'proyecto',
+        where: { activo: true }
+      }]
     });
   },
 
-  // Encuentra suscripciones con el objetivo cumplido que están a punto de iniciar pagos
   async findSubscriptionsReadyForPayments() {
     return SuscripcionProyecto.findAll({
       where: {
@@ -111,7 +111,6 @@ const suscripcionProyectoService = {
     });
   },
 
-  // Actualiza una suscripción
   async update(id, data) {
     const suscripcion = await this.findById(id);
     if (!suscripcion) {
@@ -120,7 +119,6 @@ const suscripcionProyectoService = {
     return suscripcion.update(data);
   },
 
-  // "Elimina" una suscripción (soft delete)
   async softDelete(id) {
     const suscripcion = await this.findById(id);
     if (!suscripcion) {

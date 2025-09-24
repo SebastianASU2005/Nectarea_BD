@@ -4,8 +4,9 @@ const loteController = require('../controllers/lote.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
 // Rutas de subasta para usuarios autenticados
-router.post('/:id/start_auction', authMiddleware.authenticate, loteController.startAuction);
-router.post('/:id/end', authMiddleware.authenticate, loteController.endAuction);
+router.post('/:id/start_auction', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.startAuction);
+// CÓDIGO CORREGIDO: Cambia de .post a .put
+router.put('/:id/end', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.endAuction);
 
 // Rutas de lotes activos (para que los usuarios puedan verlos)
 router.get('/activos', authMiddleware.authenticate, loteController.findAllActivo);
@@ -17,6 +18,5 @@ router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, l
 router.post('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.create);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, loteController.softDelete);
-
 
 module.exports = router;

@@ -1,8 +1,8 @@
-const loteService = require('../services/lote.service');
-const proyectoService = require('../services/proyecto.service');
-const pujaService = require('../services/puja.service');
-const mensajeService = require('../services/mensaje.service');
-const SuscripcionProyectoService = require('../services/suscripcion_proyecto.service');
+const loteService = require("../services/lote.service");
+const proyectoService = require("../services/proyecto.service");
+const pujaService = require("../services/puja.service");
+const mensajeService = require("../services/mensaje.service");
+const SuscripcionProyectoService = require("../services/suscripcion_proyecto.service");
 
 const loteController = {
   // Obtiene todos los lotes
@@ -21,7 +21,7 @@ const loteController = {
       const { id } = req.params;
       const lote = await loteService.findById(id);
       if (!lote) {
-        return res.status(404).json({ error: 'Lote no encontrado.' });
+        return res.status(404).json({ error: "Lote no encontrado." });
       }
       res.status(200).json(lote);
     } catch (error) {
@@ -45,7 +45,7 @@ const loteController = {
       const { id } = req.params;
       const loteActualizado = await loteService.update(id, req.body);
       if (!loteActualizado) {
-        return res.status(404).json({ error: 'Lote no encontrado.' });
+        return res.status(404).json({ error: "Lote no encontrado." });
       }
       res.status(200).json(loteActualizado);
     } catch (error) {
@@ -59,9 +59,9 @@ const loteController = {
       const { id } = req.params;
       const loteEliminado = await loteService.softDelete(id);
       if (!loteEliminado) {
-        return res.status(404).json({ error: 'Lote no encontrado.' });
+        return res.status(404).json({ error: "Lote no encontrado." });
       }
-      res.status(200).json({ mensaje: 'Lote eliminado exitosamente.' });
+      res.status(200).json({ mensaje: "Lote eliminado exitosamente." });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -73,17 +73,23 @@ const loteController = {
       const { id } = req.params;
       const lote = await loteService.findById(id);
       if (!lote) {
-        return res.status(404).json({ error: 'Lote no encontrado.' });
+        return res.status(404).json({ error: "Lote no encontrado." });
       }
       const proyecto = await proyectoService.findById(lote.id_proyecto);
       if (!proyecto) {
-        return res.status(404).json({ error: 'Proyecto asociado no encontrado.' });
+        return res
+          .status(404)
+          .json({ error: "Proyecto asociado no encontrado." });
       }
 
-      await loteService.update(id, { estado_subasta: 'activa', fecha_inicio: new Date() });
+      await loteService.update(id, {
+        estado_subasta: "activa",
+        fecha_inicio: new Date(),
+      });
 
       // Obtener usuarios suscritos al proyecto
-      const suscriptores = await SuscripcionProyectoService.findUsersByProjectId(proyecto.id);
+      const suscriptores =
+        await SuscripcionProyectoService.findUsersByProjectId(proyecto.id);
 
       const remitente_id = 1; // ID de un usuario del sistema (ej. administrador)
       const contenido = `¡La subasta del lote "${lote.nombre_lote}" del proyecto "${proyecto.nombre_proyecto}" ha comenzado!`;
@@ -93,49 +99,36 @@ const loteController = {
         await mensajeService.crear({
           id_remitente: remitente_id,
           id_receptor: suscriptor.id,
-          contenido: contenido
+          contenido: contenido,
         });
       }
 
-      res.status(200).json({ mensaje: 'Subasta iniciada y notificaciones enviadas.' });
+      res
+        .status(200)
+        .json({ mensaje: "Subasta iniciada y notificaciones enviadas." });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
 
-  // Finaliza la subasta de un lote, asigna un ganador y notifica
   async endAuction(req, res) {
     try {
       const { id } = req.params;
-      const lote = await loteService.findById(id);
-      if (!lote) {
-        return res.status(404).json({ error: 'Lote no encontrado.' });
-      }
+      const transaccion = await loteService.endAuction(id);
 
-      if (lote.estado_subasta !== 'activa') {
-        return res.status(400).json({ error: 'La subasta no está activa.' });
-      }
-
-      const pujaGanadora = await pujaService.findHighestBidForLote(id);
-      let mensaje;
-
-      if (pujaGanadora) {
-        await loteService.update(id, { estado_subasta: 'finalizada', fecha_fin: new Date(), id_ganador: pujaGanadora.id_usuario });
-        mensaje = `¡Felicitaciones! Has ganado la subasta del lote "${lote.nombre_lote}" con una puja de $${pujaGanadora.monto}.`;
-        // Enviar el mensaje al ganador
-        await mensajeService.crear({
-          id_remitente: 1, // ID del sistema
-          id_receptor: pujaGanadora.id_usuario,
-          contenido: mensaje
-        });
-        res.status(200).json({ mensaje: 'Subasta finalizada. Se ha notificado al ganador.' });
+      if (transaccion) {
+        const mensaje = `¡Subasta finalizada! Se ha creado una transacción de pago con ID ${transaccion.id}.`;
+        res.status(200).json({ mensaje });
       } else {
-        await loteService.update(id, { estado_subasta: 'finalizada', fecha_fin: new Date() });
-        res.status(200).json({ mensaje: 'Subasta finalizada sin pujas. No se ha asignado un ganador.' });
+        res
+          .status(200)
+          .json({
+            mensaje:
+              "Subasta finalizada sin pujas. No se ha asignado un ganador.",
+          });
       }
-
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(400).json({ error: error.message });
     }
   },
 
@@ -148,14 +141,16 @@ const loteController = {
       res.status(500).json({ error: error.message });
     }
   },
-  
+
   // Obtener un lote activo por su ID
   async findByIdActivo(req, res) {
     try {
       const { id } = req.params;
       const lote = await loteService.findByIdActivo(id);
       if (!lote) {
-        return res.status(404).json({ error: 'Lote no encontrado o no está activo.' });
+        return res
+          .status(404)
+          .json({ error: "Lote no encontrado o no está activo." });
       }
       res.status(200).json(lote);
     } catch (error) {

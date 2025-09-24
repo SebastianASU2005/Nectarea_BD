@@ -8,6 +8,7 @@ router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, tran
 router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.findById);
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.update);
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.softDelete);
+router.put('/:id/confirmar',authMiddleware.authenticate, authMiddleware.authorizeAdmin, transaccionController.confirmarTransaccion);
 
 // Rutas para usuarios
 router.post('/', authMiddleware.authenticate, transaccionController.create);
