@@ -32,23 +32,26 @@ const proyectoController = {
     }
   },
 
-  // Crea un nuevo proyecto y notifica a todos los usuarios
+  // Crea un nuevo proyecto. La lógica para cuotas mensuales se manejará en un paso posterior.
   async create(req, res) {
     const t = await sequelize.transaction();
     try {
-      // 1. Crea el proyecto
       const { lotesIds, ...proyectoData } = req.body;
-      const nuevoProyecto = await proyectoService.create(proyectoData, { transaction: t });
+      
+      // 1. Crea el proyecto
+      const nuevoProyecto = await proyectoService.crearProyecto(proyectoData, { transaction: t });
 
       // 2. Asocia los lotes al proyecto si se proporcionan
       if (lotesIds && lotesIds.length > 0) {
         await loteService.updateLotesProyecto(lotesIds, nuevoProyecto.id, t);
       }
       
+      // La lógica para crear la cuota mensual ha sido eliminada de este controlador.
+      // Ahora, la cuota mensual se deberá crear y asignar a través de un endpoint separado.
+
       // 3. Envía un mensaje a todos los usuarios
       const todosLosUsuarios = await usuarioService.findAllActivos();
-      
-      const remitente_id = 1; // ID de un usuario del sistema (ej. el administrador)
+      const remitente_id = 1; 
       const tipoInversion = req.body.tipo_inversion || 'Inversión'; 
       const contenido = `Se ha añadido un nuevo proyecto en la sección de ${tipoInversion}. ¡Revisa el proyecto "${nuevoProyecto.nombre_proyecto}"!`;
 
@@ -69,6 +72,7 @@ const proyectoController = {
       res.status(400).json({ error: error.message });
     }
   },
+  
   // Finaliza la subasta de un lote, asigna un ganador y notifica
   async endAuction(req, res) {
     try {

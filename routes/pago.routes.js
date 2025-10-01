@@ -3,26 +3,41 @@ const router = express.Router();
 const pagoController = require('../controllers/pago.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// **NUEVA RUTA**: Permite crear un nuevo pago
+// =================================================================
+// RUTAS GENERALES
+// =================================================================
+
+// [POST /] Permite crear un nuevo pago inicial.
 router.post('/', authMiddleware.authenticate, pagoController.create);
 
-// Rutas protegidas para administradores: Solo los administradores pueden ver todos los pagos
-router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.findAll);
-
-// Rutas de usuario: La ruta específica de 'mis_pagos' va primero
+// [GET /mis_pagos] Permite que un usuario autenticado vea solo sus pagos.
 router.get('/mis_pagos', authMiddleware.authenticate, pagoController.findMyPayments);
 
-// Rutas protegidas para administradores: Las rutas genéricas con parámetros van después
+// [POST /pagar-mes/:id] **NUEVO FLUJO DE PAGO**: Permite que un usuario procese
+// un pago pendiente o vencido (crea la Transacción asociada).
+router.post('/pagar-mes/:id', authMiddleware.authenticate, pagoController.processPayment);
+
+// =================================================================
+// RUTAS PROTEGIDAS (Solo Administradores)
+// =================================================================
+
+// [GET /] Obtiene todos los pagos.
+router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.findAll);
+
+// [GET /:id] Obtiene un pago específico por ID.
 router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.findById);
 
-// Rutas protegidas para administradores: Solo los administradores pueden confirmar un pago
-router.put('/confirmar/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.confirmPayment);
-
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" un pago
+// [PUT /:id] Actualiza un pago.
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.update);
+
+// [DELETE /:id] "Elimina" un pago (soft delete).
 router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.softDelete);
 
-// **NUEVA RUTA PARA PRUEBA MANUAL**: Llama a la función que crea un pago
+// =================================================================
+// RUTA DE PRUEBA MANUAL (Solo Administradores)
+// =================================================================
+
+// [POST /trigger-manual-payment] Genera un pago mensual a una suscripción específica
 router.post('/trigger-manual-payment', authMiddleware.authenticate, authMiddleware.authorizeAdmin, pagoController.triggerManualPayment);
 
 module.exports = router;

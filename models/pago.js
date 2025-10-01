@@ -1,17 +1,22 @@
 const { sequelize, DataTypes } = require('../config/database');
 const baseAttributes = require('./base');
-const SuscripcionProyecto = require('./suscripcion_proyecto');
+// No es necesario importar SuscripcionProyecto aquí si las asociaciones se configuran externamente.
 
 const Pago = sequelize.define('Pago', {
   ...baseAttributes,
+  // >>> CAMBIOS CLAVE: Añadir id_usuario y id_proyecto como atributos <<<
+  id_usuario: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  id_proyecto: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   id_suscripcion: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: SuscripcionProyecto,
-      key: 'id',
-    },
-    
+    allowNull: true,
+    // Eliminamos 'references' de aquí. La asociación se define en configureAssociations.
   },
   monto: {
     type: DataTypes.DECIMAL(15, 2),

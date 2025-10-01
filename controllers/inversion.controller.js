@@ -1,22 +1,26 @@
 const inversionService = require("../services/inversion.service");
 
 const inversionController = {
+  // Maneja la solicitud inicial para crear una inversión y su transacción
   async create(req, res) {
     try {
-      // Tomamos el ID del inversor del token para evitar falsificación
-      const id_inversor = req.user.id;
-      const data = { ...req.body, id_inversor };
-      const nuevaInversion = await inversionService.create(data);
-      res.status(201).json(nuevaInversion);
+      // Tomamos el ID del usuario del token para evitar falsificación
+      const id_usuario = req.user.id;
+      const data = { ...req.body, id_usuario };
+      
+      // Llama a la función correcta que crea tanto la inversión como la transacción
+      const resultado = await inversionService.crearInversionYTransaccion(data);
+      
+      res.status(201).json(resultado);
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
   },
 
-  // **NUEVA FUNCIÓN**: Obtiene las inversiones asociadas al usuario autenticado
+  // Obtiene las inversiones asociadas al usuario autenticado
   async findMyInversions(req, res) {
     try {
-      const userId = req.user.id; // ¡Obtenemos el ID del usuario desde el JWT!
+      const userId = req.user.id;
       const inversiones = await inversionService.findByUserId(userId);
       res.status(200).json(inversiones);
     } catch (error) {
@@ -24,6 +28,7 @@ const inversionController = {
     }
   },
 
+  // Obtiene todas las inversiones (para administradores)
   async findAll(req, res) {
     try {
       const inversiones = await inversionService.findAll();
@@ -33,6 +38,7 @@ const inversionController = {
     }
   },
 
+  // Obtiene todas las inversiones activas
   async findAllActivo(req, res) {
     try {
       const inversiones = await inversionService.findAllActivo();
@@ -42,6 +48,7 @@ const inversionController = {
     }
   },
 
+  // Encuentra una inversión por su ID
   async findById(req, res) {
     try {
       const { id } = req.params;
@@ -55,6 +62,7 @@ const inversionController = {
     }
   },
 
+  // Actualiza una inversión
   async update(req, res) {
     try {
       const { id } = req.params;
@@ -68,6 +76,7 @@ const inversionController = {
     }
   },
 
+  // "Elimina" una inversión (soft delete)
   async softDelete(req, res) {
     try {
       const { id } = req.params;
@@ -75,7 +84,7 @@ const inversionController = {
       if (!inversionEliminada) {
         return res.status(404).json({ message: "Inversión no encontrada" });
       }
-      res.status(204).send(); // No Content
+      res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

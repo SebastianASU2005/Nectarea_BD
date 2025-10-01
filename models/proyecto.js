@@ -1,4 +1,3 @@
-// Archivo: models/Proyecto.js
 const { sequelize, DataTypes } = require("../config/database");
 const baseAttributes = require("./base");
 
@@ -12,7 +11,7 @@ const Proyecto = sequelize.define(
     },
     descripcion: {
       type: DataTypes.TEXT,
-    }, // Usamos ENUM para los tipos de inversión
+    },
     tipo_inversion: {
       type: DataTypes.ENUM("directo", "mensual"),
       allowNull: false,
@@ -26,9 +25,12 @@ const Proyecto = sequelize.define(
     monto_inversion: {
       type: DataTypes.DECIMAL(15, 2),
     },
-    entrega_anticipada: {
-      type: DataTypes.BOOLEAN,
-    }, // **NUEVO CAMPO:** Contador para las suscripciones actuales
+    // NUEVO CAMPO: Tipo de moneda para el monto_inversion
+    moneda: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      defaultValue: "USD",
+    },
     suscripciones_actuales: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -36,17 +38,16 @@ const Proyecto = sequelize.define(
     },
     obj_suscripciones: {
       type: DataTypes.INTEGER,
-    }, // **NUEVO CAMPO:** Un booleano para evitar notificaciones duplicadas
+    },
     objetivo_notificado: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false,
     },
-    // **NUEVO ESTADO:** Estados mejor definidos para el proyecto
     estado_proyecto: {
       type: DataTypes.ENUM("En Espera", "En proceso", "Finalizado"),
       allowNull: false,
-      defaultValue: "En Espera", // El estado inicial
+      defaultValue: "En Espera",
     },
     fecha_inicio: {
       type: DataTypes.DATEONLY,

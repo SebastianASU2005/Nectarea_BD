@@ -13,10 +13,21 @@ const Contrato = sequelize.define('Contrato', {
     allowNull: false,
     comment: 'URL o ruta donde se almacena el archivo PDF.',
   },
+  // NUEVO: Hash criptográfico (SHA-256) del documento para asegurar su integridad.
+  hash_archivo_original: {
+    type: DataTypes.STRING(64), 
+    allowNull: false,
+    comment: 'Hash del contenido binario del PDF al momento de la creación/firma.',
+  },
   firma_digital: {
     type: DataTypes.TEXT,
     allowNull: true,
-    comment: 'Datos de la firma digital en formato Base64. Puede ser nulo hasta que se firme.',
+    comment: 'Datos de la firma digital criptográfica.',
+  },
+  fecha_firma: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Fecha en que se firmó el contrato.',
   },
   id_proyecto: {
     type: DataTypes.INTEGER,

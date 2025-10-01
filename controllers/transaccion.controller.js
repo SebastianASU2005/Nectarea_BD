@@ -1,13 +1,11 @@
-// controllers/transaccion.controller.js
-
 const transaccionService = require('../services/transaccion.service');
 
 const transaccionController = {
-  // Controlador para crear una nueva transacción (se asume que el usuario es el emisor)
+  // Controlador para crear una nueva transacción
   async create(req, res) {
     try {
-      const id_emisor = req.user.id;
-      const nuevaTransaccion = await transaccionService.create({ ...req.body, id_emisor });
+      const id_usuario = req.user.id;
+      const nuevaTransaccion = await transaccionService.create({ ...req.body, id_usuario });
       res.status(201).json(nuevaTransaccion);
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -24,16 +22,6 @@ const transaccionController = {
     }
   },
 
-  // Controlador para obtener solo las transacciones activas (versión para usuarios)
-  async findAllActivo(req, res) {
-    try {
-      const transaccionesActivas = await transaccionService.findAllActivo();
-      res.status(200).json(transaccionesActivas);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-
   // **NUEVO** - Obtiene las transacciones del usuario autenticado
   async findMyTransactions(req, res) {
     try {
@@ -45,7 +33,27 @@ const transaccionController = {
     }
   },
 
-  // Controlador para encontrar una transacción por ID (versión para administradores)
+  // **NUEVO** - Controlador para la confirmación de la transacción (manual o por webhook)
+  async confirmarTransaccion(req, res) {
+    try {
+      const { id } = req.params;
+      const { estado } = req.body;
+      const transaccion = await transaccionService.confirmarTransaccion(id, estado);
+      res.status(200).json({ mensaje: "Transacción y datos asociados actualizados con éxito", transaccion });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  // ... (El resto de tus funciones de controlador) ...
+  async findAllActivo(req, res) {
+    try {
+      const transaccionesActivas = await transaccionService.findAllActivo();
+      res.status(200).json(transaccionesActivas);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
   async findById(req, res) {
     try {
       const transaccion = await transaccionService.findById(req.params.id);
@@ -57,8 +65,6 @@ const transaccionController = {
       res.status(500).json({ error: error.message });
     }
   },
-
-  // **NUEVO** - Obtener una transacción por su ID y verificar propiedad (versión para usuarios)
   async findMyTransactionById(req, res) {
     try {
       const { id } = req.params;
@@ -72,8 +78,6 @@ const transaccionController = {
       res.status(500).json({ error: error.message });
     }
   },
-
-  // Controlador para actualizar una transacción (versión para administradores)
   async update(req, res) {
     try {
       const transaccionActualizada = await transaccionService.update(req.params.id, req.body);
@@ -85,8 +89,6 @@ const transaccionController = {
       res.status(400).json({ error: error.message });
     }
   },
-
-  // **NUEVO** - Actualizar una transacción propia
   async updateMyTransaction(req, res) {
     try {
       const { id } = req.params;
@@ -100,8 +102,6 @@ const transaccionController = {
       res.status(400).json({ error: error.message });
     }
   },
-
-  // Controlador para "eliminar" una transacción (versión para administradores)
   async softDelete(req, res) {
     try {
       const transaccionEliminada = await transaccionService.softDelete(req.params.id);
@@ -113,8 +113,6 @@ const transaccionController = {
       res.status(500).json({ error: error.message });
     }
   },
-
-  // **NUEVO** - Eliminar una transacción propia
   async softDeleteMyTransaction(req, res) {
     try {
       const { id } = req.params;
@@ -126,16 +124,6 @@ const transaccionController = {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
-    }
-  },
-  async confirmarTransaccion(req, res) {
-    try {
-      const { id } = req.params;
-      const { estado } = req.body;
-      const transaccion = await transaccionService.confirmarTransaccion(id, estado);
-      res.status(200).json(transaccion);
-    } catch (error) {
-      res.status(400).json({ error: error.message });
     }
   },
 };

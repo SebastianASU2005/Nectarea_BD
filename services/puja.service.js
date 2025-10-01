@@ -7,6 +7,11 @@ const { sequelize } = require("../config/database");
 const ProyectoService = require("./proyecto.service");
 const PagoService = require("./pago.service");
 
+// Helper para garantizar que un valor es un número flotante (decimal)
+const toFloat = (value) => parseFloat(value);
+// Helper para calcular y redondear con precisión, asegurando que el resultado es un número
+const calculateFloat = (value) => toFloat(value.toFixed(2));
+
 const pujaService = {
   // Función para crear una nueva puja.
   async create(data) {
@@ -75,11 +80,19 @@ const pujaService = {
       where: { id_lote: loteId },
       order: [["monto_puja", "DESC"]],
     });
-  },
+  }
+  /**
+   * Función para procesar una puja ganadora y aplicar el excedente.
+   * Acepta una transacción externa para ser atómica con el servicio de Transacción.
+   * @param {number} pujaId - ID de la puja ganadora.
+   * @param {object} [externalTransaction=null] - Transacción de Sequelize (opcional).
+   */,
 
-  // Función para procesar una puja ganadora y aplicar el excedente
-  async procesarPujaGanadora(pujaId) {
-    const t = await sequelize.transaction();
+  async procesarPujaGanadora(pujaId, externalTransaction = null) {
+    // Si no se proporciona una transacción externa, se crea una nueva localmente.
+    const t = externalTransaction || (await sequelize.transaction()); // Bandera para saber si debemos hacer commit/rollback aquí
+    const shouldCommit = !externalTransaction;
+
     try {
       // 1. Encuentra la puja ganadora, su suscripción y el lote
       const puja = await Puja.findByPk(pujaId, {
@@ -88,7 +101,7 @@ const pujaService = {
           {
             model: SuscripcionProyecto,
             as: "suscripcion",
-            include: ["proyecto"],
+            include: ["proyectoAsociado"],
           },
           { model: Lote, as: "lote" },
         ],
@@ -98,16 +111,29 @@ const pujaService = {
         throw new Error("Puja, suscripción o lote no encontrados.");
       }
 
+      if (!puja.suscripcion.proyectoAsociado) {
+        throw new Error(
+          "El proyecto asociado a la suscripción no fue encontrado."
+        );
+      }
+
       const suscripcion = puja.suscripcion;
       const lote = puja.lote;
-      const cuotaMensual = parseFloat(suscripcion.proyecto.monto_inversion);
 
-      let excedente = parseFloat(puja.monto_puja) - parseFloat(lote.precio_base);
+      // Usamos toFloat para asegurar que los montos son tratados como números.
+      const cuotaMensual = toFloat(
+        suscripcion.proyectoAsociado.monto_inversion
+      ); // Inicializamos excedente con resta numérica directa
 
-      // 2. Se actualiza el monto ganador del lote
-      await lote.update({ monto_ganador_lote: puja.monto_puja }, { transaction: t });
+      let excedente = toFloat(puja.monto_puja) - toFloat(lote.precio_base);
+      // Aseguramos precisión al inicio
+      excedente = calculateFloat(excedente); // 2. Se actualiza el monto ganador del lote
 
-      // 3. Prioridad 1: Cubrir pagos pendientes solo si el excedente es suficiente para el monto completo.
+      await lote.update(
+        { monto_ganador_lote: puja.monto_puja },
+        { transaction: t }
+      ); // 3. Prioridad 1: Cubrir pagos pendientes solo si el excedente es suficiente para el monto completo.
+
       const pagosPendientes = await Pago.findAll({
         where: { id_suscripcion: suscripcion.id, estado_pago: "pendiente" },
         order: [["fecha_vencimiento", "ASC"]],
@@ -115,23 +141,33 @@ const pujaService = {
       });
 
       for (const pago of pagosPendientes) {
-        if (excedente >= parseFloat(pago.monto)) {
-          await pago.update({
-            estado_pago: "cubierto_por_puja",
-            fecha_pago: new Date(),
-          }, { transaction: t });
-          excedente = parseFloat((excedente - parseFloat(pago.monto)).toFixed(2));
+        const montoPago = toFloat(pago.monto);
+        if (excedente >= montoPago) {
+          await pago.update(
+            {
+              estado_pago: "cubierto_por_puja",
+              fecha_pago: new Date(),
+            },
+            { transaction: t }
+          ); // Recalculamos el excedente con precisión y aseguramos que sea float
+          excedente = calculateFloat(excedente - montoPago);
         } else {
-          // Si el excedente no alcanza para un pago completo, el dinero restante va a saldo a favor.
-          await suscripcion.update({
-            saldo_a_favor: parseFloat(suscripcion.saldo_a_favor) + excedente
-          }, { transaction: t });
+          // Si el excedente no alcanza para un pago completo, va a saldo a favor.
+          // Aseguramos que la suma es numérica antes de actualizar.
+          const nuevoSaldo = calculateFloat(
+            toFloat(suscripcion.saldo_a_favor) + excedente
+          );
+          await suscripcion.update(
+            {
+              saldo_a_favor: nuevoSaldo, // Pasamos un número (float)
+            },
+            { transaction: t }
+          );
           excedente = 0; // El excedente se ha usado.
           break; // Detenemos el bucle
         }
-      }
+      } // 4. Prioridad 2: Pre-pagar meses futuros si hay excedente y meses pendientes
 
-      // 4. Prioridad 2: Pre-pagar meses futuros si hay excedente y meses pendientes
       if (excedente > 0 && cuotaMensual > 0 && suscripcion.meses_a_pagar > 0) {
         const mesesAdicionales = Math.min(
           Math.floor(excedente / cuotaMensual),
@@ -141,34 +177,51 @@ const pujaService = {
           await suscripcion.decrement("meses_a_pagar", {
             by: mesesAdicionales,
             transaction: t,
-          });
-          excedente = parseFloat((excedente - mesesAdicionales * cuotaMensual).toFixed(2));
+          }); // Recalculamos el excedente con precisión y aseguramos que sea float
+          excedente = calculateFloat(
+            excedente - mesesAdicionales * cuotaMensual
+          );
         }
-      }
+      } // 5. Prioridad 3: Si todavía queda excedente, va a saldo a favor.
 
-      // 5. Prioridad 3: Si todavía queda excedente, va a saldo a favor.
       if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
-        await suscripcion.update({
-          saldo_a_favor: parseFloat(suscripcion.saldo_a_favor) + excedente
-        }, { transaction: t });
+        // Aseguramos que la suma es numérica antes de actualizar.
+        const nuevoSaldo = calculateFloat(
+          toFloat(suscripcion.saldo_a_favor) + excedente
+        );
+        await suscripcion.update(
+          {
+            saldo_a_favor: nuevoSaldo, // Pasamos un número (float)
+          },
+          { transaction: t }
+        );
         excedente = 0;
-      }
+      } // 6. Prioridad 4: Si ya no hay meses por pagar y hay excedente, lo asignamos a la visualización.
 
-      // 6. Prioridad 4: Si ya no hay meses por pagar y hay excedente, lo asignamos a la visualización.
       if (suscripcion.meses_a_pagar <= 0 && excedente > 0) {
-        await lote.update({ excedente_visualizacion: parseFloat(excedente) }, { transaction: t });
+        await lote.update(
+          { excedente_visualizacion: calculateFloat(excedente) },
+          { transaction: t }
+        );
         excedente = 0;
-      }
-      
-      // 7. Actualiza el estado de la puja
-      await puja.update({ 
-        estado_puja: 'ganadora_pagada'
-      }, { transaction: t });
+      } // 7. Actualiza el estado de la puja
+      await puja.update(
+        {
+          estado_puja: "ganadora_pagada",
+        },
+        { transaction: t }
+      ); // Si la transacción fue creada internamente, se commite.
 
-      await t.commit();
+      if (shouldCommit) {
+        await t.commit();
+      }
+
       return { message: "Puja procesada y pagos actualizados exitosamente." };
     } catch (error) {
-      if (t) await t.rollback();
+      // Si la transacción fue creada internamente y falló, se hace rollback.
+      if (shouldCommit && t) {
+        await t.rollback();
+      }
       throw error;
     }
   },
