@@ -12,14 +12,6 @@ const resumenCuentaService = require("./resumen_cuenta.service");
 
 const suscripcionProyectoService = {
   /**
-   * NOTA IMPORTANTE: La lógica de confirmación de suscripción ha sido movida y centralizada
-   * en 'transaccionService.confirmarTransaccion' (usando manejarPagoSuscripcionInicial)
-   * para mantener la atomicidad de la transacción de pago.
-   *    * Por lo tanto, la función confirmarSuscripcion se elimina de este servicio para evitar
-   * lógica duplicada y errores transaccionales.
-   */
-
-  /**
    * FUNCIÓN INTERNA: Este es el método de bajo nivel para crear el registro de suscripción
    * en la base de datos. Se llama desde TransaccionService una vez que un pago
    * ha sido confirmado.
@@ -31,7 +23,18 @@ const suscripcionProyectoService = {
     });
     if (!proyecto) {
       throw new Error("Proyecto asociado no encontrado.");
+    }
+
+    // 🚀 VALIDACIÓN CLAVE: No crear suscripción si proyecto está Finalizado/Cancelado
+    if (
+      proyecto.estado_proyecto === "Finalizado" ||
+      proyecto.estado_proyecto === "Cancelado"
+    ) {
+      throw new Error(
+        `No se puede iniciar una suscripción, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`
+      );
     } // Inicializa los meses a pagar con el plazo total del proyecto
+    // ----------------------------------------------------------------------------------
 
     data.meses_a_pagar = proyecto.plazo_inversion;
     const nuevaSuscripcion = await SuscripcionProyecto.create(data, {
@@ -72,11 +75,9 @@ const suscripcionProyectoService = {
           );
         }
       }
-    }
-    // ⬅️ SOLUCIÓN: Devuelve un objeto con las dos propiedades
+    } // ⬅️ SOLUCIÓN: Devuelve un objeto con las dos propiedades
     return { nuevaSuscripcion, proyecto };
-  }, // Los demás métodos permanecen sin cambios.
-
+  },
   async findUsersByProjectId(projectId) {
     const suscripciones = await SuscripcionProyecto.findAll({
       where: {

@@ -1,58 +1,66 @@
-// services/pagoMercado.service.js
-const { MercadoPagoConfig, Preference, Payment } = require("mercadopago"); // <-- Paquete oficial en NPM
+const {
+  MercadoPagoConfig,
+  Preference,
+  Payment,
+  MerchantOrder,
+} = require("mercadopago");
+const { sequelize } = require("../config/database");
+const { Transaction } = require("sequelize");
 require("dotenv").config();
 
-// --- Configuración CRÍTICA: LECTURA DESDE VARIABLES DE ENTORNO ---
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
-// CRÍTICO: Asegurarse de que el HOST_URL no tenga espacios en blanco al final, como en el .env
 const HOST_URL = (process.env.HOST_URL || "http://localhost:3000").trim();
 const CURRENCY_ID = process.env.MP_CURRENCY_ID || "ARS";
 
-// Inicializa Mercado Pago
+// Mapeo de estados MP a estados internos
+const MP_STATUS_MAP = {
+  approved: "pagado", // ✅ CORRECCIÓN: Usamos 'pagado' para el estado final de la transacción
+  pending: "en_proceso",
+  in_process: "en_proceso",
+  rejected: "rechazado",
+  cancelled: "rechazado",
+  refunded: "devuelto",
+  charged_back: "devuelto",
+};
+
 let client = null;
 let preferenceService = null;
 let paymentServiceMp = null;
+let merchantOrderService = null;
 
 if (
   MP_ACCESS_TOKEN &&
   MP_ACCESS_TOKEN !== "[Pega_aqui_tu_TEST-Access_Token_de_MP]"
 ) {
   try {
-    // Inicialización del nuevo SDK
     client = new MercadoPagoConfig({
       accessToken: MP_ACCESS_TOKEN,
-      options: { timeout: 5000 }, // Tiempo de espera para peticiones
-    }); // Crear instancias de los servicios que usaremos
-
+      options: { timeout: 5000 },
+    });
     preferenceService = new Preference(client);
     paymentServiceMp = new Payment(client);
-    console.log("✅ Mercado Pago SDK configurado y cliente listo.");
+    merchantOrderService = new MerchantOrder(client);
+    console.log("✅ Mercado Pago SDK configurado.");
   } catch (error) {
-    console.error(
-      "❌ Error al inicializar el cliente de Mercado Pago:",
-      error.message
-    );
+    console.error("❌ Error al inicializar Mercado Pago:", error.message);
   }
 } else {
-  console.error(
-    "⚠️ ERROR CRÍTICO: MP_ACCESS_TOKEN no está configurado o es el placeholder. La pasarela de pago está inoperativa."
-  );
+  console.error("⚠️ MP_ACCESS_TOKEN no configurado.");
 }
 
 const paymentService = {
   /**
-   * @description Crea la sesión de pago (Preferencia de MP) y devuelve la URL de redirección.
+   * ✨ Crea la sesión de pago (Preferencia de MP)
    */
-  async createPaymentSession(inversion, transaccionId) {
+  async createPaymentSession(datos, transaccionId) {
     if (!preferenceService) {
-      // Permite que el controlador maneje este error
       throw new Error(
         "El servicio de Mercado Pago (Preference) no está inicializado."
       );
     }
 
-    const metodo = "mercadopago";
-    const { id_usuario, monto, id_proyecto } = inversion; // Alerta sobre la URL de webhook
+    const { titulo, monto, id_usuario } = datos;
+
     if (HOST_URL.includes("localhost") || HOST_URL.includes("3000")) {
       console.warn(
         "🚨 ALERTA: HOST_URL es local. Webhooks NO funcionarán sin Ngrok."
@@ -60,68 +68,88 @@ const paymentService = {
     }
 
     try {
+      const webhookUrl = `${HOST_URL}/api/payment/webhook/mercadopago`;
+
+      console.log("🔔 URL del Webhook configurada:", webhookUrl);
+
       const preferenceBody = {
         items: [
           {
-            title: `Inversion #${inversion.id} | Proyecto ID ${id_proyecto}`,
+            title: titulo,
             unit_price: parseFloat(monto),
             quantity: 1,
             currency_id: CURRENCY_ID,
           },
-        ], // external_reference es el ID de nuestra Transaccion local
+        ],
         external_reference: String(transaccionId),
         back_urls: {
-          // Usamos la Transacción ID para el reintento/consulta en el frontend
           success: `${HOST_URL}/pago/exito/${transaccionId}`,
           failure: `${HOST_URL}/pago/fallo/${transaccionId}`,
           pending: `${HOST_URL}/pago/pendiente/${transaccionId}`,
-        }, // URL de Notificación: Siempre debe ser el endpoint del Webhook
-        notification_url: `${HOST_URL}/api/payment/webhook/${metodo}`,
+        },
+        notification_url: webhookUrl,
         auto_return: "approved",
-        statement_descriptor: "PLATAFORMA_INV", // Idealmente, buscar más datos del usuario (email) para pasarlo al Payer
+        statement_descriptor: "PLATAFORMA_INV",
         payer: {
           id: String(id_usuario),
         },
-      }; // Uso del nuevo método en la instancia de Preference
+      };
 
       const response = await preferenceService.create({ body: preferenceBody });
+      console.log("✅ Preferencia creada:", response.id);
+      console.log("🔗 URL de redirección:", response.init_point);
+
       return {
-        preferenceId: response.id, // CRÍTICO: Usar el init_point para producción. // La URL de prueba (sandbox) debe ser gestionada por el entorno de desarrollo.
+        preferenceId: response.id,
         redirectUrl: response.init_point,
       };
     } catch (error) {
-      console.error(
-        "Error en Mercado Pago al crear preferencia:",
-        error.message
-      );
-      throw new Error(
-        `Fallo al crear la preferencia de pago en MP: ${error.message}`
-      );
+      console.error("❌ Error al crear preferencia en MP:", error.message);
+      throw new Error(`Fallo al crear preferencia de pago: ${error.message}`);
     }
-  }
-  /**
-   * @description Verifica la notificación del webhook y fetcha los detalles del pago de MP.
-   */,
+  },
 
+  /**
+   * Verifica y obtiene los detalles del pago desde Mercado Pago
+   */
   async verifyAndFetchPayment(req, metodo) {
     if (metodo !== "mercadopago" || !paymentServiceMp) return null;
 
-    const { topic, id } = req.query;
+    const topicType =
+      req.query.topic || req.query.type || req.body?.type || req.body?.topic;
 
-    if (topic !== "payment" || !id) {
+    let paymentId =
+      req.query.id ||
+      req.query["data.id"] ||
+      req.body?.data?.id ||
+      req.body?.resource;
+
+    if (typeof paymentId === "string" && paymentId.startsWith("http")) {
+      paymentId = paymentId.split("/").pop();
+    }
+
+    console.log(
+      `📥 Webhook recibido - Topic: ${topicType} | Payment ID: ${paymentId}`
+    );
+
+    if (topicType !== "payment" || !paymentId) {
+      console.log(`⏭️ Webhook ignorado: topic=${topicType}, id=${paymentId}`);
       return null;
-    } // ⚠️ Nota: En producción, también se debe validar la firma (signature) del header // del webhook para seguridad extrema, pero para el flujo básico, // fetchear el pago por ID es la validación principal.
+    }
+
     try {
-      // Consulta el pago por ID (ID del recurso, no el ID de la Transacción local)
-      const paymentData = await paymentServiceMp.get({ id: id });
+      const paymentData = await paymentServiceMp.get({ id: paymentId });
 
       const transaccionId = paymentData.external_reference;
       if (!transaccionId) {
-        console.error(
-          "Webhook MP: external_reference (ID de Transaccion) faltante."
-        );
+        console.error("❌ Webhook MP: external_reference faltante.");
         return null;
-      } // Ajuste de la estructura de retorno para que sea más fácil de usar en el controlador
+      }
+
+      console.log(
+        `✅ Pago obtenido: ${paymentId} | Estado: ${paymentData.status} | Transacción: ${transaccionId}`
+      );
+
       return {
         transaccionId: parseInt(transaccionId),
         status: paymentData.status,
@@ -134,8 +162,204 @@ const paymentService = {
         rawDetails: paymentData,
       };
     } catch (error) {
+      console.error(`❌ Error al fetchear pago ${paymentId}:`, error.message);
+      return null;
+    }
+  },
+
+  /**
+   * 🌟 NUEVA FUNCIÓN: Procesa Merchant Orders para capturar pagos fallidos/finales
+   */
+  async procesarPagosDeMerchantOrder(merchantOrderId) {
+    if (!merchantOrderService) {
+      throw new Error("El servicio de MerchantOrder no está inicializado.");
+    }
+
+    const t = await sequelize.transaction({
+      isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+    });
+
+    try {
+      const transaccionService = require("../services/transaccion.service");
+
+      // 💡 CORRECCIÓN CRÍTICA: Asegurar que el ID sea un STRING para evitar el error 'Invalid Id'
+      const merchantOrderData = await merchantOrderService.get({
+        id: String(merchantOrderId),
+      });
+
+      console.log(
+        `🔍 MO ${merchantOrderId} - Referencia Externa: ${merchantOrderData.external_reference}`
+      );
+
+      // Usamos external_reference de la MO para encontrar la transacción principal
+      const transaccionId = parseInt(merchantOrderData.external_reference);
+
+      if (!transaccionId) {
+        throw new Error(
+          "Merchant Order sin referencia de Transacción externa."
+        );
+      }
+
+      // 6. Iterar sobre todos los pagos asociados a la orden
+      for (const mpPayment of merchantOrderData.payments) {
+        const internalStatus = MP_STATUS_MAP[mpPayment.status];
+
+        console.log(
+          `- Pago asociado ${mpPayment.id} con estado MP: ${mpPayment.status}`
+        );
+
+        // Solo procesamos estados terminales (pagado o rechazado/devuelto)
+        if (
+          internalStatus === "pagado" ||
+          internalStatus === "rechazado" ||
+          internalStatus === "devuelto"
+        ) {
+          const Transaccion = require("../models/transaccion");
+          const PagoMercado = require("../models/pagoMercado");
+
+          let transaccion = await Transaccion.findByPk(transaccionId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+
+          // Comprobación de idempotencia:
+          if (
+            !transaccion ||
+            transaccion.estado_transaccion === "pagado" ||
+            transaccion.estado_transaccion === "fallido"
+          ) {
+            console.log(
+              `Pago ${mpPayment.id} ya procesado o transacción no válida. Saltando.`
+            );
+            continue;
+          }
+
+          let pagoMercado = await PagoMercado.findOne({
+            where: { id_transaccion_pasarela: mpPayment.id },
+            transaction: t,
+          });
+
+          // Lógica para registrar/actualizar PagoMercado
+          if (!pagoMercado) {
+            console.warn(
+              `Registro PagoMercado para ${mpPayment.id} no encontrado. Creando.`
+            );
+            pagoMercado = await PagoMercado.create(
+              {
+                id_transaccion: transaccionId,
+                id_transaccion_pasarela: mpPayment.id,
+                monto_pagado: mpPayment.transaction_amount,
+                metodo_pasarela: "mercadopago",
+                estado: internalStatus,
+                tipo_medio_pago: mpPayment.payment_type_id,
+                fecha_aprobacion: mpPayment.date_approved,
+                detalles_raw: mpPayment,
+              },
+              { transaction: t }
+            );
+
+            if (!transaccion.id_pago_pasarela) {
+              await transaccion.update(
+                { id_pago_pasarela: pagoMercado.id },
+                { transaction: t }
+              );
+            }
+          } else {
+            await pagoMercado.update(
+              { estado: internalStatus },
+              { transaction: t }
+            );
+          }
+
+          // Lógica de negocio
+          if (internalStatus === "pagado") {
+            await transaccionService.confirmarTransaccion(transaccionId, {
+              transaction: t,
+            });
+            console.log(
+              `✅ Transacción ${transaccionId} CONFIRMADA (desde MO).`
+            );
+          } else if (internalStatus === "rechazado") {
+            // Usar la función correcta (fallarTransaccion)
+            await transaccionService.fallarTransaccion(transaccionId, {
+              transaction: t,
+            });
+            console.log(
+              `❌ Transacción ${transaccionId} MARCADA COMO FALLIDA (desde MO).`
+            );
+          } else if (internalStatus === "devuelto") {
+            // Usar la función correcta (revertirTransaccion)
+            await transaccionService.revertirTransaccion(transaccionId, {
+              transaction: t,
+            });
+            console.log(
+              `↩️ Transacción ${transaccionId} MARCADA COMO DEVUELTA/REEMBOLSADA (desde MO).`
+            );
+          }
+        }
+      }
+
+      await t.commit();
+    } catch (error) {
+      await t.rollback();
       console.error(
-        `Error al fetchear el pago ${id} de Mercado Pago (Error de API):`,
+        `❌ Error CRÍTICO al procesar Merchant Order ${merchantOrderId}:`,
+        error.message
+      );
+      throw error;
+    }
+  },
+
+  /**
+   * Refresca el estado de un pago desde Mercado Pago
+   */
+  async refreshPaymentStatus(transaccionId, mpTransactionId) {
+    if (!paymentServiceMp) return null;
+
+    try {
+      const paymentData = await paymentServiceMp.get({ id: mpTransactionId });
+
+      const Transaccion = require("../models/transaccion");
+      const PagoMercado = require("../models/pagoMercado");
+
+      const transaccion = await Transaccion.findByPk(transaccionId);
+      let pagoMercado = await PagoMercado.findOne({
+        where: { id_transaccion: transaccionId },
+      });
+
+      const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
+
+      // Actualizar PagoMercado
+      const pagoData = {
+        estado: internalStatus,
+        tipo_medio_pago: paymentData.payment_type_id,
+        fecha_aprobacion: paymentData.date_approved,
+        detalles_raw: paymentData,
+      };
+
+      if (pagoMercado) {
+        await pagoMercado.update(pagoData);
+      }
+
+      // Actualizar Transaccion si el estado final es alcanzado
+      if (
+        internalStatus === "pagado" &&
+        transaccion.estado_transaccion !== "pagado"
+      ) {
+        // Notar que la función confirmarTransaccion aquí no lleva transacción porque la consulta es externa.
+        await require("../services/transaccion.service").confirmarTransaccion(
+          transaccionId
+        );
+        await transaccion.reload();
+      }
+
+      return {
+        transaccion,
+        pagoMercado: pagoMercado ? await pagoMercado.reload() : null,
+      };
+    } catch (error) {
+      console.error(
+        `❌ Error al refrescar estado de pago ${mpTransactionId}:`,
         error.message
       );
       return null;

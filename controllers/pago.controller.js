@@ -1,12 +1,9 @@
 const pagoService = require("../services/pago.service");
+const transaccionService = require("../services/transaccion.service");
 
 const pagoController = {
-  /**
-   * Crea un nuevo registro de pago inicial.
-   */
   async create(req, res) {
     try {
-      // Lógica de creación de pago inicial...
       const nuevoPago = await pagoService.create(req.body);
       res.status(201).json(nuevoPago);
     } catch (error) {
@@ -14,12 +11,9 @@ const pagoController = {
     }
   },
 
-  /**
-   * Obtiene los pagos del usuario autenticado de forma segura.
-   */
   async findMyPayments(req, res) {
     try {
-      const userId = req.user.id; 
+      const userId = req.user.id;
       const pagos = await pagoService.findByUserId(userId);
       res.status(200).json(pagos);
     } catch (error) {
@@ -28,46 +22,49 @@ const pagoController = {
   },
 
   /**
-   * **NUEVA FUNCIÓN**
-   * @route POST /pagar-mes/:id
-   * Procesa la solicitud de pago para un pago pendiente o vencido.
-   * Crea la Transacción y la confirma.
+   * FUNCIÓN CLAVE: Llama a la validación y le indica al cliente el siguiente paso (checkout genérico).
+   * Su nombre es 'requestCheckout' para evitar el TypeError anterior.
    */
-  async processPayment(req, res) {
+  async requestCheckout(req, res) {
     try {
-      const pagoId = req.params.id; // ID del pago a procesar
-      const userId = req.user.id;   // ID del usuario autenticado
-      
-      // La capa de servicio se encarga de todo el flujo de validación y confirmación.
-      const resultado = await pagoService.processPaymentCreation(pagoId, userId);
-      
-      res.status(200).json({
-        message: `Pago ID ${pagoId} procesado y confirmado exitosamente.`,
-        transaccion_confirmada: resultado.transaccion,
-        pago_actualizado: resultado.pago,
-      });
+      const pagoId = req.params.id;
+      const userId = req.user.id; // 1. VALIDAR EL PAGO: Se asegura de que el pago exista, pertenezca al usuario y esté pendiente.
+      const pagoValidado = await pagoService.getValidPaymentDetails(
+        pagoId,
+        userId
+      ); // 2. GENERAR LA TRANSACCIÓN Y EL CHECKOUT: Llama al servicio genérico //    para crear una Transacción temporal y obtener la URL de la pasarela.
 
+      const { transaccion, redirectUrl } =
+        await transaccionService.iniciarTransaccionYCheckout(
+          "pago", // El modelo que se está pagando (en este caso, un Pago de mensualidad)
+          pagoValidado.id, // El ID del registro de Pago Mensual
+          userId // El ID del usuario
+        ); // 3. DEVOLVER DIRECTAMENTE LA URL DE REDIRECCIÓN
+
+      res.status(200).json({
+        message: `Transacción #${transaccion.id} creada. Redireccionando a la pasarela de pago.`,
+        transaccionId: transaccion.id,
+        pagoId: pagoValidado.id,
+        monto: parseFloat(pagoValidado.monto),
+        redirectUrl: redirectUrl, // <-- ¡URL lista para usar!
+      });
     } catch (error) {
       const message = error.message;
 
-      // Manejo de errores específicos (ya pagado, acceso denegado, etc.)
-      if (message.includes("Acceso denegado") || message.includes("no encontrado")) {
-           return res.status(403).json({ error: message }); 
+      if (
+        message.includes("Acceso denegado") ||
+        message.includes("no encontrado")
+      ) {
+        return res.status(403).json({ error: message });
       }
       if (message.includes("ya se encuentra en estado")) {
-           return res.status(409).json({ error: message }); 
+        return res.status(409).json({ error: message });
       }
 
-      // 400 Bad Request para errores de lógica de negocio o validación
       res.status(400).json({ error: message });
     }
   },
-
-  // =================================================================
-  // FUNCIONES DE ADMINISTRADOR (Mantenidas por consistencia)
-  // =================================================================
-
-  async findAll(req, res) { 
+  async findAll(req, res) {
     try {
       const pagos = await pagoService.findAll();
       res.status(200).json(pagos);
@@ -75,8 +72,7 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
-  
-  async findById(req, res) { 
+  async findById(req, res) {
     try {
       const pago = await pagoService.findById(req.params.id);
       if (!pago) {
@@ -116,10 +112,13 @@ const pagoController = {
     try {
       const { id_suscripcion } = req.body;
       if (!id_suscripcion) {
-        return res.status(400).json({ message: "El id_suscripcion es requerido." });
+        return res
+          .status(400)
+          .json({ message: "El id_suscripcion es requerido." });
       }
-      const nuevoPago = await pagoService.generarPagoMensualConDescuento(id_suscripcion);
-      
+      const nuevoPago = await pagoService.generarPagoMensualConDescuento(
+        id_suscripcion
+      );
       if (nuevoPago.message) {
         return res.status(200).json(nuevoPago);
       }
@@ -129,7 +128,7 @@ const pagoController = {
         pago: nuevoPago,
       });
     } catch (error) {
-      next(error); 
+      next(error);
     }
   },
 };

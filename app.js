@@ -4,9 +4,11 @@ const PORT = 3000;
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+// Importa el controlador de pagos directamente para la ruta del webhook
+const paymentController = require("./controllers/pagoMercado.controller"); // Asegúrate de que la ruta sea correcta
 
 // Carga las variables de entorno
-require('dotenv').config(); 
+require("dotenv").config();
 
 // ===============================================
 // 1. VERIFICACIÓN DE VARIABLES DE ENTORNO CRÍTICAS
@@ -15,17 +17,30 @@ const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const HOST_URL = process.env.HOST_URL;
 
 if (!MP_ACCESS_TOKEN || !HOST_URL) {
-    console.error("=========================================================================");
-    console.error("  ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas.");
-    console.error("  El servicio de pagos NO funcionará.");
-    console.error("=========================================================================");
-    // No salimos del proceso aquí, solo mostramos el error, 
-    // pero si lo estás usando en producción, ¡deberías salir!
+  console.error(
+    "========================================================================="
+  );
+  console.error(
+    " 	 ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+  );
+  console.error(" 	 El servicio de pagos NO funcionará.");
+  console.error(
+    "========================================================================="
+  );
 }
 
-
-// Middleware para parsear el cuerpo de las peticiones JSON
-app.use(express.json());
+// 🚨 CAMBIO CRÍTICO: Definición del middleware de JSON.
+// Usamos el `verify` para capturar el cuerpo crudo (rawBody) antes de que se convierta a JSON.
+// Esto es esencial si Mercado Pago usa el cuerpo CRUDO para generar la firma.
+function captureRawBody(req, res, buf, encoding) {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || "utf8");
+  }
+}
+// Middleware para parsear el cuerpo de las peticiones JSON y capturar el raw body
+app.use(express.json({ verify: captureRawBody }));
+// Middleware para parsear bodies de formularios URL-encoded (también necesario)
+app.use(express.urlencoded({ extended: true, verify: captureRawBody }));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -33,13 +48,12 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Importa la conexión a la base de datos
 const { sequelize } = require("./config/database");
 
-// Crea el directorio de uploads si no existe
+// ... (Resto de la configuración de multer y directorios, sin cambios)
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// Configura multer para guardar archivos en el directorio 'uploads'
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "uploads/");
@@ -63,14 +77,14 @@ const Mensaje = require("./models/mensaje");
 const CuotaMensual = require("./models/CuotaMensual");
 const ResumenCuenta = require("./models/resumen_cuenta");
 const PagoMercado = require("./models/pagoMercado");
-const Contrato =require("./models/contrato");
+const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
 
-// Ejecuta la función para definir todas las relaciones entre los modelos
-configureAssociations();
+// ❌ ELIMINADA: La llamada a configureAssociations() se mueve para después de la creación de las tablas.
+// configureAssociations();
 
 // Importa los archivos de rutas para cada modelo
 const usuarioRoutes = require("./routes/usuario.routes");
@@ -87,7 +101,8 @@ const authRoutes = require("./routes/auth.routes");
 const mensajeRoutes = require("./routes/mensaje.routes");
 const cuotaMensualRoutes = require("./routes/cuota_mensual.routes");
 const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
-const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
+const pagoMercadoRoutes = require("./routes/pagoMercado.routes"); // Contiene las rutas que usan el controller
+const redireccionRoutes = require("./routes/redireccion.routes");
 
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 
@@ -97,6 +112,13 @@ const overduePaymentManager = require("./tasks/OverduePaymentManager");
 const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
 
 // Usar el router para las rutas de la API, separando la lógica
+app.post("/api/payment/webhook/:metodo", paymentController.handleWebhook);
+
+console.log(
+  "✅ Ruta de webhook configurada: POST /api/payment/webhook/:metodo"
+);
+
+// 2. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
@@ -111,12 +133,20 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
-app.use("/api/payment", pagoMercadoRoutes); // USO DE LA NUEVA RUTA DE PAGOS DE PASARELA
 
-// Función asincrónica para sincronizar la base de datos
+// 3. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
+app.use("/api/payment", pagoMercadoRoutes);
+
+// 4. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
+app.use(redireccionRoutes);
+
 async function synchronizeDatabase() {
   try {
-    // Sincronizar todas las tablas. (El orden es importante por las claves foráneas)
+    // ==========================================================
+    // FASE 1: Creación inicial de las tablas (solo columnas)
+    // El orden no es estrictamente crítico aquí porque eliminamos
+    // todas las referencias directas en los modelos.
+    // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
@@ -124,23 +154,42 @@ async function synchronizeDatabase() {
     await CuotaMensual.sync({ alter: true });
     await ResumenCuenta.sync({ alter: true });
     await Mensaje.sync({ alter: true });
-    await Puja.sync({ alter: true }); 
-    await Inversion.sync({ alter: true }); 
+    await Puja.sync({ alter: true });
+    await Inversion.sync({ alter: true });
+    await Pago.sync({ alter: true });
+    await PagoMercado.sync({ alter: true }); // Esta tabla se crea sin la restricción FK
+    await Transaccion.sync({ alter: true }); // Esta tabla se crea
+    await Imagen.sync({ alter: true });
+    await Contrato.sync({ alter: true });
 
-    // Tablas dependientes del flujo de pago/inversión
-    if (typeof PagoMercado !== "undefined") {
-      await PagoMercado.sync({ alter: true });
-    }
+    // ==========================================================
+    // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ, después de que
+    // todas las tablas existen en la base de datos.
+    // ==========================================================
+    configureAssociations();
 
-    await Pago.sync({ alter: true }); 
-    await Transaccion.sync({ alter: true }); 
-
-    // Otras tablas dependientes
+    // ==========================================================
+    // FASE 2: Sincronización para añadir las Claves Foráneas (FKs)
+    // Sequelize ahora usará { alter: true } para añadir las restricciones
+    // de clave foránea definidas por configureAssociations().
+    // ==========================================================
+    await Usuario.sync({ alter: true });
+    await Proyecto.sync({ alter: true });
+    await Lote.sync({ alter: true });
+    await SuscripcionProyecto.sync({ alter: true });
+    await CuotaMensual.sync({ alter: true });
+    await ResumenCuenta.sync({ alter: true });
+    await Mensaje.sync({ alter: true });
+    await Puja.sync({ alter: true });
+    await Inversion.sync({ alter: true });
+    await Pago.sync({ alter: true });
+    await PagoMercado.sync({ alter: true });
+    await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
-    
+
     // Iniciar las tareas programadas y el servidor solo después de la sincronización
     paymentReminderScheduler.scheduleJobs();
     monthlyPaymentGenerationTask.start();

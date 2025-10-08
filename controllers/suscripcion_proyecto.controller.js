@@ -17,15 +17,13 @@ const suscripcionProyectoController = {
     const t = await sequelize.transaction();
     try {
       const { id_proyecto } = req.body;
-      const id_usuario = req.user && req.user.id; // 🚨 AGREGADO: Validación para asegurar que el usuario está autenticado
+      const id_usuario = req.user && req.user.id; // 🚨 AGREGADO: Validación para asegurar que el usuario está autenticado // ... (Validaciones de id_usuario, id_proyecto y proyecto, se mantienen iguales)
 
       if (!id_usuario) {
         await t.rollback();
-        return res
-          .status(401)
-          .json({
-            error: "Usuario no autenticado. Inicia sesión para continuar.",
-          });
+        return res.status(401).json({
+          error: "Usuario no autenticado. Inicia sesión para continuar.",
+        });
       }
 
       if (!id_proyecto) {
@@ -50,53 +48,62 @@ const suscripcionProyectoController = {
         });
       }
 
-      const monto = parseFloat(proyecto.monto_inversion); // 1. Crear un registro de Pago con estado 'pendiente' // ✅ CORRECCIÓN CLAVE: Almacenar id_usuario e id_proyecto directamente en Pago
+      const monto = parseFloat(proyecto.monto_inversion); // 1. Crear un registro de Pago con estado 'pendiente'
 
       const pagoPendiente = await PagoService.create(
         {
           id_suscripcion: null,
-          id_usuario: id_usuario, // 👈 AGREGADO
-          id_proyecto: id_proyecto, // 👈 AGREGADO
-          monto: monto, // Nota: La fecha de vencimiento es incorrecta aquí, pero se corregirá en el service
-          fecha_vencimiento: new Date(),
+          id_usuario: id_usuario,
+          id_proyecto: id_proyecto,
+          monto: monto,
+          fecha_vencimiento: new Date(), // Se puede mejorar esta fecha
           estado_pago: "pendiente",
           mes: 1,
         },
         { transaction: t }
       ); // 2. Crear un registro de Transacción con estado 'pendiente'
 
-      const transaccionPendiente = await TransaccionService.create(
+      let transaccionPendiente = await TransaccionService.create(
         {
           tipo_transaccion: "pago_suscripcion_inicial",
           monto: monto,
           id_usuario,
           id_proyecto,
-          id_pago: pagoPendiente.id,
+          id_pago_mensual: pagoPendiente.id,
           estado_transaccion: "pendiente",
         },
         { transaction: t }
       );
 
-      await t.commit();
+      // 🎯 CAMBIO CLAVE: Llamar al servicio que genera la preferencia de pago
+      const { redirectUrl } =
+        await TransaccionService.generarCheckoutParaTransaccionExistente(
+          transaccionPendiente,
+          "mercadopago", // O el método de pago que uses
+          { transaction: t }
+        );
 
-      res.status(202).json({
-        message:
-          "Proceso de pago iniciado. Transacción y pago creados en estado pendiente.",
+      await t.commit(); // Éxito: Todo creado y el checkout generado // 3. Devolver la URL de redirección
+
+      res.status(200).json({
+        // Cambiamos el estado de 202 a 200 ya que tenemos la respuesta final
+        message: "Transacción creada. Redireccionando a la pasarela de pago.",
         transaccionId: transaccionPendiente.id,
         pagoId: pagoPendiente.id,
+        redirectUrl: redirectUrl, // ⬅️ ¡Esto es lo que necesitabas!
       });
     } catch (error) {
       await t.rollback();
+      console.error("Error al iniciar suscripción/pago:", error.message);
       res.status(500).json({ error: error.message });
     }
-  }
+  },
+
   /**
    * Endpoint del webhook para confirmar un pago procesado por la pasarela de pago.
    * @param {Object} req - Objeto de la solicitud HTTP.
    * @param {Object} res - Objeto de la respuesta HTTP.
-   */,
-
-  async confirmarSuscripcion(req, res) {
+   */ async confirmarSuscripcion(req, res) {
     try {
       const { transaccionId } = req.body;
 

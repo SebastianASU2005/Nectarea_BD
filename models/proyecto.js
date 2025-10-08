@@ -23,7 +23,7 @@ const Proyecto = sequelize.define(
       type: DataTypes.STRING(100),
     },
     monto_inversion: {
-      type: DataTypes.DECIMAL(15, 2),
+      type: DataTypes.DECIMAL(18, 2),
     },
     // NUEVO CAMPO: Tipo de moneda para el monto_inversion
     moneda: {

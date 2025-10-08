@@ -11,5 +11,6 @@ router.post('/login', authController.login);
 // Nueva ruta para confirmar el correo electrónico
 // La URL contiene un parámetro dinámico (:token)
 router.get('/confirmar_email/:token', authController.confirmarEmail);
+router.post('/reenviar_confirmacion', authController.resendConfirmation)
 
 module.exports = router;

@@ -1,7 +1,8 @@
-const express = require('express');
-const paymentController = require('../controllers/pagoMercado.controller');
-// ⚠️ CORRECCIÓN DE IMPORTACIÓN: Importamos el objeto completo 'authMiddleware'
-const authMiddleware = require('../middleware/auth.middleware'); 
+// Archivo: routes/pagoMercado.routes.js (o payment.routes.js)
+
+const express = require("express");
+const paymentController = require("../controllers/pagoMercado.controller");
+const authMiddleware = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
@@ -10,31 +11,51 @@ const router = express.Router();
 // ===============================================
 
 /**
+ * @route POST /api/payment/checkout/:modelo/:modeloId
+ * @description NUEVA RUTA: Inicia el proceso de pago para un registro pendiente (Inversion, Puja, etc.)
+ * @param {string} modelo - 'inversion', 'puja', 'pago'
+ * @param {number} modeloId - ID del registro pendiente
+ */
+router.post(
+  "/checkout/:modelo/:modeloId",
+  authMiddleware.authenticate,
+  paymentController.iniciarPagoPorModelo
+);
+
+/**
+ * @route POST /api/payment/checkout/generico
+ * @description Mantiene compatibilidad o flujo legacy que crea Transaccion + Checkout a la vez.
+ */
+router.post(
+  "/checkout/generico",
+  authMiddleware.authenticate,
+  paymentController.createCheckoutGenerico
+);
+
+/**
  * @route POST /api/payment/checkout
- * @description Inicia el proceso de pago para una inversión específica.
- * Requiere: { id_inversion: 123, metodo: 'mercadopago' }
+ * @description Mantiene compatibilidad con el flujo antiguo de Inversión.
  */
-// ⚠️ CORRECCIÓN CRÍTICA: Usamos authMiddleware.authenticate (que es el nombre correcto en el middleware)
-router.post('/checkout', authMiddleware.authenticate, paymentController.createCheckout);
+router.post(
+  "/checkout",
+  authMiddleware.authenticate,
+  paymentController.createCheckout
+);
 
 /**
- * @route GET /api/payment/status/:id_inversion
- * @description Consulta el estado del pago de una inversión.
+ * @route GET /api/payment/status/:id_transaccion
+ * @description Consulta el estado de pago de una transacción
  */
-router.get('/status/:id_inversion', authMiddleware.authenticate, paymentController.getPaymentStatus);
-
+router.get(
+  "/status/:id_transaccion",
+  authMiddleware.authenticate,
+  paymentController.getPaymentStatus
+);
 
 // ===============================================
-// RUTA PÚBLICA (Webhook)
+// ❌ ELIMINAR ESTA RUTA DE AQUÍ: SE DEFINE EN SERVER.JS
 // ===============================================
 
-/**
- * @route POST /api/payment/webhook/:metodo 
- * @description Endpoint de notificación llamado por la pasarela de pago (Mercado Pago).
- * * NOTA: Esta ruta DEBE ser pública (sin checkAuth) ya que es llamada
- * por el servidor de Mercado Pago.
- */
-router.post('/webhook/:metodo', paymentController.handleWebhook); 
-
+// router.post("/webhook/:metodo", paymentController.handleWebhook); 
 
 module.exports = router;

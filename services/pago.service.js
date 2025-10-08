@@ -5,11 +5,7 @@ const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
 const emailService = require("./email.service");
 const mensajeService = require("./mensaje.service");
-const SuscripcionProyectoService = require("./suscripcion_proyecto.service");
-const resumenCuentaService = require("./resumen_cuenta.service");
 const { sequelize } = require("../config/database");
-
-// NOTA: La importación de transaccionService se hace localmente.
 
 const pagoService = {
   async create(data, options = {}) {
@@ -25,55 +21,55 @@ const pagoService = {
   },
 
   async findByUserId(id_usuario) {
+    // 🛑 AJUSTE: Filtramos por la relación de Suscripción
     return Pago.findAll({
       include: [
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
           where: {
-            id_usuario: id_usuario,
+            id_usuario: id_usuario, // Filtramos en la tabla intermedia
           },
-          attributes: [],
-          required: false,
+          required: true, // Solo Pagos que tengan una suscripción de este usuario
         },
       ],
-      where: {
-        [Op.or]: [
-          {
-            "$suscripcion.id_usuario$": id_usuario,
-          },
-          {
-            id_usuario: id_usuario,
-            id_suscripcion: null,
-          },
-        ],
-      },
     });
-  },
+  }
   /**
-   * Procesa la solicitud de pago de un Pago pendiente o vencido.
-   * Crea el registro de Transacción en estado 'pendiente' y devuelve su ID.
-   * La CONFIRMACIÓN debe realizarse por separado a través de transaccionService.confirmarTransaccion.
+   * ✨ FUNCIÓN CLAVE: Valida el Pago y su propiedad a través de la Suscripción.
+   * Devuelve el objeto Pago CON la suscripción incluida.
    *
    * @param {string} pagoId - El ID del pago a procesar.
    * @param {string} userId - El ID del usuario autenticado.
-   * @returns {Promise<object>} Objeto con un mensaje y la Transaccion creada (pendiente).
-   */
-  async processPaymentCreation(pagoId, userId) {
-    // Importación local para romper la dependencia circular.
-    const transaccionService = require("./transaccion.service");
+   * @returns {Promise<Pago>} El objeto Pago validado (incluyendo 'suscripcion').
+   */,
 
+  async getValidPaymentDetails(pagoId, userId) {
     let pago = null;
 
     try {
-      // 1. Buscar y Validar el Pago
-      pago = await Pago.findByPk(pagoId);
+      // 1. Buscar el Pago E INCLUIR la Suscripción para validación
+      pago = await Pago.findByPk(pagoId, {
+        include: [
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+            attributes: ["id_usuario", "id_proyecto"], // Traemos el ID de usuario y proyecto de la suscripción
+            required: true,
+          },
+        ],
+      });
 
-      if (!pago) {
-        throw new Error(`Pago ID ${pagoId} no encontrado.`);
+      if (!pago || !pago.suscripcion) {
+        throw new Error(
+          `Pago ID ${pagoId} no encontrado o sin suscripción asociada.`
+        );
       }
 
-      if (pago.id_usuario !== userId) {
+      // Si la tabla Pagos ya tiene id_usuario, usamos eso. Si es null, usamos la Suscripción.
+      const propietarioId = pago.id_usuario || pago.suscripcion.id_usuario; // 🛑 AJUSTE: Validamos la propiedad a través de la Suscripción o el campo directo
+
+      if (propietarioId !== userId) {
         throw new Error(
           "Acceso denegado. No eres el propietario de este pago."
         );
@@ -97,29 +93,9 @@ const pagoService = {
         );
       }
 
-      // 2. Crear datos de la Transacción
-      const transaccionData = {
-        id_usuario: userId,
-        monto: pago.monto,
-        // CLAVE: El tipo de transacción es 'mensual'
-        tipo_transaccion: "mensual",
-        id_pago: pagoId,
-        // CLAVE: El estado inicial es 'pendiente'
-        estado_transaccion: "pendiente",
-      };
-
-      // 3. Crear el registro de Transacción (sin transacción de Sequelize en este nivel)
-      const nuevaTransaccion = await transaccionService.create(transaccionData);
-
-      // 4. DEVOLVER: No se llama a confirmarTransaccion.
-      // La transacción queda pendiente, lista para ser confirmada por el webhook o la ruta /confirmar.
-      return {
-        message: "Transacción de pago creada y pendiente de confirmación.",
-        transaccion: nuevaTransaccion,
-      };
+      return pago; // Devuelve el objeto Pago validado con la suscripción anidada
     } catch (error) {
-      // Solo propagamos el error de validación/creación
-      throw new Error(`Error en el proceso de pago: ${error.message}`);
+      throw new Error(`Error en la validación del pago: ${error.message}`);
     }
   },
 
@@ -130,11 +106,11 @@ const pagoService = {
         transaction: t,
         include: [
           {
-            model: Proyecto, // CORRECCIÓN CLAVE: Usamos el alias correcto definido en configureAssociations.
+            model: Proyecto,
             as: "proyectoAsociado",
           },
         ],
-      }); // CAMBIO NECESARIO: Ya que el alias fue corregido arriba, accedemos al proyecto usando el alias corregido.
+      });
 
       if (!suscripcion || !suscripcion.proyectoAsociado) {
         if (!options.transaction) await t.rollback();
@@ -155,7 +131,7 @@ const pagoService = {
         order: [["mes", "DESC"]],
         transaction: t,
       });
-      const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1; // CAMBIO NECESARIO: Accedemos al proyecto usando el alias corregido.
+      const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
 
       const cuotaMensual = parseFloat(
         suscripcion.proyectoAsociado.monto_inversion
@@ -181,20 +157,15 @@ const pagoService = {
       }
 
       const now = new Date();
-      // >>> MODIFICACIÓN PARA CUMPLIR CON LA REGLA: Vencimiento siempre el día 10 del mes actual.
       const fechaVencimiento = new Date(
         now.getFullYear(),
-        now.getMonth(), // Mes actual (sin +1)
+        now.getMonth(),
         10 // Día 10
       );
-      // Aseguramos que la hora sea 00:00:00 para evitar problemas de zona horaria o comparación.
-      fechaVencimiento.setHours(0, 0, 0, 0);
-      // <<< FIN DE MODIFICACIÓN
-
+      fechaVencimiento.setHours(0, 0, 0, 0); // 🛑 CORRECCIÓN: AGREGAR id_usuario y id_proyecto desde la suscripción.
       const nuevoPago = await Pago.create(
         {
           id_suscripcion: suscripcion.id,
-          // 🚨 FIX CLAVE: Asegurar que el ID de usuario y proyecto se incluyan en el pago.
           id_usuario: suscripcion.id_usuario,
           id_proyecto: suscripcion.id_proyecto,
           monto: montoAPagar.toFixed(2),
@@ -218,9 +189,50 @@ const pagoService = {
       if (t && !options.transaction) await t.rollback();
       throw error;
     }
+  }
+  /**
+   * 🚨 NUEVA FUNCIÓN: Marca el pago como cancelado si es del MES 1;
+   * de lo contrario, solo lo mantiene en 'pendiente'/'vencido'.
+   * Se llama si la Transacción de pago asociada falla.
+   */,
+  async handlePaymentFailure(pagoId, t) {
+    try {
+      const pago = await Pago.findByPk(pagoId, { transaction: t });
+
+      if (!pago) {
+        throw new Error("Pago no encontrado para manejar la falla.");
+      }
+
+      if (pago.mes === 1 && pago.estado_pago === "pendiente") {
+        // 1. Si es el mes 1 y está pendiente, lo cancelamos.
+        // 🛑 Importante: El estado de la Suscripción debe ser manejado en otro lugar
+        // para evitar que se cobre el siguiente mes si esta falla.
+        await pago.update(
+          {
+            estado_pago: "cancelado",
+            fecha_pago: null,
+          },
+          {
+            transaction: t,
+          }
+        );
+        console.log(
+          `Pago ID ${pagoId} (Mes 1) cancelado debido a la falla de la transacción.`
+        );
+        return pago;
+      } // 2. Si es Mes > 1 o si el pago ya estaba cubierto por puja, no cambiamos el estado (permanece pendiente/vencido).
+
+      console.log(
+        `Pago ID ${pagoId} (Mes ${pago.mes}) mantiene su estado pendiente/vencido tras la falla de la transacción.`
+      );
+      return pago;
+    } catch (error) {
+      throw error;
+    }
   },
 
   async markAsPaid(pagoId, t) {
+    // ... (Lógica de confirmación)
     try {
       const pago = await Pago.findByPk(pagoId, {
         transaction: t,
@@ -239,8 +251,6 @@ const pagoService = {
               },
             ],
           },
-          { model: Usuario, as: "usuarioDirecto" },
-          { model: Proyecto, as: "proyectoDirecto" },
         ],
       });
 
@@ -249,11 +259,10 @@ const pagoService = {
       }
       if (pago.estado_pago === "pagado") {
         return pago;
-      }
+      } // Se usa la relación de suscripción para obtener usuario y proyecto
 
-      const usuario = pago.suscripcion?.usuario || pago.usuarioDirecto;
-      const proyecto =
-        pago.suscripcion?.proyectoAsociado || pago.proyectoDirecto;
+      const usuario = pago.suscripcion?.usuario;
+      const proyecto = pago.suscripcion?.proyectoAsociado;
 
       if (!usuario || !proyecto) {
         throw new Error(
@@ -291,11 +300,22 @@ const pagoService = {
 
       return pago;
     } catch (error) {
-      // No hacemos rollback aquí. La transacción (t) es manejada por el servicio padre.
       throw error;
     }
-  },
+  }, // 🗑️ NUEVA FUNCIÓN: Elimina los pagos que están en estado 'cancelado'.
 
+  async deleteCanceledPayments() {
+    try {
+      const result = await Pago.destroy({
+        where: {
+          estado_pago: "cancelado",
+        },
+      });
+      return result; // Retorna el número de filas eliminadas
+    } catch (error) {
+      throw new Error(`Error al eliminar pagos cancelados: ${error.message}`);
+    }
+  },
   async findPaymentsDueSoon() {
     const today = new Date();
     const threeDaysFromNow = new Date();

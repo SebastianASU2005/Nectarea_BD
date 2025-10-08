@@ -16,10 +16,8 @@ const PagoMercado = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       unique: true, // Cada pago en la pasarela debería corresponder a una única Transaccion de nuestra app
-      references: {
-        model: "transaccion", // Nombre de la tabla de tu modelo Transaccion
-        key: "id",
-      },
+      // 🎯 FIX CRÍTICO: Se eliminan las referencias directas aquí para romper la dependencia circular.
+      // La clave foránea se gestionará mediante las asociaciones en models/associations.js.
     },
     // ID de la transacción o preferencia en la pasarela (Mercado Pago ID, Preference ID, etc.)
     id_transaccion_pasarela: {

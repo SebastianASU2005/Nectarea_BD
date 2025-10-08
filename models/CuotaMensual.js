@@ -31,7 +31,8 @@ const CuotaMensual = sequelize.define(
       allowNull: false,
     },
     valor_cemento: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2) para mayor capacidad en el valor por unidad
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     total_cuotas_proyecto: {
@@ -51,27 +52,33 @@ const CuotaMensual = sequelize.define(
       allowNull: false,
     },
     valor_movil: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     total_del_plan: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     valor_mensual: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     carga_administrativa: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     iva_carga_administrativa: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
     valor_mensual_final: {
-      type: DataTypes.DECIMAL(15, 2),
+      // Aumentado a DECIMAL(18, 2)
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },
   },

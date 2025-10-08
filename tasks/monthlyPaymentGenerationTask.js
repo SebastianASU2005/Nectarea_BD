@@ -32,21 +32,26 @@ const monthlyPaymentGenerationTask = {
           });
 
           if (suscripciones.length > 0) {
+            // Dado que la CRON solo crea pagos una vez al mes por proyecto,
+            // el último pago puede ser de CUALQUIER suscripción de ese proyecto
+            // para determinar el `mes` de la cuota.
             const ultimoPago = await Pago.findOne({
-              where: { id_suscripcion: suscripciones[0].id },
+              where: { id_suscripcion: suscripciones[0].id }, // Usamos la primera suscripción solo para el contexto del mes
               order: [["mes", "DESC"]],
               transaction: t,
             });
-            const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1; // CLAVE: La CRON corre el día 1, y genera el pago con vencimiento el día 10 del MES ACTUAL.
-            const fechaVencimiento = new Date(); // Eliminamos setMonth(getMonth() + 1) para usar el mes en curso.
+            const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
+            const fechaVencimiento = new Date();
             fechaVencimiento.setDate(10);
             fechaVencimiento.setHours(0, 0, 0, 0);
 
             for (const suscripcion of suscripciones) {
-              const monto = proyecto.monto_inversion;
+              const monto = proyecto.monto_inversion; // 🛑 CORRECCIÓN: AGREGAR id_usuario y id_proyecto desde la suscripción.
               await Pago.create(
                 {
                   id_suscripcion: suscripcion.id,
+                  id_usuario: suscripcion.id_usuario, // <-- AGREGADO
+                  id_proyecto: suscripcion.id_proyecto, // <-- AGREGADO
                   monto: monto,
                   fecha_vencimiento: fechaVencimiento,
                   estado_pago: "pendiente",
