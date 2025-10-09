@@ -59,11 +59,18 @@ router.delete(
   pujaController.softDeleteMyPuja
 );
 
-// 🛑 RUTA DE PAGO: Inicia el proceso de checkout para la puja ganadora.
+// 🛑 RUTA DE PAGO INICIAL: Inicia el proceso de checkout (bifurcación 2FA).
 router.post(
-  "/pagar/:id",
+  "/iniciar-pago/:id", // Renombramos de '/pagar/:id' para consistencia
   authMiddleware.authenticate,
   pujaController.requestCheckout
+);
+
+// 🚀 NUEVA RUTA: Verifica el 2FA y genera el checkout para la puja ganadora.
+router.post(
+  "/confirmar-2fa",
+  authMiddleware.authenticate,
+  pujaController.confirmarPujaCon2FA
 );
 
 // **NUEVA RUTA para la gestión de tokens al finalizar la subasta**

@@ -9,22 +9,22 @@ const loteService = {
   // Crea un nuevo lote
   // Crea un nuevo lote y valida que el proyecto exista
   async create(data) {
-    const { id_proyecto } = data; // 1. VALIDACIÓN CLAVE: Asegurar que el ID del proyecto esté presente.
+    const { id_proyecto } = data;
 
-    if (!id_proyecto) {
-      throw new Error("El lote debe estar asociado a un proyecto.");
-    } // 2. VALIDACIÓN CLAVE: Verificar que el proyecto exista.
+    // ¡CORRECCIÓN CLAVE! Ya NO es obligatorio tener id_proyecto para la creación inicial.
+    if (id_proyecto) {
+      // 1. Si el ID del proyecto está presente, validamos que el proyecto exista.
+      const Proyecto = require("../models/proyecto");
+      const proyecto = await Proyecto.findByPk(id_proyecto);
 
-    const Proyecto = require("../models/proyecto"); // Importación local (si no está globalmente)
-    const proyecto = await Proyecto.findByPk(id_proyecto);
-
-    if (!proyecto) {
-      throw new Error(`El proyecto con ID ${id_proyecto} no fue encontrado.`);
+      if (!proyecto) {
+        throw new Error(`El proyecto con ID ${id_proyecto} no fue encontrado.`);
+      }
     }
 
-    // 3. Crear el lote (si las validaciones pasan)
+    // 2. Crear el lote (con o sin id_proyecto inicial)
     return await Lote.create(data);
-  }, 
+  },
   // Busca todos los lotes (para administradores)
 
   async findAll() {

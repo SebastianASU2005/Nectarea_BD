@@ -5,9 +5,7 @@ const PagoMercado = require("../models/pagoMercado");
 const { sequelize } = require("../config/database");
 const crypto = require("crypto");
 const Inversion = require("../models/inversion");
-const { Transaction } = require("sequelize"); // Importación de la clase Transaction de Sequelize
-// NOTA: Para el bug reportado, probablemente necesites importar el modelo PagoMensual en el servicio
-// para poder actualizar su estado a 'fallido' o similar cuando la transacción falle.
+const { Transaction } = require("sequelize");
 
 // Mapeo de estados MP a estados internos
 const MP_STATUS_MAP = {
@@ -19,6 +17,66 @@ const MP_STATUS_MAP = {
   refunded: "devuelto",
   charged_back: "devuelto",
 };
+
+/**
+ * 🔑 FUNCIÓN DE VALIDACIÓN CRÍTICA DE LA FIRMA (Optimizado y Seguro)
+ * Utiliza la clave secreta, las cabeceras y el cuerpo para verificar la autenticidad del webhook.
+ */
+function verifySignature(req) {
+  const secret = process.env.MP_WEBHOOK_SECRET?.trim();
+  const signatureHeader = req.headers["x-signature"];
+  const requestId = req.headers["x-request-id"];
+  const dataId = req.body?.data?.id || req.query.id || req.query["data.id"];
+
+  console.log("🔐 VALIDACIÓN DE FIRMA");
+  console.log("Secret presente:", !!secret);
+  console.log("Signature presente:", !!signatureHeader);
+  console.log("Request ID:", requestId);
+  console.log("Data ID:", dataId);
+
+  // ⚠️ Si falta algún dato, RECHAZA inmediatamente
+  if (!secret) {
+    console.error("❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado");
+    return false;
+  }
+
+  if (!signatureHeader || !requestId || !dataId) {
+    console.error("❌ Headers o data.id faltantes");
+    return false;
+  }
+
+  // Parsear ts y v1
+  const parts = signatureHeader.split(",");
+  let ts, v1;
+  
+  for (const part of parts) {
+    const [key, value] = part.split("=");
+    if (key?.trim() === "ts") ts = value?.trim();
+    if (key?.trim() === "v1") v1 = value?.trim();
+  }
+
+  if (!ts || !v1) {
+    console.error("❌ No se pudo extraer ts o v1");
+    return false;
+  }
+
+  // Construir manifiesto EXACTO (sin espacios extra)
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  
+  console.log("📋 Manifest:", manifest);
+
+  // Calcular HMAC
+  const localHash = crypto
+    .createHmac("sha256", secret)
+    .update(manifest)
+    .digest("hex");
+
+  console.log("🔒 Hash local:", localHash);
+  console.log("🔒 Hash MP:   ", v1);
+  console.log("✅ Match:", localHash === v1);
+
+  return localHash === v1;
+}
 
 const paymentController = {
   /**
@@ -137,20 +195,28 @@ const paymentController = {
   /**
    * 🔔 WEBHOOK: Procesa notificaciones de Mercado Pago
    */ async handleWebhook(req, res) {
+    // ⚠️ VALIDACIÓN CRÍTICA
+    const isValid = verifySignature(req);
+
+    if (!isValid) {
+      console.error("🚫 FIRMA INVÁLIDA - RECHAZANDO WEBHOOK");
+      console.error("IP:", req.ip);
+      console.error("Headers:", JSON.stringify(req.headers, null, 2));
+
+      // ⛔ NO PROCESAR NADA
+      return res.status(401).send("Unauthorized");
+    }
+
+    console.log("✅ Firma válida - Procesando webhook");
+
     const { metodo } = req.params;
     let transaccionId = null;
 
-    console.log("--- WEBHOOK INGRESO ---");
-    console.log("Headers:", req.headers);
+    console.log("--- WEBHOOK INGRESO (Firma Validada) ---");
+    // No es necesario logear el body completo si es muy grande, pero dejamos los query params
     console.log("Query:", req.query);
-    console.log("Body:", req.body);
     console.log("-----------------------");
-    console.warn(
-      "⚠️ Advertencia: Validación de firma de Webhook **DESACTIVADA**."
-    );
 
-    // 🚨 INICIO DE LA CORRECCIÓN: Manejo explícito del topic 'merchant_order'
-    // Esta es la clave para que los pagos fallidos (que a veces solo envían MO) sean procesados.
     const { topic, id } = req.query; // Aseguramos que topic e id estén disponibles
 
     if (topic === "merchant_order" && id) {
@@ -158,23 +224,19 @@ const paymentController = {
         console.log(
           `🔄 Merchant Order ${id} recibida. Buscando pagos asociados...`
         );
-        // Llama al servicio para obtener los pagos asociados y procesarlos.
-        // Esto desencadenará la lógica de 'rechazado' si el pago falló.
         await pagoMercadoService.procesarPagosDeMerchantOrder(id);
         console.log(
           `✅ Merchant Order ${id} procesada. Pagos internos actualizados.`
         );
-        // Respondemos 200 OK inmediatamente.
         return res.status(200).send("OK - Merchant Order procesada");
       } catch (error) {
         console.error(
           `❌ Error al procesar Merchant Order ${id}: ${error.message}`
         );
-        // Respondemos 200 OK para evitar reintentos infinitos, pero registramos el error.
         return res.status(200).send("OK - Error en procesamiento de MO");
       }
     }
-    // 🚨 FIN DE LA CORRECCIÓN. Si no es 'merchant_order', el flujo continúa asumiendo que es un 'payment'.
+    // Si no es 'merchant_order', el flujo continúa asumiendo que es un 'payment'.
 
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
@@ -264,11 +326,8 @@ const paymentController = {
       } else if (
         internalStatus === "rechazado" ||
         internalStatus === "devuelto" ||
-        internalStatus === "en_proceso" // También se puede actualizar el modelo asociado a 'en_proceso' si aplica
+        internalStatus === "en_proceso"
       ) {
-        // 🛑 CORRECCIÓN: Delegamos la lógica de fallo/devolución al servicio.
-        // Esto asegura que, al igual que en el éxito, se actualice el estado del
-        // modelo asociado (Inversion, PagoMensual, etc.) si existe.
         const newStatus =
           internalStatus === "rechazado"
             ? "fallido"
@@ -287,7 +346,6 @@ const paymentController = {
           { transaction: t }
         );
       } else {
-        // Actualizar la transacción al estado interno 'en_proceso' si no es un estado final.
         await transaccion.update(
           { estado_transaccion: internalStatus },
           { transaction: t }
@@ -332,7 +390,7 @@ const paymentController = {
    */ async iniciarPagoPorModelo(req, res) {
     try {
       const { modelo, modeloId } = req.params;
-      const userId = req.user.id; // 🛑 CORRECCIÓN: Validar que modeloId sea numérico y convertirlo a entero
+      const userId = req.user.id;
 
       const idNumerico = parseInt(modeloId);
 
@@ -387,12 +445,12 @@ const paymentController = {
       ) {
         console.log(
           `Usuario canceló o pago rechazado para Transacción ${id_transaccion}. Marcando como fallido.`
-        ); // Usamos el nuevo servicio para marcar como fallido si estaba pendiente
-        await transaccionService.cancelarTransaccionPorUsuario(id_transaccion); // Redirigir al front-end a la página de fallo (ej. tu dominio/pago-fallido)
+        );
+        await transaccionService.cancelarTransaccionPorUsuario(id_transaccion);
         return res.redirect(
           `${process.env.FRONTEND_URL}/pago-fallido?transaccion=${id_transaccion}`
         );
-      } // Para 'aprobado', 'pendiente', o cualquier otro estado, redirigir a la página de estado/éxito. // El WEBHOOK es el responsable de la lógica de negocio final, no esta ruta GET.
+      }
       return res.redirect(
         `${process.env.FRONTEND_URL}/pago-estado?transaccion=${id_transaccion}`
       );

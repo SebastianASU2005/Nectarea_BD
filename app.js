@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 // Importa el controlador de pagos directamente para la ruta del webhook
-const paymentController = require("./controllers/pagoMercado.controller"); // Asegúrate de que la ruta sea correcta
+const paymentController = require("./controllers/pagoMercado.controller");
 
 // Carga las variables de entorno
 require("dotenv").config();
@@ -21,26 +21,45 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    " 	 ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "     ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error(" 	 El servicio de pagos NO funcionará.");
+  console.error("     El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
 }
 
-// 🚨 CAMBIO CRÍTICO: Definición del middleware de JSON.
-// Usamos el `verify` para capturar el cuerpo crudo (rawBody) antes de que se convierta a JSON.
-// Esto es esencial si Mercado Pago usa el cuerpo CRUDO para generar la firma.
+// 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
+// Esto es lo que permite que la función verifySignature en el controlador funcione.
+// El cuerpo crudo se guarda en req.rawBody
 function captureRawBody(req, res, buf, encoding) {
   if (buf && buf.length) {
     req.rawBody = buf.toString(encoding || "utf8");
   }
 }
-// Middleware para parsear el cuerpo de las peticiones JSON y capturar el raw body
-app.use(express.json({ verify: captureRawBody }));
-// Middleware para parsear bodies de formularios URL-encoded (también necesario)
-app.use(express.urlencoded({ extended: true, verify: captureRawBody }));
+
+// ====================================================================
+// 🎯 CORRECCIÓN CRÍTICA PARA EL WEBHOOK: Middleware Específico
+//
+// 1. Aplicamos body-parser CON la función 'verify' SOLO a la ruta del webhook.
+// 2. Usamos express.json para que req.body esté disponible para el controller.
+//    (Aunque la validación de firma que te pasé no necesita req.rawBody,
+//    es buena práctica tenerlo si el hash se calcula sobre el cuerpo *raw*).
+// ====================================================================
+app.use(
+  "/api/payment/webhook/:metodo",
+  express.json({ verify: captureRawBody }),
+  express.urlencoded({ extended: true, verify: captureRawBody })
+);
+
+// ====================================================================
+// 3. MIDDLEWARES GLOBALES (Para el resto de las rutas de la API)
+//
+// Se aplican a *todas* las peticiones que no pasaron por el middleware anterior.
+// Usamos los middlewares estándar sin la función 'verify' especial aquí.
+// ====================================================================
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -83,9 +102,6 @@ const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
 
-// ❌ ELIMINADA: La llamada a configureAssociations() se mueve para después de la creación de las tablas.
-// configureAssociations();
-
 // Importa los archivos de rutas para cada modelo
 const usuarioRoutes = require("./routes/usuario.routes");
 const inversionRoutes = require("./routes/inversion.routes");
@@ -101,7 +117,7 @@ const authRoutes = require("./routes/auth.routes");
 const mensajeRoutes = require("./routes/mensaje.routes");
 const cuotaMensualRoutes = require("./routes/cuota_mensual.routes");
 const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
-const pagoMercadoRoutes = require("./routes/pagoMercado.routes"); // Contiene las rutas que usan el controller
+const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
 
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
@@ -111,14 +127,16 @@ const monthlyPaymentGenerationTask = require("./tasks/monthlyPaymentGenerationTa
 const overduePaymentManager = require("./tasks/OverduePaymentManager");
 const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
 
-// Usar el router para las rutas de la API, separando la lógica
+// ====================================================================
+// 4. RUTAS DEL WEBHOOK (Aplicada después del middleware especial)
+// ====================================================================
 app.post("/api/payment/webhook/:metodo", paymentController.handleWebhook);
 
 console.log(
   "✅ Ruta de webhook configurada: POST /api/payment/webhook/:metodo"
 );
 
-// 2. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
+// 5. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
@@ -134,18 +152,16 @@ app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 
-// 3. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
+// 6. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
 
-// 4. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
+// 7. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
 app.use(redireccionRoutes);
 
 async function synchronizeDatabase() {
   try {
     // ==========================================================
     // FASE 1: Creación inicial de las tablas (solo columnas)
-    // El orden no es estrictamente crítico aquí porque eliminamos
-    // todas las referencias directas en los modelos.
     // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
@@ -157,8 +173,8 @@ async function synchronizeDatabase() {
     await Puja.sync({ alter: true });
     await Inversion.sync({ alter: true });
     await Pago.sync({ alter: true });
-    await PagoMercado.sync({ alter: true }); // Esta tabla se crea sin la restricción FK
-    await Transaccion.sync({ alter: true }); // Esta tabla se crea
+    await PagoMercado.sync({ alter: true });
+    await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
 
@@ -170,8 +186,6 @@ async function synchronizeDatabase() {
 
     // ==========================================================
     // FASE 2: Sincronización para añadir las Claves Foráneas (FKs)
-    // Sequelize ahora usará { alter: true } para añadir las restricciones
-    // de clave foránea definidas por configureAssociations().
     // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });

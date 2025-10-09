@@ -46,6 +46,28 @@ const Usuario = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    // 🚀 CAMBIOS PARA 2FA 🚀
+    is_2fa_enabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false, // Por defecto, el 2FA está deshabilitado
+      comment: "Indica si el 2FA está activo para este usuario",
+    },
+    twofa_secret: {
+      type: DataTypes.STRING(255),
+      allowNull: true, // Será NULL si el 2FA no está habilitado
+      comment: "Clave secreta para la generación de códigos TOTP (Google Authenticator)",
+    },
+    reset_password_token: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "Token temporal para restablecer la contraseña",
+    },
+    reset_password_expires: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Fecha de expiración del token de restablecimiento",
+    },
     confirmacion_token_expiracion: {
       type: DataTypes.DATE,
       allowNull: true,

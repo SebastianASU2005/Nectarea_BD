@@ -92,6 +92,47 @@ const usuarioService = {
       throw new Error("Error al enviar el correo. Intente de nuevo más tarde.");
     }
   },
+  /**
+   * Genera un token seguro y lo almacena junto con su expiración.
+   * @param {string} email - El email del usuario.
+   */
+  async generatePasswordResetToken(email) {
+    const user = await Usuario.findOne({ where: { email } });
+
+    if (!user) {
+      // Devolvemos un mensaje genérico por seguridad (para no revelar si el email existe)
+      return;
+    }
+
+    // 1. Generar un token criptográficamente seguro
+    const resetToken = crypto.randomBytes(20).toString("hex");
+
+    // 2. Establecer la expiración (ej: 1 hora a partir de ahora)
+    const expirationDate = new Date();
+    expirationDate.setHours(expirationDate.getHours() + 1);
+
+    // 3. Guardar el token y la expiración en la DB
+    await user.update({
+      reset_password_token: resetToken,
+      reset_password_expires: expirationDate,
+    });
+
+    // 4. Devolver el token para que el controlador pueda enviarlo por email
+    return resetToken;
+  },
+
+  /**
+   * Busca un usuario por el token de restablecimiento y verifica su expiración.
+   */
+  async findByResetToken(token) {
+    const user = await Usuario.findOne({
+      where: {
+        reset_password_token: token,
+        reset_password_expires: { [Op.gt]: new Date() }, // [Op.gt] significa "mayor que" (no ha expirado)
+      },
+    });
+    return user;
+  },
   // Función para encontrar un usuario por su nombre de usuario
 
   async findByUsername(nombre_usuario) {
