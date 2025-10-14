@@ -1,23 +1,66 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const proyectoController = require('../controllers/proyecto.controller');
-const authMiddleware = require('../middleware/auth.middleware');
+const proyectoController = require("../controllers/proyecto.controller");
+const authMiddleware = require("../middleware/auth.middleware");
 
-// Rutas de usuario - ¡Estas deben ir primero para evitar conflictos!
-router.get('/activos', authMiddleware.authenticate, proyectoController.findAllActivo);
-router.get('/mis_proyectos', authMiddleware.authenticate, proyectoController.findMyProjects);
-router.get('/:id/activo', authMiddleware.authenticate, proyectoController.findByIdActivo);
+// ===============================================
+// 1. RUTAS ESTÁTICAS Y CON PREFIJO (USUARIO & ADMIN)
+// Estas deben ir ANTES que cualquier /:id genérico.
+// ===============================================
 
-// ---
+// Rutas de Usuario
+router.get(
+  "/activos",
+  authMiddleware.authenticate,
+  proyectoController.findAllActivo
+);
 
-// Rutas para administradores (CRUD)
-// Las rutas que no tienen parámetros genéricos pueden ir al inicio
-router.post('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.create);
-router.get('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.findAll);
+// Rutas de Administrador (Estáticas)
+router.post(
+  "/",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.create
+);
+// Esta ruta de LISTAR TODO debe ir aquí para no capturar las dinámicas.
+router.get(
+  "/",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.findAll
+);
 
-// Las rutas genéricas con :id deben ir al final del archivo para no "capturar" las anteriores.
-router.get('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.findById);
-router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.update);
-router.delete('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, proyectoController.softDelete);
+// ===============================================
+// 2. RUTAS DINÁMICAS (TODAS)
+// Estas DEBEN ir al final del archivo.
+// ===============================================
+
+// Ruta dinámica específica del usuario (con sufijo)
+// Va antes de /:id genérico
+router.get(
+  "/:id/activo",
+  authMiddleware.authenticate,
+  proyectoController.findByIdActivo
+);
+
+// Rutas genéricas de Administrador (CRUD por ID)
+router.get(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.findById
+);
+router.put(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.update
+);
+router.delete(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.softDelete
+);
 
 module.exports = router;

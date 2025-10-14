@@ -5,51 +5,40 @@ const path = require("path");
 const contratoController = require("../controllers/contrato.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 
-// Configuración de Multer para subir archivos a la carpeta 'uploads'
+// Configuración de Multer (Mantenida)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "uploads/");
   },
   filename: function (req, file, cb) {
-    // Aseguramos que el nombre del archivo incluya un timestamp para evitar colisiones
     cb(null, Date.now() + "-" + file.originalname.replace(/ /g, "_"));
   },
 });
 const upload = multer({ storage: storage });
 
-// Ruta protegida para administradores: Subir Contrato BASE
+// ===============================================
+// 1. RUTAS ESTÁTICAS Y CON PREFIJO (TODAS)
+// ===============================================
+
+// Rutas POST (Estáticas y Semi-Dinámicas)
 router.post(
   "/upload",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  upload.single("contrato"), // El nombre del campo del archivo es 'contrato'
+  upload.single("contrato"),
   contratoController.upload
 );
 
-// Ruta protegida para FIRMA
 router.post(
   "/firmar",
   authMiddleware.authenticate,
-  upload.single("contrato_firmado"), // El nombre del campo del archivo es 'contrato_firmado'
+  upload.single("contrato_firmado"),
   contratoController.sign
 );
 
-// **NUEVA RUTA**: Solo un usuario autenticado puede ver sus propios contratos
-router.get(
-  "/mis_contratos",
-  authMiddleware.authenticate,
-  contratoController.findMyContracts
-);
+// Rutas GET Estáticas y con Prefijo Fijo (¡CRÍTICO!)
 
-// 🚨 NUEVA RUTA DE DESCARGA SEGURA
-// Solo usuarios autenticados pueden descargar un contrato por ID si tienen autorización
-router.get(
-  "/descargar/:id",
-  authMiddleware.authenticate,
-  contratoController.download
-);
-
-// Ruta protegida para administradores: Solo los administradores pueden ver TODOS los contratos
+// Ruta protegida para administradores: Ver TODOS los contratos (GET estático)
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -57,7 +46,26 @@ router.get(
   contratoController.findAll
 );
 
+// **NUEVA RUTA**: Ver sus propios contratos (Estática con prefijo, ¡va antes de /:id!)
+router.get(
+  "/mis_contratos",
+  authMiddleware.authenticate,
+  contratoController.findMyContracts
+);
+
+// 🚨 NUEVA RUTA DE DESCARGA SEGURA (Dinámica con prefijo fijo, ¡va antes de /:id!)
+router.get(
+  "/descargar/:id",
+  authMiddleware.authenticate,
+  contratoController.download
+);
+
+// ===============================================
+// 2. RUTAS DINÁMICAS GENÉRICAS (DEBEN IR AL FINAL)
+// ===============================================
+
 // Ruta protegida: Solo usuarios autenticados pueden obtener un contrato específico por ID
+// ⚠️ ESTA DEBE IR AL FINAL DE TODOS LOS GET
 router.get("/:id", authMiddleware.authenticate, contratoController.findById);
 
 module.exports = router;

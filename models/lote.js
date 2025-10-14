@@ -51,6 +51,13 @@ const Lote = sequelize.define('Lote', {
     allowNull: true,
     comment: 'ID del usuario ganador de la subasta.'
   },
+  // Campo CRÍTICO: Registra cuántos intentos de pago han fallado (máx. 3)
+  intentos_fallidos_pago: { 
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    allowNull: false,
+    comment: 'Contador de veces que el ganador potencial ha incumplido el pago.'
+  },
   // Campo adicional para guardar el excedente de la puja para fines de visualización en el frontend.
   excedente_visualizacion: {
     type: DataTypes.DECIMAL(10, 2),

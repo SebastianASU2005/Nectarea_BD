@@ -6,8 +6,6 @@ const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const ProyectoService = require("./proyecto.service");
 const PagoService = require("./pago.service");
-// ❌ ELIMINAMOS la importación global que causaba la circularidad
-// const TransaccionService = require("./transaccion.service");
 
 // Helper para garantizar que un valor es un número flotante (decimal)
 const toFloat = (value) => parseFloat(value);
@@ -15,7 +13,7 @@ const toFloat = (value) => parseFloat(value);
 const calculateFloat = (value) => toFloat(value.toFixed(2));
 
 const pujaService = {
-  // Función para crear una nueva puja
+  // Función para crear o actualizar una puja
   async create(data) {
     const { id_usuario, id_lote, monto_puja } = data;
     const t = await sequelize.transaction();
@@ -26,64 +24,110 @@ const pujaService = {
       if (lote.estado_subasta !== "activa")
         throw new Error("La subasta no está activa.");
 
-      const id_proyecto = lote.id_proyecto;
+      const id_proyecto = lote.id_proyecto; // 1. Buscar la puja activa existente del usuario en este lote
+
+      const pujaExistente = await Puja.findOne({
+        where: {
+          id_usuario: id_usuario,
+          id_lote: id_lote,
+          estado_puja: "activa", // Solo consideramos pujas activas
+        },
+        transaction: t,
+      });
+
+      let pujaActualizada = null; // 2. Obtener la puja más alta del lote (puede ser la propia pujaExistente)
 
       let pujaMasAlta = null;
       if (lote.id_puja_mas_alta) {
         pujaMasAlta = await Puja.findByPk(lote.id_puja_mas_alta, {
           transaction: t,
         });
-      }
+      } // 3. Validaciones Generales
 
-      if (pujaMasAlta && monto_puja <= pujaMasAlta.monto_puja) {
+      const montoPujaActual = pujaExistente ? pujaExistente.monto_puja : 0;
+
+      if (monto_puja <= montoPujaActual) {
         throw new Error(
-          "El monto de la puja debe ser mayor que la puja actual más alta."
+          "El nuevo monto de la puja debe ser mayor que tu puja actual."
+        );
+      }
+      if (
+        pujaMasAlta &&
+        pujaMasAlta.id !== (pujaExistente ? pujaExistente.id : null) &&
+        monto_puja <= pujaMasAlta.monto_puja
+      ) {
+        throw new Error(
+          "El monto de la puja debe ser mayor que la puja actual más alta del lote."
         );
       }
       if (monto_puja < lote.precio_base) {
         throw new Error(
           "El monto de la puja debe ser mayor o igual al precio base."
         );
+      } // =================================================================== // LÓGICA DE CREACIÓN O ACTUALIZACIÓN // ===================================================================
+
+      if (pujaExistente) {
+        // Caso 1: Actualización (Token ya consumido, no se toca)
+        await pujaExistente.update(
+          { monto_puja: monto_puja },
+          { transaction: t }
+        );
+        pujaActualizada = pujaExistente;
+      } else {
+        // Caso 2: Creación (Se consume el token)
+        const suscripcion = await SuscripcionProyecto.findOne({
+          where: {
+            id_usuario,
+            id_proyecto,
+            tokens_disponibles: { [Op.gt]: 0 },
+          },
+          transaction: t,
+        });
+
+        if (!suscripcion)
+          throw new Error("No tienes tokens de subasta para este proyecto."); // 🚨 TOKEN: Consume el token al hacer la PRIMERA puja (1 -> 0)
+
+        await suscripcion.decrement("tokens_disponibles", {
+          by: 1,
+          transaction: t,
+        });
+
+        const nuevaPuja = await Puja.create(
+          {
+            ...data,
+            id_proyecto: id_proyecto,
+            estado_puja: "activa",
+            id_suscripcion: suscripcion.id,
+          },
+          { transaction: t }
+        );
+        pujaActualizada = nuevaPuja;
+      } // 4. Actualizar el lote con la puja más alta (solo si la nueva es la más alta)
+
+      if (
+        !lote.id_puja_mas_alta ||
+        monto_puja > (pujaMasAlta ? pujaMasAlta.monto_puja : 0)
+      ) {
+        await lote.update(
+          { id_puja_mas_alta: pujaActualizada.id },
+          { transaction: t }
+        );
       }
 
-      const suscripcion = await SuscripcionProyecto.findOne({
-        where: { id_usuario, id_proyecto, tokens_disponibles: { [Op.gt]: 0 } },
-        transaction: t,
-      });
-      if (!suscripcion)
-        throw new Error("No tienes tokens de subasta para este proyecto.");
-
-      await suscripcion.decrement("tokens_disponibles", {
-        by: 1,
-        transaction: t,
-      });
-
-      const nuevaPuja = await Puja.create(
-        {
-          ...data,
-          id_proyecto: id_proyecto,
-          estado_puja: "activa",
-          id_suscripcion: suscripcion.id,
-        },
-        { transaction: t }
-      );
-
-      await lote.update({ id_puja_mas_alta: nuevaPuja.id }, { transaction: t });
-
       await t.commit();
-      return nuevaPuja;
+      return pujaActualizada;
     } catch (error) {
       await t.rollback();
       throw error;
     }
   },
-
   async findHighestBidForLote(loteId) {
     return Puja.findOne({
       where: { id_lote: loteId },
       order: [["monto_puja", "DESC"]],
     });
   },
+
   /**
    * 🛑 FUNCIÓN CLAVE: Orquesta el proceso de pago para una puja ganadora.
    * @param {number} pujaId - El ID de la puja ganadora.
@@ -91,9 +135,9 @@ const pujaService = {
    * @returns {Promise<{ transaccion: object, checkoutUrl: string }>}
    */ async requestCheckoutForPuja(pujaId, userId) {
     // 1. Validación de la puja y obtención de detalles del lote
-    const pujaValidada = await this.getValidPaymentDetails(pujaId, userId); // ✅ CORRECCIÓN 1: Importación interna para romper la dependencia circular
+    const pujaValidada = await this.getValidPaymentDetails(pujaId, userId);
 
-    const TransaccionService = require("./transaccion.service"); // ✅ CORRECCIÓN 2: Usar la función que orquesta la transacción de BD.
+    const TransaccionService = require("./transaccion.service");
 
     const checkoutResult = await TransaccionService.iniciarTransaccionYCheckout(
       "puja", // Nombre del modelo de negocio
@@ -106,6 +150,7 @@ const pujaService = {
       checkoutUrl: checkoutResult.redirectUrl, // El controlador espera 'checkoutUrl'
     };
   },
+
   /**
    * 🛑 FUNCIÓN CLAVE: Valida que la puja sea del usuario y esté lista para pagar.
    * @param {number} pujaId - El ID de la puja a procesar.
@@ -136,6 +181,13 @@ const pujaService = {
         throw new Error(
           `La puja ID ${pujaId} no está en estado 'ganadora_pendiente'. Estado actual: ${estadoActual}.`
         );
+      } // ✅ VALIDACIÓN ADICIONAL: Verificar que no haya expirado (aunque el controlador 2FA lo manejará)
+
+      if (
+        puja.fecha_vencimiento_pago &&
+        puja.fecha_vencimiento_pago < new Date()
+      ) {
+        throw new Error("El plazo de pago para esta puja ha expirado.");
       }
 
       if (!puja.lote) {
@@ -147,6 +199,7 @@ const pujaService = {
       throw error;
     }
   },
+
   /**
    * Función para procesar una puja ganadora y aplicar el excedente.
    * LLAMADA POR EL WEBHOOK A TRAVÉS DEL TRANSACCION SERVICE tras un pago exitoso.
@@ -163,26 +216,24 @@ const pujaService = {
           {
             model: SuscripcionProyecto,
             as: "suscripcion",
-            required: true, // Asegura INNER JOIN de Puja -> Suscripcion
+            required: true,
             include: [
               {
-                association: "proyectoAsociado", // Usar 'association' o el 'model'
-                required: true, // 👈 SOLUCIÓN: Forzar INNER JOIN a Proyecto
-                attributes: ["id", "monto_inversion"], // Opcional: solo cargar lo necesario
+                association: "proyectoAsociado",
+                required: true,
+                attributes: ["id", "monto_inversion"],
               },
             ],
           },
           {
             model: Lote,
             as: "lote",
-            required: true, // 👈 FIX: Asegura INNER JOIN para FOR UPDATE
+            required: true,
           },
         ],
       });
 
       if (!puja || !puja.suscripcion || !puja.lote) {
-        // Si la puja está en un estado 'ganadora_pendiente', las relaciones DEBEN existir.
-        // El 'required: true' ayuda a asegurar que los datos estén completos.
         throw new Error(
           "Puja, suscripción o lote no encontrados o incompletos."
         );
@@ -287,6 +338,42 @@ const pujaService = {
 
       await puja.update({ estado_puja: "ganadora_pagada" }, { transaction: t });
 
+      // 8. 🚨 LÓGICA DE LIMPIEZA DEL PERDEDOR FINAL DENTRO DEL TOP 3 🚨
+      // El ganador (P2 en el ejemplo) permanece en tokens: 0 (consumo final).
+      // Se libera el token de CUALQUIER otro postor vivo del Top 3 (P3).
+
+      const usuariosGanadoresActuales = [puja.id_usuario]; // Excluye al que acaba de pagar
+      const loteId = puja.id_lote;
+
+      // 8.1. Encontrar a los usuarios a liberar (e.g., P3)
+      const pujasActivasPendientes = await Puja.findAll({
+        where: {
+          id_lote: loteId,
+          // Buscamos pujas que fueron parte de la "zona caliente" (aún activas o pendientes)
+          estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
+          id_usuario: { [Op.notIn]: usuariosGanadoresActuales }, // Excluir al pagador
+        },
+        attributes: ["id_suscripcion"],
+        transaction: t,
+      });
+
+      const suscripcionesALiberar = pujasActivasPendientes.map(
+        (p) => p.id_suscripcion
+      );
+
+      // 8.2. Devolver el token a esas suscripciones (P3)
+      if (suscripcionesALiberar.length > 0) {
+        await SuscripcionProyecto.increment("tokens_disponibles", {
+          by: 1,
+          where: {
+            id: { [Op.in]: suscripcionesALiberar },
+            // Protección: Solo si su token fue consumido (está en 0)
+            tokens_disponibles: { [Op.lt]: 1 },
+          },
+          transaction: t,
+        });
+      }
+
       if (shouldCommit) {
         await t.commit();
       }
@@ -298,9 +385,8 @@ const pujaService = {
       }
       throw error;
     }
-  },
+  }, // Asumo que esta función ya la tienes en el servicio de puja
 
-  // Asumo que esta función ya la tienes en el servicio de puja
   async revertirPagoPujaGanadora(pujaId, externalTransaction) {
     // Lógica para revertir el pago de la puja (marcar como 'ganadora_pendiente' y revertir los efectos de pago en suscripción)
     const t = externalTransaction;
@@ -315,16 +401,12 @@ const pujaService = {
         lock: t.LOCK.UPDATE,
       });
       if (!puja) throw new Error("Puja no encontrada.");
-      if (puja.estado_puja !== "ganadora_pagada") return puja; // Idempotencia
+      if (puja.estado_puja !== "ganadora_pagada") return puja; // Idempotencia // Revertir estado de la puja
 
-      // Revertir estado de la puja
       await puja.update(
         { estado_puja: "ganadora_pendiente" },
         { transaction: t }
-      );
-
-      // Aquí iría la lógica inversa de los puntos 3, 4, 5 y 6 de procesarPujaGanadora.
-      // Ej: Liberar meses pagados, reducir saldo_a_favor, etc. (Si no tienes esta lógica, es un pendiente)
+      ); // Aquí iría la lógica inversa de los puntos 3, 4, 5 y 6 de procesarPujaGanadora. // Ej: Liberar meses pagados, reducir saldo_a_favor, etc. (Si no tienes esta lógica, es un pendiente)
 
       return { message: "Puja revertida a pendiente de pago exitosamente." };
     } catch (error) {
@@ -332,26 +414,192 @@ const pujaService = {
     }
   },
 
+  /**
+   * 🚨 FUNCIÓN CLAVE MODIFICADA 🚨
+   * Libera el token de los perdedores masivos, dejando al Top 3 bloqueado.
+   * Se llama al finalizar la subasta (endAuction).
+   */
   async gestionarTokensAlFinalizar(id_lote) {
     const t = await sequelize.transaction();
     try {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
+      // 1. Encontrar a los usuarios del Top 3 (zona caliente)
+      const pujasNoLiberar = await Puja.findAll({
+        where: {
+          id_lote: id_lote,
+          estado_puja: "activa",
+        },
+        order: [["monto_puja", "DESC"]],
+        limit: 3, // 🚨 Excluimos el Top 3 (P1, P2, P3)
+        attributes: ["id_usuario"],
+        transaction: t,
+      });
+
+      const usuariosNoLiberar = pujasNoLiberar.map((p) => p.id_usuario);
+
+      // 2. Liberar tokens a todos los demás perdedores masivos (P4-P90)
       await SuscripcionProyecto.increment("tokens_disponibles", {
         by: 1,
         where: {
           id_proyecto: lote.id_proyecto,
-          id_usuario: { [Op.ne]: lote.id_ganador },
+          id_usuario: { [Op.notIn]: usuariosNoLiberar }, // 🚨 Condición para excluir al Top 3
+          tokens_disponibles: { [Op.lt]: 1 }, // 🛡️ Protección: Solo si está en 0
         },
         transaction: t,
       });
+
       await t.commit();
     } catch (error) {
       await t.rollback();
       throw error;
     }
+  }, // =================================================================== // NUEVAS FUNCIONES PARA MANEJO DE IMPAGOS (90 DÍAS) // ===================================================================
+  /**
+   * 🚨 FUNCIÓN CLAVE MODIFICADA 🚨
+   * Devuelve el token comprometido a un usuario después de que su puja ganadora
+   * haya sido marcada como 'ganadora_incumplimiento' (impago).
+   * @param {number} userId - ID del usuario que incumplió el pago.
+   * @param {number} loteId - ID del lote (para determinar el proyecto).
+   * @param {object} [externalTransaction] - Transacción de Sequelize opcional.
+   */ async devolverTokenPorImpago(userId, loteId, externalTransaction = null) {
+    // Usa la transacción externa o inicia una nueva si no se proporciona
+    const t = externalTransaction || (await sequelize.transaction());
+    const shouldCommit = !externalTransaction;
+
+    try {
+      // 1. Encontrar el lote para obtener el ID del proyecto
+      const lote = await Lote.findByPk(loteId, {
+        attributes: ["id_proyecto"],
+        transaction: t,
+      });
+      if (!lote) throw new Error(`Lote ID ${loteId} no encontrado.`); // 2. Encontrar la suscripción (token) que el usuario utilizó para pujar en este proyecto
+
+      const suscripcion = await SuscripcionProyecto.findOne({
+        where: {
+          id_usuario: userId,
+          id_proyecto: lote.id_proyecto,
+        },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+
+      if (!suscripcion) {
+        // ... (Advertencia)
+        console.warn(
+          `Advertencia: Suscripción para usuario ${userId} en proyecto ${lote.id_proyecto} no encontrada. No se pudo devolver el token.`
+        );
+        if (shouldCommit) await t.commit();
+        return { message: "Token no devuelto (suscripción no encontrada)." };
+      } // 3. Devolver 1 token al usuario (incrementar tokens_disponibles)
+
+      // 🛡️ PROTECCIÓN CRÍTICA: Solo devolvemos si el token está en 0 (evitando tokens: 2)
+      if (suscripcion.tokens_disponibles < 1) {
+        await suscripcion.increment("tokens_disponibles", {
+          by: 1,
+          transaction: t,
+        });
+      } else {
+        console.warn(
+          `Advertencia: Usuario ${userId} ya tenía el token. No se incrementó para evitar duplicación.`
+        );
+      } // Solo hace commit si la transacción fue iniciada DENTRO de esta función
+
+      if (shouldCommit) {
+        await t.commit();
+      }
+
+      return { message: "Token devuelto exitosamente por impago." };
+    } catch (error) {
+      // Solo hace rollback si la transacción fue iniciada DENTRO de esta función
+      if (shouldCommit) {
+        await t.rollback();
+      }
+      throw error;
+    }
   },
+  /**
+   * FUNCIÓN AÑADIDA PARA EL CONTROLADOR DE TEST: Encuentra la puja que está en estado 'ganadora_pendiente'
+   * y que NO ha expirado (o cuyo vencimiento es futuro). Esta es la puja que se simula como impago.
+   * @param {number} loteId - ID del lote.
+   * @param {object} transaction - Transacción de Sequelize.
+   * @returns {Promise<Puja|null>} La puja activa.
+   */ async findGanadoraPendienteByLote(loteId, transaction) {
+    return Puja.findOne({
+      where: {
+        id_lote: loteId,
+        estado_puja: "ganadora_pendiente",
+      },
+      transaction,
+    });
+  },
+  /**
+   * CRON JOB: Encuentra todas las pujas ganadoras pendientes cuyo plazo de pago ha expirado.
+   * @returns {Promise<Puja[]>} Lista de pujas vencidas.
+   */ async findExpiredGanadoraPendiente() {
+    return Puja.findAll({
+      where: {
+        estado_puja: "ganadora_pendiente",
+        fecha_vencimiento_pago: {
+          [Op.lt]: new Date(), // Menor que la fecha y hora actual (expirada)
+        },
+      },
+      attributes: ["id", "id_lote", "id_usuario"],
+    });
+  },
+  /**
+   * CRON JOB: Encuentra la puja específica vencida para un lote dado.
+   * @param {number} loteId - ID del lote.
+   * @param {object} transaction - Transacción de Sequelize.
+   * @returns {Promise<Puja|null>} La puja vencida.
+   */ async findExpiredGanadoraPendienteByLote(loteId, transaction) {
+    return Puja.findOne({
+      where: {
+        id_lote: loteId,
+        estado_puja: "ganadora_pendiente",
+        fecha_vencimiento_pago: {
+          [Op.lt]: new Date(),
+        },
+      },
+      transaction,
+    });
+  },
+  /**
+   * Encuentra la siguiente puja más alta que aún es válida y puede ser ganadora.
+   * @param {number} loteId - ID del lote.
+   * @param {object} transaction - Transacción de Sequelize.
+   * @returns {Promise<Puja|null>} La siguiente mejor puja.
+   */ async findNextHighestBid(loteId, transaction) {
+    // Excluir pujas que ya han sido procesadas como ganadoras, pagadas o incumplidoras
+    const estadosExcluidos = [
+      "ganadora_pendiente",
+      "ganadora_pagada",
+      "ganadora_incumplimiento",
+    ];
+
+    return Puja.findOne({
+      where: {
+        id_lote: loteId,
+        estado_puja: {
+          [Op.notIn]: estadosExcluidos, // No re-seleccionar pujas que ya fallaron o ganaron
+        },
+      },
+      order: [["monto_puja", "DESC"]], // La más alta
+      transaction,
+    });
+  },
+  /**
+   * Elimina todas las pujas de un lote. Se utiliza para preparar el lote para reingreso anual.
+   * @param {number} loteId - ID del lote.
+   * @param {object} transaction - Transacción de Sequelize.
+   * @returns {Promise<number>} Número de filas eliminadas.
+   */ async clearBidsByLoteId(loteId, transaction) {
+    return Puja.destroy({
+      where: { id_lote: loteId },
+      transaction,
+    });
+  }, // ... (Resto de funciones: findByIdAndUserId, findByUserId, etc.) ...
 
   async findByIdAndUserId(id, userId) {
     return Puja.findOne({ where: { id, id_usuario: userId, activo: true } });

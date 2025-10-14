@@ -1,3 +1,5 @@
+// Archivo: services/resumen_cuenta.service.js
+
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const CuotaMensual = require("../models/CuotaMensual");
@@ -29,7 +31,6 @@ const resumenCuentaService = {
       }
 
       const detalleCuota = {
-        // Asegúrate de que los nombres de campo aquí coincidan con el modelo CuotaMensual
         nombre_cemento: cuotaMensual.nombre_cemento_cemento,
         valor_cemento_unidades: cuotaMensual.valor_cemento_unidades,
         valor_cemento: parseFloat(cuotaMensual.valor_cemento),
@@ -61,12 +62,29 @@ const resumenCuentaService = {
       console.error("Error al crear el resumen de cuenta:", error);
       throw error;
     }
-  },
+  }
   /**
-   * Obtiene todos los resúmenes de cuenta de un usuario a partir de las suscripciones.
+   * NUEVA FUNCIÓN DE ADMINISTRADOR: Obtiene todos los resúmenes de cuenta.
+   * @returns {Promise<object[]>} Un arreglo con todos los resúmenes de cuenta.
+   */,
+
+  async findAll() {
+    return ResumenCuenta.findAll({
+      include: [
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario"],
+        },
+      ],
+    });
+  }
+  /**
+   * Obtiene todos los resúmenes de cuenta de un usuario a partir de las suscripciones. (Ruta /mis_resumenes)
    * @param {number} userId - ID del usuario.
    * @returns {Promise<object[]>} Un arreglo con los resúmenes de cuenta guardados.
-   */
+   */,
+
   async getAccountSummariesByUserId(userId) {
     try {
       const suscripciones = await SuscripcionProyecto.findAll({
@@ -98,13 +116,14 @@ const resumenCuentaService = {
       console.error("Error al obtener los resúmenes de cuenta:", error);
       throw error;
     }
-  },
+  }
   /**
    * Actualiza el resumen de cuenta cuando se realiza un pago (incrementa cuotas pagadas, etc.).
    * Se invoca después de que un pago mensual o inicial se ha marcado como pagado.
    * @param {number} suscripcionId - ID de la suscripción.
    * @param {object} [options={}] - Opciones de Sequelize (ej. { transaction: t }).
-   */
+   */,
+
   async updateAccountSummaryOnPayment(suscripcionId, options = {}) {
     try {
       // Incluimos options para que la consulta sea atómica
@@ -114,7 +133,9 @@ const resumenCuentaService = {
           {
             model: Pago,
             as: "pagos",
-            where: { estado_pago: { [Op.in]: ["pagado", "cubierto_por_puja"] } },
+            where: {
+              estado_pago: { [Op.in]: ["pagado", "cubierto_por_puja"] },
+            },
             required: false,
           },
           { model: ResumenCuenta, as: "resumen_cuenta" },
@@ -127,20 +148,17 @@ const resumenCuentaService = {
           `No se encontró suscripción o resumen para ID: ${suscripcionId}`
         );
         return;
-      }
-      // Calcular el número de pagos exitosos.
+      } // Calcular el número de pagos exitosos.
       const cuotasPagadas = suscripcion.pagos.length;
       const totalCuotasProyecto = suscripcion.resumen_cuenta.meses_proyecto;
-      const porcentajePagado = (cuotasPagadas / totalCuotasProyecto) * 100;
+      const porcentajePagado = (cuotasPagadas / totalCuotasProyecto) * 100; // Calcular cuotas vencidas (lógica de tiempo)
 
-      // Calcular cuotas vencidas (lógica de tiempo)
       const mesesTranscurridos = moment().diff(
         moment(suscripcion.createdAt),
         "months"
       );
-      const cuotasVencidas = Math.max(0, mesesTranscurridos - cuotasPagadas);
+      const cuotasVencidas = Math.max(0, mesesTranscurridos - cuotasPagadas); // Actualizamos el resumen, pasando options para la atomicidad
 
-      // Actualizamos el resumen, pasando options para la atomicidad
       await suscripcion.resumen_cuenta.update(
         {
           cuotas_pagadas: cuotasPagadas,
@@ -157,36 +175,29 @@ const resumenCuentaService = {
       console.error("Error al actualizar el resumen de cuenta:", error);
       throw error;
     }
-  },
+  }
   /**
    * NUEVA FUNCIÓN: Actualiza el saldo general del usuario (aplicable a inversiones directas y pujas).
-   * Esta función reemplaza la llamada incorrecta a 'actualizarSaldo' en transaccionService.
    * @param {number} userId - ID del usuario.
    * @param {number} monto - Monto a aplicar.
    * @param {object} t - Objeto de transacción de Sequelize.
-   */
+   */,
+
   async actualizarSaldoGeneral(userId, monto, t) {
-    // Aquí se implementaría la lógica para actualizar el saldo total del usuario
-    // en su tabla correspondiente (ej. Usuario.saldo o CuentaGeneral.saldo).
     console.log(
       `[SALDO_GENERAL] Usuario ${userId}: Movimiento de saldo general simulado por monto: ${monto}`
     );
     return {
       success: true,
-      message: "Actualización de saldo general simulada, asumiendo que un modelo de Cuenta de Usuario se actualiza aquí.",
+      message:
+        "Actualización de saldo general simulada, asumiendo que un modelo de Cuenta de Usuario se actualiza aquí.",
     };
-  },
-  
+  }
   /**
-   * NOTA: El alias 'actualizarSaldo' ha sido removido para evitar la confusión de parámetros
-   * que causó el error "Cannot create property 'attributes' on number".
-   */
-
-  /**
-   * Obtiene un resumen de cuenta por su ID. (Necesario para el control de acceso en el controlador)
+   * Obtiene un resumen de cuenta por su ID con asociaciones. (Función de Admin)
    * @param {number} id - ID del resumen.
    * @returns {Promise<ResumenCuenta>} El resumen con sus asociaciones.
-   */
+   */,
   async getById(id) {
     return ResumenCuenta.findByPk(id, {
       include: [
@@ -197,24 +208,47 @@ const resumenCuentaService = {
         },
       ],
     });
-  },
+  }
+  /**
+   * NUEVA FUNCIÓN DE SEGURIDAD: Obtiene un resumen de cuenta SÓLO si pertenece al usuario.
+   * @param {number} id - ID del resumen.
+   * @param {number} userId - ID del usuario.
+   * @returns {Promise<ResumenCuenta | null>} El resumen o null si no existe o no pertenece al usuario.
+   */,
+
+  async findResumenByIdAndUserId(id, userId) {
+    return ResumenCuenta.findOne({
+      where: { id: id },
+      include: [
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          where: { id_usuario: userId }, // FILTRO DE SEGURIDAD
+          attributes: ["id", "id_usuario"],
+          required: true,
+        },
+      ],
+    });
+  }
   /**
    * Actualiza los campos de un resumen de cuenta por su ID. (Función de Administrador)
    * @param {number} id - ID del resumen a actualizar.
    * @param {object} data - Datos a actualizar.
    * @returns {Promise<[number, ResumenCuenta[]]>} Resultado de la actualización.
-   */
+   */,
+
   async update(id, data) {
     return ResumenCuenta.update(data, {
       where: { id: id },
       returning: true,
     });
-  },
+  }
   /**
    * Realiza una eliminación lógica de un resumen de cuenta. (Función de Administrador)
    * @param {number} id - ID del resumen a "eliminar".
    * @returns {Promise<number>} Número de filas afectadas (0 o 1).
-   */
+   */,
+
   async softDelete(id) {
     return ResumenCuenta.update({ activo: false }, { where: { id: id } });
   },

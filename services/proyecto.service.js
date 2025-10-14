@@ -172,12 +172,13 @@ const proyectoService = {
   },
 
   // Actualiza un proyecto
-  async update(id, data) {
-    const proyecto = await Proyecto.findByPk(id);
+  async update(id, data, transaction) {
+    // 🔑 Agregar el parámetro transaction
+    const proyecto = await Proyecto.findByPk(id, { transaction });
     if (!proyecto) {
       return null;
-    }
-    return await proyecto.update(data);
+    } // 🔑 Usar la transacción al actualizar
+    return await proyecto.update(data, { transaction });
   },
 
   // Elimina lógicamente un proyecto

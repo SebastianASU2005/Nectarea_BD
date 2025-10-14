@@ -23,9 +23,8 @@ const suscripcionProyectoService = {
     });
     if (!proyecto) {
       throw new Error("Proyecto asociado no encontrado.");
-    }
+    } // 🚀 VALIDACIÓN CLAVE: No crear suscripción si proyecto está Finalizado/Cancelado
 
-    // 🚀 VALIDACIÓN CLAVE: No crear suscripción si proyecto está Finalizado/Cancelado
     if (
       proyecto.estado_proyecto === "Finalizado" ||
       proyecto.estado_proyecto === "Cancelado"
@@ -33,9 +32,7 @@ const suscripcionProyectoService = {
       throw new Error(
         `No se puede iniciar una suscripción, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`
       );
-    } // Inicializa los meses a pagar con el plazo total del proyecto
-    // ----------------------------------------------------------------------------------
-
+    } // Inicializa los meses a pagar con el plazo total del proyecto // ----------------------------------------------------------------------------------
     data.meses_a_pagar = proyecto.plazo_inversion;
     const nuevaSuscripcion = await SuscripcionProyecto.create(data, {
       transaction: t,
@@ -119,7 +116,7 @@ const suscripcionProyectoService = {
       include: [
         {
           model: Proyecto,
-          as: "proyecto",
+          as: "proyectoAsociado", // 🚨 ESTA ES LA CORRECCIÓN
           where: { activo: true },
         },
       ],
@@ -134,7 +131,7 @@ const suscripcionProyectoService = {
       include: [
         {
           model: Proyecto,
-          as: "proyecto",
+          as: "proyectoAsociado", // 🚨 Y PROBABLEMENTE AQUÍ TAMBIÉN DEBAS CORREGIR
           where: { objetivo_cumplido: true },
         },
         Usuario,

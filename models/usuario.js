@@ -1,3 +1,5 @@
+// Archivo: models/Usuario.js
+
 const { sequelize, DataTypes } = require("../config/database");
 const baseAttributes = require("./base");
 
@@ -14,15 +16,15 @@ const Usuario = sequelize.define(
       allowNull: false,
     },
     email: {
-      type: DataTypes.STRING(255), // 🛑 1. ELIMINAMOS unique: true DE AQUÍ 🛑
+      type: DataTypes.STRING(255),
       allowNull: false,
     },
     dni: {
-      type: DataTypes.STRING(20), // 🛑 2. ELIMINAMOS unique: true DE AQUÍ 🛑
+      type: DataTypes.STRING(20),
       allowNull: false,
     },
     nombre_usuario: {
-      type: DataTypes.STRING(50), // 🛑 3. ELIMINAMOS unique: true DE AQUÍ 🛑
+      type: DataTypes.STRING(50),
       allowNull: false,
     },
     contraseña_hash: {
@@ -50,13 +52,14 @@ const Usuario = sequelize.define(
     is_2fa_enabled: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: false, // Por defecto, el 2FA está deshabilitado
+      defaultValue: false,
       comment: "Indica si el 2FA está activo para este usuario",
     },
     twofa_secret: {
       type: DataTypes.STRING(255),
-      allowNull: true, // Será NULL si el 2FA no está habilitado
-      comment: "Clave secreta para la generación de códigos TOTP (Google Authenticator)",
+      allowNull: true,
+      comment:
+        "Clave secreta para la generación de códigos TOTP (Google Authenticator)",
     },
     reset_password_token: {
       type: DataTypes.STRING(255),
@@ -77,13 +80,11 @@ const Usuario = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    // ❌ Se eliminó el campo 'sancion_expira'
   },
   {
-    tableName: "usuario", // 🛑 4. AÑADIMOS ÍNDICES COMPUESTOS ÚNICOS CONDICIONALES 🛑
+    tableName: "usuario",
     indexes: [
-      // Este índice asegura que el email sea único SÓLO si la cuenta está activa.
-      // Esto es específico de PostgreSQL (donde el where es más limpio).
-      // Para otros DBs como MySQL/MariaDB, se usa el campo 'activo'.
       {
         unique: true,
         fields: ["email"],

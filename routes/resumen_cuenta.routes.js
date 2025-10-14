@@ -1,30 +1,38 @@
+// Archivo: routes/resumen_cuenta.routes.js
+
 const express = require("express");
 const router = express.Router();
 const resumenCuentaController = require("../controllers/resumen_cuenta.controller");
-const authMiddleware = require("../middleware/auth.middleware"); // Asumimos que tienes un archivo de middleware
+const authMiddleware = require("../middleware/auth.middleware");
 
 // --- Rutas de Lectura (CRUD - Read) ---
 
-// 1. Obtener TODOS los resúmenes de cuenta del usuario autenticado.
-// (Protegida para el usuario mismo)
+// 1. NUEVA RUTA DE USUARIO: Obtener SOLO los resúmenes del usuario autenticado.
 router.get(
-  "/",
+  "/mis_resumenes", // <-- RUTA ESPECÍFICA para el usuario
   authMiddleware.authenticate,
-  resumenCuentaController.getAccountSummaries
+  resumenCuentaController.findMyAccountSummaries // <-- NUEVO MÉTODO
 );
 
-// 2. Obtener un resumen de cuenta específico por su ID.
-// (Útil para ver un resumen individual y verificar el historial. También protegida para el usuario.)
+// 2. Ruta protegida para ADMINISTRADORES: Obtener TODOS los resúmenes.
+router.get(
+  "/", // <-- Ahora solo para administradores
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  resumenCuentaController.findAll // <-- Método renombrado
+);
+
+// 3. Obtener un resumen de cuenta específico por su ID (USUARIO/ADMIN).
+// ⚠️ Debe ir DESPUÉS de /mis_resumenes
 router.get(
   "/:id",
   authMiddleware.authenticate,
-  resumenCuentaController.getAccountSummaryById // Necesitamos agregar este método al controlador.
+  resumenCuentaController.getAccountSummaryById // Se actualizará para verificar la propiedad del usuario/admin.
 );
 
 // --- Rutas de Administración (CRUD - Create, Update, Delete) ---
 
-// 3. Ruta para que un administrador pueda ACTUALIZAR manualmente un resumen de cuenta.
-// (Solo para administradores, para correcciones o ajustes manuales)
+// 4. Ruta para que un administrador pueda ACTUALIZAR manualmente un resumen de cuenta.
 router.put(
   "/:id",
   authMiddleware.authenticate,
@@ -32,13 +40,12 @@ router.put(
   resumenCuentaController.update
 );
 
-// 4. Ruta para que un administrador pueda ELIMINAR lógicamente un resumen de cuenta.
-// (Solo para administradores)
+// 5. Ruta para que un administrador pueda ELIMINAR lógicamente un resumen de cuenta.
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  resumenCuentaController.softDelete // o .delete, según tu convención
+  resumenCuentaController.softDelete
 );
 
 module.exports = router;

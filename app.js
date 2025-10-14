@@ -21,9 +21,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "     ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "      ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("     El servicio de pagos NO funcionará.");
+  console.error("      El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -40,11 +40,6 @@ function captureRawBody(req, res, buf, encoding) {
 
 // ====================================================================
 // 🎯 CORRECCIÓN CRÍTICA PARA EL WEBHOOK: Middleware Específico
-//
-// 1. Aplicamos body-parser CON la función 'verify' SOLO a la ruta del webhook.
-// 2. Usamos express.json para que req.body esté disponible para el controller.
-//    (Aunque la validación de firma que te pasé no necesita req.rawBody,
-//    es buena práctica tenerlo si el hash se calcula sobre el cuerpo *raw*).
 // ====================================================================
 app.use(
   "/api/payment/webhook/:metodo",
@@ -54,9 +49,6 @@ app.use(
 
 // ====================================================================
 // 3. MIDDLEWARES GLOBALES (Para el resto de las rutas de la API)
-//
-// Se aplican a *todas* las peticiones que no pasaron por el middleware anterior.
-// Usamos los middlewares estándar sin la función 'verify' especial aquí.
 // ====================================================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -119,13 +111,17 @@ const cuotaMensualRoutes = require("./routes/cuota_mensual.routes");
 const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
 const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
+const testRoutes = require("./routes/test.routes")
 
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 
-// Importación de las tareas programadas
+// Importación de las tareas programadas existentes
 const monthlyPaymentGenerationTask = require("./tasks/monthlyPaymentGenerationTask");
 const overduePaymentManager = require("./tasks/OverduePaymentManager");
 const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
+
+// 🛑 NUEVA IMPORTACIÓN DEL CRON JOB DE IMPAGO 🛑
+const { startCronJobs } = require("./tasks/ManejoImpagoPuja");
 
 // ====================================================================
 // 4. RUTAS DEL WEBHOOK (Aplicada después del middleware especial)
@@ -151,6 +147,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
+app.use("/api/test",testRoutes)
 
 // 6. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
@@ -204,11 +201,16 @@ async function synchronizeDatabase() {
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
-    // Iniciar las tareas programadas y el servidor solo después de la sincronización
+    // ==========================================================
+    // 🚀 INICIO DE TAREAS PROGRAMADAS
+    // ==========================================================
     paymentReminderScheduler.scheduleJobs();
     monthlyPaymentGenerationTask.start();
     overduePaymentManager.start();
     overduePaymentNotifier.start();
+
+    // 🛑 INICIAR EL CRON JOB DE MANEJO DE IMPAGOS 🛑
+    startCronJobs();
 
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);

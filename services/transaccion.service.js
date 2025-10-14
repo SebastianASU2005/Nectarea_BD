@@ -813,6 +813,20 @@ const transaccionService = {
       ...options,
     });
   },
+  async findByUserId(userId, options = {}) {
+    try {
+      return await Transaccion.findAll({
+        where: {
+          id_usuario: userId,
+          // Puedes añadir otras condiciones como estado_transaccion no 'eliminada' si aplica
+          // activo: true
+        },
+        ...options, // Permite pasar opciones adicionales de Sequelize
+      });
+    } catch (error) {
+      throw new Error("Error al obtener transacciones por ID de usuario.");
+    }
+  },
 
   async findAll() {
     try {

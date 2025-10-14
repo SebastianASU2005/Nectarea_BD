@@ -42,7 +42,9 @@ const resumenCuentaController = {
         porcentaje_iva: porcentaje_iva,
       };
 
-      const nuevaCuota = await cuotaMensualService.createAndSetProjectAmount(datosCuota);
+      const nuevaCuota = await cuotaMensualService.createAndSetProjectAmount(
+        datosCuota
+      );
 
       // 3. Crear el resumen de cuenta.
       const nuevoResumen = await resumenCuentaService.create({
@@ -62,7 +64,12 @@ const resumenCuentaController = {
         },
       });
 
-      res.status(201).json({ message: "Resumen de cuenta creado.", resumen_cuenta: nuevoResumen });
+      res
+        .status(201)
+        .json({
+          message: "Resumen de cuenta creado.",
+          resumen_cuenta: nuevoResumen,
+        });
     } catch (error) {
       console.error("Error al crear el resumen de cuenta:", error);
       res.status(500).json({
@@ -73,40 +80,80 @@ const resumenCuentaController = {
   },
 
   /**
-   * Obtiene todos los resúmenes de cuenta del usuario autenticado.
-   * AVISO: Esta es la función que fue optimizada para evitar múltiples consultas.
+   * NUEVA RUTA DE USUARIO: Obtiene todos los resúmenes de cuenta del usuario autenticado.
    * @param {object} req - Objeto de solicitud de Express.
    * @param {object} res - Objeto de respuesta de Express.
    */
-  async getAccountSummaries(req, res) {
+  async findMyAccountSummaries(req, res) {
     try {
-      // Nota: Aquí se asume que el ID de usuario está disponible en req.user
-      const userId = req.user.id;
-      // Usamos la función del servicio que obtiene todos los resúmenes del usuario en una sola llamada.
-      const resumenes = await resumenCuentaService.getAccountSummariesByUserId(userId);
+      const userId = req.user.id; // Usa la función existente que filtra por ID de usuario
+      const resumenes = await resumenCuentaService.getAccountSummariesByUserId(
+        userId
+      );
 
       res.status(200).json(resumenes);
     } catch (error) {
-      console.error("Error al obtener los resúmenes de cuenta:", error);
+      console.error(
+        "Error al obtener los resúmenes de cuenta del usuario:",
+        error
+      );
       res.status(500).json({
-        message: "Error al obtener los resúmenes de cuenta.",
+        message: "Error al obtener los resúmenes de cuenta del usuario.",
         error: error.message,
       });
     }
-  },
-
+  }
   /**
-   * Obtiene un resumen de cuenta específico por su ID.
+   * RUTA DE ADMINISTRADOR: Obtiene TODOS los resúmenes de cuenta. (Antes era getAccountSummaries)
    * @param {object} req - Objeto de solicitud de Express.
    * @param {object} res - Objeto de respuesta de Express.
-   */
+   */,
+
+  async findAll(req, res) {
+    try {
+      // Usa la nueva función del servicio que obtiene todos (sin filtrar por usuario)
+      const resumenes = await resumenCuentaService.findAll();
+
+      res.status(200).json(resumenes);
+    } catch (error) {
+      console.error("Error al obtener todos los resúmenes de cuenta:", error);
+      res.status(500).json({
+        message: "Error al obtener todos los resúmenes de cuenta.",
+        error: error.message,
+      });
+    }
+  }
+  /**
+   * Obtiene un resumen de cuenta específico por su ID.
+   * Verifica que el usuario sea el propietario o un administrador.
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */,
+
   async getAccountSummaryById(req, res) {
     try {
       const { id } = req.params;
-      const resumen = await resumenCuentaService.findById(id);
+      const userId = req.user.id;
+      const isAdmin = req.user.rol === "admin"; // Asumiendo que el rol está en req.user
+
+      let resumen;
+      if (isAdmin) {
+        // Si es administrador, usa la búsqueda sin restricciones de usuario
+        resumen = await resumenCuentaService.getById(id);
+      } else {
+        // Si es usuario, debe ser propietario del resumen
+        resumen = await resumenCuentaService.findResumenByIdAndUserId(
+          id,
+          userId
+        );
+      }
 
       if (!resumen) {
-        return res.status(404).json({ message: "Resumen de cuenta no encontrado." });
+        return res
+          .status(404)
+          .json({
+            message: "Resumen de cuenta no encontrado o no autorizado.",
+          });
       }
 
       res.status(200).json(resumen);
@@ -130,7 +177,9 @@ const resumenCuentaController = {
       const data = req.body;
       const updatedResumen = await resumenCuentaService.update(id, data);
       if (!updatedResumen) {
-        return res.status(404).json({ message: "Resumen de cuenta no encontrado." });
+        return res
+          .status(404)
+          .json({ message: "Resumen de cuenta no encontrado." });
       }
       res.status(200).json(updatedResumen);
     } catch (error) {
@@ -152,9 +201,13 @@ const resumenCuentaController = {
       const { id } = req.params;
       const deletedResumen = await resumenCuentaService.softDelete(id);
       if (!deletedResumen) {
-        return res.status(404).json({ message: "Resumen de cuenta no encontrado." });
+        return res
+          .status(404)
+          .json({ message: "Resumen de cuenta no encontrado." });
       }
-      res.status(200).json({ message: "Resumen de cuenta eliminado lógicamente." });
+      res
+        .status(200)
+        .json({ message: "Resumen de cuenta eliminado lógicamente." });
     } catch (error) {
       console.error("Error al eliminar el resumen de cuenta:", error);
       res.status(500).json({

@@ -3,24 +3,32 @@ const router = express.Router();
 const inversionController = require("../controllers/inversion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 
-// Ruta protegida: Solo usuarios autenticados pueden crear una inversión
+// ===============================================
+// 1. RUTAS POST (Estáticas y Semi-Dinámicas)
+// ===============================================
+
+// Ruta protegida: Solo usuarios autenticados pueden crear una inversión (Estática)
 router.post("/", authMiddleware.authenticate, inversionController.create);
 
-// 🚀 NUEVA RUTA: Inicia el proceso de pago para una inversión pendiente. Aplica la bifurcación 2FA.
-router.post(
-  "/iniciar-pago/:idInversion",
-  authMiddleware.authenticate,
-  inversionController.requestCheckoutInversion
-);
-
-// 🚀 NUEVA RUTA: Verifica el 2FA y genera el checkout para la inversión pendiente.
+// 🚀 NUEVA RUTA: Verifica el 2FA (Estática con prefijo fijo)
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
   inversionController.confirmarInversionCon2FA
 );
 
-// Ruta protegida para administradores: Solo los administradores pueden ver TODAS las inversiones
+// 🚀 RUTA DINÁMICA POST: Inicia el proceso de pago. Va al final de los POST.
+router.post(
+  "/iniciar-pago/:idInversion",
+  authMiddleware.authenticate,
+  inversionController.requestCheckoutInversion
+);
+
+// ===============================================
+// 2. RUTAS GET (Estáticas y Con Prefijo - ¡CRÍTICO!)
+// ===============================================
+
+// Ruta protegida para administradores: Ver TODAS las inversiones (GET estático)
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -28,14 +36,14 @@ router.get(
   inversionController.findAll
 );
 
-// **NUEVA RUTA**: Solo un usuario autenticado puede ver sus propias inversiones
+// **NUEVA RUTA**: Ver sus propias inversiones (Estática con prefijo, ¡va antes de /:id!)
 router.get(
   "/mis_inversiones",
   authMiddleware.authenticate,
   inversionController.findMyInversions
 );
 
-// Ruta protegida para administradores: Solo los administradores pueden ver inversiones activas
+// Ruta protegida para administradores: Ver inversiones activas (Estática con prefijo, ¡va antes de /:id!)
 router.get(
   "/activas",
   authMiddleware.authenticate,
@@ -43,16 +51,24 @@ router.get(
   inversionController.findAllActivo
 );
 
-// Ruta protegida: Solo usuarios autenticados pueden ver una inversión específica
+// Ruta protegida: Solo usuarios autenticados pueden ver una inversión específica (GET DINÁMICO)
+// ⚠️ ESTA DEBE IR AL FINAL DE TODOS LOS GET
 router.get("/:id", authMiddleware.authenticate, inversionController.findById);
 
-// Rutas protegidas para administradores: Solo los administradores pueden actualizar o "eliminar" inversiones
+// ===============================================
+// 3. RUTAS PUT/DELETE (DINÁMICAS GENÉRICAS)
+// Estas deben ir al final del archivo.
+// ===============================================
+
+// Rutas protegidas para administradores: Actualizar
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   inversionController.update
 );
+
+// Rutas protegidas para administradores: "Eliminar"
 router.delete(
   "/:id",
   authMiddleware.authenticate,
