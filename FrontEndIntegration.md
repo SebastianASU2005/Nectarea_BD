@@ -1,132 +1,193 @@
-# 🎨 Guía COMPLETA de Integración Frontend - Nectárea API
+# 🎨 Guía Completa de Integración Frontend
+## Nectárea API - Plataforma de Crowdfunding
 
-## 🚀 PASO A PASO DESDE CERO - Para Desarrolladores Frontend
+<div align="center">
 
-Esta guía asume que **NO sabes nada** sobre el backend de Nectárea. Vamos a explicar TODO desde cero.
+**Documentación Técnica para Desarrolladores Frontend**
 
+*Versión 1.0 | Octubre 2025*
 
-
----
-
-## ❓ ¿Qué es esta API?
-
-Nectárea es una plataforma de **crowdfunding** (como Kickstarter) donde:
-
-- Los usuarios pueden **invertir** en proyectos
-- Los usuarios pueden hacer **pujas** (como subastas)
-- Los usuarios pueden **suscribirse** a proyectos mensuales
-- Todo se paga con **Mercado Pago**
-
-La API es el backend que maneja toda la lógica y la base de datos.
+</div>
 
 ---
 
-## 📚 Antes de Empezar
+## 📋 Tabla de Contenidos
 
-### ¿Qué necesitas saber?
+1. [Introducción](#introducción)
+2. [Requisitos Previos](#requisitos-previos)
+3. [Configuración del Backend](#configuración-del-backend)
+4. [Configuración del Frontend](#configuración-del-frontend)
+5. [Modelos de Base de Datos](#modelos-de-base-de-datos)
+6. [Reglas de Negocio Críticas](#reglas-de-negocio-críticas)
+7. [Servicios del Backend](#servicios-del-backend)
 
-- ✅ JavaScript básico
-- ✅ Conceptos de HTTP (GET, POST, PUT, DELETE)
-- ✅ JSON
-- ✅ React/Vue/Angular (cualquier framework frontend)
+---
 
-### ¿Qué NO necesitas saber?
+## 🚀 Introducción
 
-- ❌ Node.js o Express (el backend ya está hecho)
-- ❌ PostgreSQL (la base de datos ya está configurada)
-- ❌ Cómo funcionan los webhooks internamente
+### ¿Qué es Nectárea?
+
+Nectárea es una plataforma de **crowdfunding** (similar a Kickstarter) que permite:
+
+- ✅ **Inversiones directas** en proyectos
+- ✅ **Pujas** en subastas de lotes
+- ✅ **Suscripciones mensuales** a proyectos
+- ✅ **Pagos integrados** con Mercado Pago
+
+### Arquitectura del Sistema
+
+```
+┌─────────────────┐      HTTP/REST      ┌─────────────────┐
+│                 │ ◄──────────────────► │                 │
+│   Frontend      │                      │   Backend API   │
+│  (React/Vue)    │                      │   (Node.js)     │
+│                 │                      │                 │
+└─────────────────┘                      └────────┬────────┘
+                                                  │
+                                                  │
+                                         ┌────────▼────────┐
+                                         │   PostgreSQL    │
+                                         │   Database      │
+                                         └─────────────────┘
+```
+
+---
+
+## 📚 Requisitos Previos
+
+### Conocimientos Necesarios
+
+| ✅ **Requeridos** | ❌ **NO Necesarios** |
+|-------------------|----------------------|
+| JavaScript básico | Node.js/Express internamente |
+| HTTP (GET, POST, PUT, DELETE) | PostgreSQL a profundidad |
+| JSON | Webhooks internamente |
+| React/Vue/Angular | Arquitectura de backend |
 
 ### Herramientas Requeridas
 
-- **Node.js** v18+ (para correr el backend localmente)
-- **PostgreSQL** v14+ (base de datos)
-- **Git** (para clonar el repositorio)
-- **Postman** o **Thunder Client** (para probar la API)
+| Herramienta | Versión | Propósito |
+|-------------|---------|-----------|
+| **Node.js** | v18+ | Runtime del backend |
+| **PostgreSQL** | v14+ | Base de datos |
+| **Git** | Latest | Control de versiones |
+| **Postman/Thunder Client** | Latest | Pruebas de API |
 
 ---
 
-## 🔧 PASO 1: Configuración del Backend
+## 🔧 Configuración del Backend
 
-### 1.1 Clonar el Repositorio
+### Paso 1: Clonar el Repositorio
 
 ```bash
-# Abre tu terminal y ejecuta:
+# Clona el proyecto
 git clone https://github.com/SebastianASU2005/Nectarea_BD.git
 cd Nectarea_BD
-```
 
-### 1.2 Instalar Dependencias
-
-```bash
+# Instala las dependencias
 npm install
 ```
 
-⏳ Esto tomará unos minutos. Está instalando todas las librerías necesarias.
+⏳ *Este proceso tomará unos minutos*
 
-### 1.3 Instalar y Configurar PostgreSQL
+---
 
-#### En Windows:
+### Paso 2: Instalar PostgreSQL
 
-1. Descarga PostgreSQL: https://www.postgresql.org/download/windows/
-2. Instala con los valores por defecto
-3. Durante la instalación, anota la contraseña que elijas (la necesitarás)
-4. Puerto por defecto: **5432**
+<details>
+<summary><b>🪟 Windows</b></summary>
 
-#### En Mac:
+1. Descarga PostgreSQL desde: https://www.postgresql.org/download/windows/
+2. Ejecuta el instalador
+3. Durante la instalación:
+   - Puerto: **5432** (por defecto)
+   - Anota la contraseña que elijas
+4. Completa la instalación
+
+</details>
+
+<details>
+<summary><b>🍎 macOS</b></summary>
 
 ```bash
+# Instalar con Homebrew
 brew install postgresql@14
+
+# Iniciar el servicio
 brew services start postgresql@14
 ```
 
-#### En Linux (Ubuntu/Debian):
+</details>
+
+<details>
+<summary><b>🐧 Linux (Ubuntu/Debian)</b></summary>
 
 ```bash
+# Actualizar repositorios
 sudo apt update
+
+# Instalar PostgreSQL
 sudo apt install postgresql postgresql-contrib
+
+# Iniciar el servicio
 sudo systemctl start postgresql
 ```
 
-### 1.4 Crear la Base de Datos
+</details>
 
-Abre tu terminal y ejecuta:
+---
+
+### Paso 3: Crear la Base de Datos
 
 ```bash
 # Conectarse a PostgreSQL
 psql -U postgres
+```
 
-# Dentro de psql, ejecuta:
+```sql
+-- Dentro de la consola de PostgreSQL
+
+-- Crear la base de datos
 CREATE DATABASE nectarea_dev;
+
+-- Crear el usuario
 CREATE USER nectarea_user WITH PASSWORD 'dev_password_123';
+
+-- Otorgar permisos
 GRANT ALL PRIVILEGES ON DATABASE nectarea_dev TO nectarea_user;
 
-# Salir de psql
+-- Salir
 \q
 ```
 
-✅ **Importante:** Anota estos datos, los necesitarás en el siguiente paso.
+> ⚠️ **Importante:** Guarda estos datos, los necesitarás en el siguiente paso.
 
-### 1.5 Configurar Variables de Entorno
+---
+
+### Paso 4: Configurar Variables de Entorno
 
 Crea un archivo `.env` en la raíz del proyecto:
 
 ```bash
-# En la carpeta Nectarea_BD/, crea el archivo .env
 touch .env
 ```
 
-Abre `.env` con tu editor favorito y copia esto:
+Copia y pega la siguiente configuración:
 
 ```env
-# === ENTORNO ===
+# ═══════════════════════════════════════════════════
+#  CONFIGURACIÓN DE ENTORNO - DESARROLLO
+# ═══════════════════════════════════════════════════
+
+# --- Entorno ---
 NODE_ENV=development
 
-# === SERVIDOR ===
+# --- Servidor ---
 PORT=3000
 HOST_URL=http://localhost:3000
 FRONTEND_URL=http://localhost:5173
 
-# === BASE DE DATOS ===
+# --- Base de Datos ---
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=nectarea_dev
@@ -134,17 +195,16 @@ DB_USER=nectarea_user
 DB_PASSWORD=dev_password_123
 DB_DIALECT=postgres
 
-# === JWT (AUTENTICACIÓN) ===
+# --- JWT (Autenticación) ---
 JWT_SECRET=mi_secreto_super_seguro_de_desarrollo_cambiar_en_produccion
 JWT_EXPIRES_IN=7d
 
-# === MERCADO PAGO (MODO PRUEBA) ===
-# Deja estos valores vacíos por ahora, los configuraremos después
+# --- Mercado Pago (Dejar vacío por ahora) ---
 MP_ACCESS_TOKEN=
 MP_WEBHOOK_SECRET=
 MP_CURRENCY_ID=ARS
 
-# === EMAIL (OPCIONAL EN DESARROLLO) ===
+# --- Email (Opcional en desarrollo) ---
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_SECURE=false
@@ -153,49 +213,54 @@ EMAIL_PASSWORD=
 EMAIL_FROM=noreply@nectarea.com
 ```
 
-⚠️ **MUY IMPORTANTE:**
+> 🔐 **Seguridad:** Asegúrate de usar los mismos valores que configuraste en el Paso 3.
 
-- Usa los mismos valores que creaste en el paso 1.4
-- Si tu contraseña de PostgreSQL es diferente, cámbiala en `DB_PASSWORD`
-- Si usas otro puerto, cámbialo en `DB_PORT`
+---
 
-### 1.6 Inicializar la Base de Datos
+### Paso 5: Inicializar la Base de Datos
 
 ```bash
 npm run migrate
 ```
 
-Esto creará todas las tablas automáticamente. Verás mensajes como:
+**Salida esperada:**
 
 ```
-Executing (default): CREATE TABLE IF NOT EXISTS "usuarios"...
-Executing (default): CREATE TABLE IF NOT EXISTS "proyectos"...
-✅ Base de datos sincronizada
+✓ Ejecutando migraciones...
+✓ Tabla 'usuarios' creada
+✓ Tabla 'proyectos' creada
+✓ Tabla 'transacciones' creada
+...
+✅ Base de datos sincronizada correctamente
 ```
 
-### 1.7 Iniciar el Backend
+---
+
+### Paso 6: Iniciar el Backend
 
 ```bash
 npm run dev
 ```
 
-Deberías ver:
+**Salida esperada:**
 
 ```
 ✅ Conectado a la base de datos PostgreSQL
 ✅ Servidor corriendo en http://localhost:3000
-✅ Mercado Pago SDK configurado (o ⚠️ si no configuraste MP aún)
+⚠️  Mercado Pago SDK no configurado (esperado en desarrollo)
 ```
 
-### 1.8 Verificar que Funciona
+---
 
-Abre tu navegador y ve a:
+### Paso 7: Verificar que Funciona
+
+Abre tu navegador y visita:
 
 ```
 http://localhost:3000/api/health
 ```
 
-Deberías ver:
+**Respuesta esperada:**
 
 ```json
 {
@@ -204,61 +269,76 @@ Deberías ver:
 }
 ```
 
-✅ **¡Perfecto! El backend está corriendo.**
+✅ **¡Perfecto! El backend está funcionando correctamente.**
 
 ---
 
-## ⚙️ PASO 2: Configuración del Frontend
+## ⚙️ Configuración del Frontend
 
-### 2.1 Crear Tu Proyecto Frontend
+### Paso 1: Crear el Proyecto Frontend
+
+<details>
+<summary><b>⚛️ React (con Vite)</b></summary>
 
 ```bash
-# Si usas React con Vite:
 npm create vite@latest nectarea-frontend -- --template react
 cd nectarea-frontend
 npm install
+```
 
-# Si usas Vue:
+</details>
+
+<details>
+<summary><b>💚 Vue (con Vite)</b></summary>
+
+```bash
 npm create vite@latest nectarea-frontend -- --template vue
 cd nectarea-frontend
 npm install
 ```
 
-### 2.2 Instalar Axios (Para Comunicarte con la API)
+</details>
+
+---
+
+### Paso 2: Instalar Axios
 
 ```bash
 npm install axios
 ```
 
-### 2.3 Crear el Archivo de Configuración de la API
+---
 
-Crea un archivo: `src/services/api.js`
+### Paso 3: Crear el Servicio de API
+
+Crea el archivo: `src/services/api.js`
 
 ```javascript
-// src/services/api.js
 import axios from "axios";
 
-// URL del backend (cámbialo según tu entorno)
+// ═══════════════════════════════════════════════════
+//  CONFIGURACIÓN BASE DE LA API
+// ═══════════════════════════════════════════════════
+
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
-// Crear instancia de axios con configuración base
 const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 15000, // 15 segundos
+  timeout: 15000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// ============================================
-// INTERCEPTOR DE REQUEST (Agrega el token automáticamente)
-// ============================================
+// ═══════════════════════════════════════════════════
+//  INTERCEPTOR DE REQUEST
+//  Agrega el token automáticamente
+// ═══════════════════════════════════════════════════
+
 apiClient.interceptors.request.use(
   (config) => {
-    // Obtener el token del localStorage
     const token = localStorage.getItem("token");
-
-    // Si existe, agregarlo al header
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -272,9 +352,11 @@ apiClient.interceptors.request.use(
   }
 );
 
-// ============================================
-// INTERCEPTOR DE RESPONSE (Maneja errores automáticamente)
-// ============================================
+// ═══════════════════════════════════════════════════
+//  INTERCEPTOR DE RESPONSE
+//  Maneja errores automáticamente
+// ═══════════════════════════════════════════════════
+
 apiClient.interceptors.response.use(
   (response) => {
     console.log(`✅ Respuesta recibida de ${response.config.url}`);
@@ -284,7 +366,7 @@ apiClient.interceptors.response.use(
     if (error.response) {
       const { status } = error.response;
 
-      // Si el token expiró o es inválido
+      // Token expirado o inválido
       if (status === 401) {
         console.error("🚫 Token inválido o expirado");
         localStorage.removeItem("token");
@@ -292,7 +374,7 @@ apiClient.interceptors.response.use(
         window.location.href = "/login";
       }
 
-      // Si no tiene permisos
+      // Sin permisos
       if (status === 403) {
         console.error("🚫 No tienes permisos para esta acción");
       }
@@ -307,23 +389,32 @@ apiClient.interceptors.response.use(
 export default apiClient;
 ```
 
-### 2.4 Crear Variables de Entorno del Frontend
+---
 
-Crea un archivo `.env` en la raíz de tu proyecto frontend:
+### Paso 4: Configurar Variables de Entorno
+
+Crea el archivo `.env` en la raíz de tu proyecto frontend:
 
 ```env
 VITE_API_URL=http://localhost:3000/api
 ```
 
-### 2.5 Probar la Conexión
+---
 
-Crea un archivo: `src/services/authService.js`
+### Paso 5: Crear un Servicio de Prueba
+
+Crea el archivo: `src/services/authService.js`
 
 ```javascript
-// src/services/authService.js
 import apiClient from "./api";
 
-// Función de prueba
+// ═══════════════════════════════════════════════════
+//  SERVICIO DE AUTENTICACIÓN
+// ═══════════════════════════════════════════════════
+
+/**
+ * Función de prueba de conexión
+ */
 export const testConnection = async () => {
   try {
     const response = await apiClient.get("/health");
@@ -336,7 +427,11 @@ export const testConnection = async () => {
 };
 ```
 
-Ahora, en tu componente principal (App.jsx o similar):
+---
+
+### Paso 6: Probar la Conexión
+
+Modifica tu `App.jsx` (o `App.vue`):
 
 ```jsx
 import { useEffect } from "react";
@@ -347,19 +442,28 @@ function App() {
     testConnection();
   }, []);
 
-  return <div>Nectárea Frontend</div>;
+  return (
+    <div className="App">
+      <h1>🍯 Nectárea Frontend</h1>
+      <p>Revisa la consola del navegador (F12)</p>
+    </div>
+  );
 }
 
 export default App;
 ```
 
-Inicia tu frontend:
+---
+
+### Paso 7: Iniciar el Frontend
 
 ```bash
 npm run dev
 ```
 
-Abre la consola del navegador (F12) y deberías ver:
+Abre tu navegador en `http://localhost:5173` y presiona **F12** para ver la consola.
+
+**Salida esperada en la consola:**
 
 ```
 📤 GET /health
@@ -367,1049 +471,459 @@ Abre la consola del navegador (F12) y deberías ver:
 ✅ Conexión exitosa: { status: 'ok', timestamp: '...' }
 ```
 
-✅ **¡Perfecto! Tu frontend se comunica con el backend.**
+✅ **¡Excelente! Tu frontend se comunica con el backend.**
 
 ---
 
-## 🚀 PASO 3: Entendiendo los Modelos de Base de Datos
+## 📊 Modelos de Base de Datos
 
 ### ¿Qué es un Modelo?
 
-Un **Modelo** es la representación en código de una **tabla** en la base de datos (DB), utilizando Sequelize. Define las columnas, los tipos de datos y las restricciones.
+Un **Modelo** es la representación en código de una **tabla** en la base de datos, definiendo sus columnas, tipos de datos y relaciones.
 
-| Modelo (Sequelize)    | Tabla (DB)             | Propósito Principal                                             |
-| :-------------------- | :--------------------- | :-------------------------------------------------------------- |
-| `Usuario`             | `usuario`              | Gestión de cuentas de usuario.                                  |
-| `Proyecto`            | `proyecto`             | Detalles y estado de los proyectos de inversión.                |
-| `Transaccion`         | `transaccion`          | Registro central de flujos de dinero.                           |
-| `SuscripcionProyecto` | `suscripcion_proyecto` | Vínculo y estado de la suscripción de un usuario a un proyecto. |
-| `Puja`                | `puja`                 | Registro de las ofertas en las subastas de lotes.               |
+### Resumen de Modelos
 
----
-
-### Modelos Principales del Sistema
-
-#### 1. Usuario (`usuario`)
-
-| Atributo             | Tipo de Dato  | Observaciones Clave                                          |
-| :------------------- | :------------ | :----------------------------------------------------------- |
-| **`id`**             | `INTEGER`     | Clave primaria.                                              |
-| `nombre`, `apellido` | `STRING(100)` |                                                              |
-| **`email`**          | `STRING(255)` | Único.                                                       |
-| **`dni`**            | `STRING(20)`  | Único.                                                       |
-| `nombre_usuario`     | `STRING(50)`  | Único.                                                       |
-| `contraseña_hash`    | `STRING(255)` | Clave hasheada.                                              |
-| **`rol`**            | `ENUM`        | Opciones: **`"admin"`, `"cliente"`** (Defecto: `"cliente"`). |
-| **`activo`**         | `BOOLEAN`     | **Define si la cuenta está activa** (Defecto: `false`).      |
-| `confirmado_email`   | `BOOLEAN`     | Indica si el email ha sido verificado.                       |
-| `is_2fa_enabled`     | `BOOLEAN`     | Indica si la Autenticación de Dos Factores está activa.      |
-| `twofa_secret`       | `STRING(255)` | Clave secreta para TOTP/2FA.                                 |
-
-<br>
-
-#### 2. Proyecto (`proyecto`)
-
-| Atributo                       | Tipo de Dato     | Observaciones Clave                                          |
-| :----------------------------- | :--------------- | :----------------------------------------------------------- |
-| **`id`**                       | `INTEGER`        | Clave primaria.                                              |
-| `nombre_proyecto`              | `STRING(255)`    |                                                              |
-| `descripcion`                  | `TEXT`           |                                                              |
-| **`tipo_inversion`**           | `ENUM`           | Opciones: **`"directo"`, `"mensual"`**.                      |
-| `monto_inversion`              | `DECIMAL(18, 2)` | El monto objetivo de inversión.                              |
-| **`estado_proyecto`**          | `ENUM`           | Opciones: **`"En Espera"`, `"En proceso"`, `"Finalizado"`**. |
-| `suscripciones_actuales`       | `INTEGER`        | Contador de suscripciones activas.                           |
-| `fecha_inicio`, `fecha_cierre` | `DATEONLY`       |                                                              |
-| `pack_de_lotes`                | `BOOLEAN`        | Indica si el proyecto gestiona subastas de lotes.            |
-
-<br>
-
-#### 3. Transacción (`transaccion`)
-
-| Atributo                 | Tipo de Dato     | Observaciones Clave                                                    |
-| :----------------------- | :--------------- | :--------------------------------------------------------------------- |
-| **`id`**                 | `INTEGER`        | Clave primaria.                                                        |
-| `id_usuario`             | `INTEGER`        | Usuario que realiza la transacción.                                    |
-| `monto`                  | `DECIMAL(15, 2)` | Monto de la transacción.                                               |
-| `tipo_transaccion`       | `STRING(50)`     | Tipo de transacción (e.g., "Inversion", "Puja", "PagoMensual").        |
-| **`estado_transaccion`** | `ENUM`           | Opciones: **`"pendiente"`, `"pagado"`, `"fallido"`, `"reembolsado"`**. |
-| `id_pago_mensual`        | `INTEGER`        | **FK a la tabla `Pago`** (Pago de mensualidad).                        |
-| `id_pago_pasarela`       | `INTEGER`        | **FK a la tabla `PagoMercado`** (Pago vía pasarela).                   |
-| `id_inversion`           | `INTEGER`        | FK a `Inversion` (si aplica).                                          |
-| `id_puja`                | `INTEGER`        | FK a `Puja` (si aplica).                                               |
-
-<br>
-
-#### 4. PagoMercado (`pagos_mercado`)
-
-| Atributo                  | Tipo de Dato     | Observaciones Clave                                                                     |
-| :------------------------ | :--------------- | :-------------------------------------------------------------------------------------- |
-| **`id`**                  | `INTEGER`        | Clave primaria.                                                                         |
-| **`id_transaccion`**      | `INTEGER`        | **FK a la tabla `Transaccion`**.                                                        |
-| `id_transaccion_pasarela` | `STRING`         | ID único en la pasarela (e.g., Mercado Pago ID).                                        |
-| `monto_pagado`            | `DECIMAL(10, 2)` | Monto real pagado a través de la pasarela.                                              |
-| `metodo_pasarela`         | `STRING`         | e.g., `"mercadopago"`, `"stripe"`.                                                      |
-| **`estado`**              | `ENUM`           | Opciones: **`"pendiente"`, `"aprobado"`, `"rechazado"`, `"devuelto"`, `"en_proceso"`**. |
-| `detalles_raw`            | `JSON`           | Objeto completo del webhook/API.                                                        |
-
-<br>
-
-#### 5. SuscripcionProyecto (`suscripcion_proyecto`)
-
-| Atributo             | Tipo de Dato     | Observaciones Clave                          |
-| :------------------- | :--------------- | :------------------------------------------- |
-| **`id`**             | `INTEGER`        | Clave primaria.                              |
-| `id_usuario`         | `INTEGER`        | Usuario suscrito.                            |
-| `id_proyecto`        | `INTEGER`        | Proyecto suscrito.                           |
-| **`meses_a_pagar`**  | `INTEGER`        | Cantidad de meses que el usuario debe pagar. |
-| `tokens_disponibles` | `INTEGER`        | Tokens acumulados para pujas (Defecto: `1`). |
-| `saldo_a_favor`      | `DECIMAL(15, 2)` | Saldo proveniente de pagos excedentes.       |
-
-<br>
-
-#### 6. Pago (de Suscripción) (`pago`)
-
-| Atributo             | Tipo de Dato     | Observaciones Clave                                                                         |
-| :------------------- | :--------------- | :------------------------------------------------------------------------------------------ |
-| **`id`**             | `INTEGER`        | Clave primaria.                                                                             |
-| **`id_suscripcion`** | `INTEGER`        | Suscripción a la que pertenece el pago.                                                     |
-| `id_usuario`         | `INTEGER`        | Usuario responsable del pago.                                                               |
-| `id_proyecto`        | `INTEGER`        | Proyecto asociado.                                                                          |
-| `monto`              | `DECIMAL(15, 2)` | Monto a pagar por la cuota.                                                                 |
-| `fecha_vencimiento`  | `DATEONLY`       |                                                                                             |
-| **`estado_pago`**    | `ENUM`           | Opciones: **`"pendiente"`, `"pagado"`, `"vencido"`, `"cancelado"`, `"cubierto_por_puja"`**. |
-| `mes`                | `INTEGER`        | Mes de la cuota.                                                                            |
+| Modelo | Tabla | Propósito |
+|--------|-------|-----------|
+| `Usuario` | `usuario` | Gestión de cuentas y autenticación |
+| `Proyecto` | `proyecto` | Proyectos de inversión |
+| `Transaccion` | `transaccion` | Registro de flujos de dinero |
+| `SuscripcionProyecto` | `suscripcion_proyecto` | Vínculo usuario-proyecto |
+| `Puja` | `puja` | Ofertas en subastas |
+| `Lote` | `lote` | Activos subastados |
+| `Pago` | `pago` | Cuotas mensuales |
+| `PagoMercado` | `pagos_mercado` | Pagos de pasarela |
 
 ---
 
-### Modelos de Subasta
+### 1. Usuario (`usuario`)
 
-#### 7. Lote (`lote`)
+**Propósito:** Gestión de cuentas de usuario y autenticación.
 
-| Atributo                     | Tipo de Dato     | Observaciones Clave                                       |
-| :--------------------------- | :--------------- | :-------------------------------------------------------- |
-| **`id`**                     | `INTEGER`        | Clave primaria.                                           |
-| `id_proyecto`                | `INTEGER`        | Proyecto al que pertenece.                                |
-| `nombre_lote`                | `STRING(255)`    | Nombre del lote.                                          |
-| `precio_base`                | `DECIMAL(10, 2)` | Precio mínimo para la subasta.                            |
-| **`estado_subasta`**         | `ENUM`           | Opciones: **`"pendiente"`, `"activa"`, `"finalizada"`**.  |
-| `id_ganador`                 | `INTEGER`        | ID del usuario ganador.                                   |
-| **`intentos_fallidos_pago`** | `INTEGER`        | Contador de incumplimientos de pago del ganador (máx. 3). |
-| `excedente_visualizacion`    | `DECIMAL(10, 2)` | Excedente de la puja ganadora para frontend.              |
-
-<br>
-
-#### 8. Puja (`puja`)
-
-| Atributo                 | Tipo de Dato     | Observaciones Clave                                                         |
-| :----------------------- | :--------------- | :-------------------------------------------------------------------------- |
-| **`id`**                 | `INTEGER`        | Clave primaria.                                                             |
-| `id_lote`                | `INTEGER`        | Lote subastado.                                                             |
-| `id_usuario`             | `INTEGER`        | Usuario que realiza la puja.                                                |
-| `monto_puja`             | `DECIMAL(15, 2)` | Monto ofertado.                                                             |
-| **`estado_puja`**        | `ENUM`           | Estados detallados: `"activa"`, `"ganadora_pendiente"`, `"perdedora"`, etc. |
-| `fecha_vencimiento_pago` | `DATE`           | Fecha límite para que el ganador pague.                                     |
-| `id_suscripcion`         | `INTEGER`        | Suscripción asociada a la puja.                                             |
+| Atributo | Tipo | Descripción |
+|----------|------|-------------|
+| `id` | `INTEGER` | 🔑 Clave primaria |
+| `nombre` | `STRING(100)` | Nombre del usuario |
+| `apellido` | `STRING(100)` | Apellido del usuario |
+| `email` | `STRING(255)` | ✉️ Email (único) |
+| `dni` | `STRING(20)` | 🆔 DNI (único) |
+| `nombre_usuario` | `STRING(50)` | 👤 Username (único) |
+| `contraseña_hash` | `STRING(255)` | 🔒 Contraseña hasheada |
+| `rol` | `ENUM` | 👑 `"admin"` o `"cliente"` |
+| `activo` | `BOOLEAN` | ✅ Cuenta activa |
+| `confirmado_email` | `BOOLEAN` | ✉️ Email verificado |
+| `is_2fa_enabled` | `BOOLEAN` | 🔐 2FA activo |
+| `twofa_secret` | `STRING(255)` | 🔑 Clave 2FA |
 
 ---
 
-### Otros Modelos de Apoyo
+### 2. Proyecto (`proyecto`)
 
-#### 9. Inversion (`inversion`)
+**Propósito:** Almacena los detalles de cada oportunidad de inversión.
 
-| Atributo                         | Tipo de Dato     | Observaciones Clave                                                |
-| :------------------------------- | :--------------- | :----------------------------------------------------------------- |
-| **`id`**                         | `INTEGER`        | Clave primaria.                                                    |
-| `monto`                          | `DECIMAL(15, 2)` | Dinero invertido.                                                  |
-| `id_usuario` / **`id_inversor`** | `INTEGER`        | Usuario que invierte (Nota: FK en asociaciones es `id_inversor`).  |
-| `id_proyecto`                    | `INTEGER`        | Proyecto invertido.                                                |
-| **`estado`**                     | `ENUM`           | Opciones: `"pendiente"`, `"pagado"`, `"fallido"`, `"reembolsado"`. |
-| `fecha_inversion`                | `DATE`           |                                                                    |
+| Atributo | Tipo | Descripción |
+|----------|------|-------------|
+| `id` | `INTEGER` | 🔑 Clave primaria |
+| `nombre_proyecto` | `STRING(255)` | 📋 Nombre del proyecto |
+| `descripcion` | `TEXT` | 📝 Descripción detallada |
+| `tipo_inversion` | `ENUM` | 💰 `"directo"` o `"mensual"` |
+| `monto_inversion` | `DECIMAL(18,2)` | 💵 Monto objetivo |
+| `estado_proyecto` | `ENUM` | 🚦 Estado actual |
+| `suscripciones_actuales` | `INTEGER` | 👥 Contador de inversores |
+| `fecha_inicio` | `DATEONLY` | 📅 Fecha de inicio |
+| `fecha_cierre` | `DATEONLY` | 📅 Fecha de cierre |
+| `pack_de_lotes` | `BOOLEAN` | 📦 Gestiona subastas |
 
-<br>
-
-#### 10. Contrato (`contrato`)
-
-| Atributo                | Tipo de Dato | Observaciones Clave                             |
-| :---------------------- | :----------- | :---------------------------------------------- |
-| **`id`**                | `INTEGER`    | Clave primaria.                                 |
-| `id_proyecto`           | `INTEGER`    | Proyecto al que pertenece.                      |
-| `id_usuario_firmante`   | `INTEGER`    | Usuario que ha firmado (puede ser nulo).        |
-| `nombre_archivo`        | `STRING`     | Nombre del archivo PDF.                         |
-| `hash_archivo_original` | `STRING(64)` | **Hash SHA-256 para integridad** del documento. |
-
-<br>
-
-#### 11. CuotaMensual (`cuota_mensual`)
-
-| Atributo                  | Tipo de Dato     | Observaciones Clave                      |
-| :------------------------ | :--------------- | :--------------------------------------- |
-| **`id`**                  | `INTEGER`        | Clave primaria.                          |
-| `id_proyecto`             | `INTEGER`        | Proyecto de suscripción.                 |
-| **`valor_mensual_final`** | `DECIMAL(18, 2)` | Monto final que paga el usuario por mes. |
-| `total_cuotas_proyecto`   | `INTEGER`        | Duración total de las cuotas.            |
-
-<br>
-
-#### 12. ResumenCuenta (`resumenes_cuentas`)
-
-| Atributo                            | Tipo de Dato | Observaciones Clave                        |
-| :---------------------------------- | :----------- | :----------------------------------------- |
-| **`id`**                            | `INTEGER`    | Clave primaria.                            |
-| **`id_suscripcion`**                | `INTEGER`    | Suscripción a la que pertenece el resumen. |
-| `cuotas_pagadas`, `cuotas_vencidas` | `INTEGER`    | Contadores de cuotas.                      |
-| `porcentaje_pagado`                 | `FLOAT`      | Porcentaje de avance de la suscripción.    |
-| `detalle_cuota`                     | `JSONB`      | Detalles completos de la cuota mensual.    |
-
-<br>
-
-#### 13. Mensaje (`mensaje`)
-
-| Atributo       | Tipo de Dato | Observaciones Clave                |
-| :------------- | :----------- | :--------------------------------- |
-| **`id`**       | `INTEGER`    | Clave primaria.                    |
-| `id_remitente` | `INTEGER`    | ID del usuario que envía.          |
-| `id_receptor`  | `INTEGER`    | ID del usuario que recibe.         |
-| `contenido`    | `TEXT`       | Contenido del mensaje.             |
-| `leido`        | `BOOLEAN`    | Indica si el receptor lo ha leído. |
-
-<br>
-
-#### 14. Imagen (`imagen`)
-
-| Atributo      | Tipo de Dato  | Observaciones Clave                 |
-| :------------ | :------------ | :---------------------------------- |
-| **`id`**      | `INTEGER`     | Clave primaria.                     |
-| `url`         | `STRING(255)` | URL de la imagen.                   |
-| `id_proyecto` | `INTEGER`     | Proyecto asociado (puede ser nulo). |
-| `id_lote`     | `INTEGER`     | Lote asociado (puede ser nulo).     |
-
-<br>
-
-#### 15. SuscripcionCancelada (`suscripcion_cancelada`)
-
-| Atributo                      | Tipo de Dato     | Observaciones Clave                      |
-| :---------------------------- | :--------------- | :--------------------------------------- |
-| **`id`**                      | `INTEGER`        | Clave primaria.                          |
-| **`id_suscripcion_original`** | `INTEGER`        | FK de la suscripción que fue cancelada.  |
-| `id_usuario`, `id_proyecto`   | `INTEGER`        |                                          |
-| `meses_pagados`               | `INTEGER`        | Meses pagados hasta la cancelación.      |
-| `monto_pagado_total`          | `DECIMAL(15, 2)` | Monto total pagado hasta la cancelación. |
-| `fecha_cancelacion`           | `DATE`           |                                          |
+**Estados Posibles:**
+- 🟡 `"En Espera"` - Esperando fondeo
+- 🟢 `"En proceso"` - Fondeado y activo
+- 🔵 `"Finalizado"` - Completado
 
 ---
 
-# ⚠️ PASO 4: Reglas de Negocio CRÍTICAS
+### 3. Transacción (`transaccion`)
 
-¿Qué son las Reglas de Negocio?
-Las reglas de negocio son las restricciones, validaciones y procesos que el backend implementa para mantener la integridad y coherencia de los datos. Si no las respetas en el frontend, tus requests fallarán.
-¿Por qué es crítico conocerlas?
+**Propósito:** Registro central de todos los flujos de dinero.
 
-✅ Evitarás errores 400, 409 y 500
-✅ Entenderás por qué ciertas acciones requieren verificaciones previas
-✅ Sabrás qué datos validar antes de enviarlos al backend
-✅ Implementarás la UI correctamente
+| Atributo | Tipo | Descripción |
+|----------|------|-------------|
+| `id` | `INTEGER` | 🔑 Clave primaria |
+| `id_usuario` | `INTEGER` | 👤 Usuario que transacciona |
+| `monto` | `DECIMAL(15,2)` | 💰 Monto de la transacción |
+| `tipo_transaccion` | `STRING(50)` | 📊 Tipo de operación |
+| `estado_transaccion` | `ENUM` | 🚦 Estado del pago |
 
-🔐 Servicios de Seguridad (Auth Utilities)
-authService.js (Backend)
-El servicio de seguridad de autenticación es fundamental para el manejo seguro de contraseñas. Su función principal es gestionar el hashing antes del almacenamiento y la comparación segura durante el inicio de sesión.
-Librería: bcryptjs (estándar de la industria)
-Regla crítica: 🚫 NUNCA almacenar contraseñas en texto plano
+**Estados Posibles:**
+- 🟡 `"pendiente"` - Esperando confirmación
+- 🟢 `"pagado"` - Pago exitoso
+- 🔴 `"fallido"` - Pago rechazado
+- 🔵 `"reembolsado"` - Devuelto al usuario
 
-Métodos Principales
-MétodoPropósitoRegla de NegociohashPasswordConvierte la contraseña de texto plano en un hash seguroSEGURIDAD: La contraseña almacenada en Usuario.contraseña_hash siempre debe ser el resultado de este procesocomparePasswordComprueba si una contraseña ingresada coincide con el hash almacenadoLOGIN: Utilizado durante el inicio de sesión para verificar credenciales sin desencriptar el hash
+---
 
-Detalles de Implementación
-hashPassword(password) - Registro
-Este método se invoca durante el registro de un nuevo usuario.
-Características:
+### 4. Puja (`puja`)
 
-Hashing: Emplea bcrypt.hash junto con un salt (valor aleatorio)
-Seguridad: El factor de salt de 10 es un buen compromiso entre seguridad y rendimiento
-Protección: Garantiza que hashes distintos se generen incluso para contraseñas idénticas, previniendo ataques de tablas rainbow
+**Propósito:** Registro de ofertas en subastas de lotes.
 
-Ejemplo de uso:
-javascriptconst nuevoUsuario = {
-password: "miPasswordSecreta", // Texto plano
-};
+| Atributo | Tipo | Descripción |
+|----------|------|-------------|
+| `id` | `INTEGER` | 🔑 Clave primaria |
+| `id_lote` | `INTEGER` | 📦 Lote subastado |
+| `id_usuario` | `INTEGER` | 👤 Usuario que puja |
+| `monto_puja` | `DECIMAL(15,2)` | 💰 Monto ofertado |
+| `estado_puja` | `ENUM` | 🚦 Estado de la puja |
+| `fecha_vencimiento_pago` | `DATE` | ⏰ Límite de pago |
 
-// 1. Hashear
-const hashedPassword = await authService.hashPassword(nuevoUsuario.password);
+**Estados Posibles:**
+- 🟢 `"activa"` - Puja en curso
+- 🟡 `"ganadora_pendiente"` - Ganó, esperando pago
+- 🔴 `"perdedora"` - No ganó la subasta
+- ⚫ `"ganadora_incumplimiento"` - No pagó a tiempo
 
-// 2. Guardar en la DB
-// Usuario.create({ ..., contraseña_hash: hashedPassword });
+---
 
-comparePassword(password, hash) - Login
-Este método se invoca durante el inicio de sesión.
-Características:
+## 🎯 Reglas de Negocio Críticas
 
-Comparación Segura: bcrypt.compare realiza una comparación criptográfica segura
-No reversible: No se puede "desencriptar" el hash para obtener la contraseña original
+### ¿Qué son las Reglas de Negocio?
 
-Ejemplo de uso:
-javascriptconst usuarioDB = await Usuario.findOne({ where: { email } });
+Las **reglas de negocio** son restricciones y validaciones que el backend implementa para mantener la integridad de los datos. Si no las respetas en el frontend, tus requests fallarán.
 
-// Verificar la contraseña
+### ¿Por qué es crítico conocerlas?
+
+- ✅ Evitarás errores 400, 409 y 500
+- ✅ Entenderás por qué ciertas acciones requieren verificaciones previas
+- ✅ Sabrás qué datos validar antes de enviarlos
+- ✅ Implementarás la UI correctamente
+
+---
+
+## 🔧 Servicios del Backend
+
+### 🔐 1. Servicio de Seguridad (authService)
+
+**Propósito:** Manejo seguro de contraseñas y autenticación.
+
+**Librería:** `bcryptjs`
+
+#### Métodos Principales
+
+| Método | Propósito | Regla Crítica |
+|--------|-----------|---------------|
+| `hashPassword` | Hashea contraseñas | 🚫 **NUNCA** almacenar contraseñas en texto plano |
+| `comparePassword` | Verifica contraseñas | Usado en login para validar credenciales |
+
+**Ejemplo de uso:**
+
+```javascript
+// Registro
+const hashedPassword = await authService.hashPassword("miPassword123");
+// Guardar hashedPassword en la DB
+
+// Login
 const esValido = await authService.comparePassword(
-contraseñaIngresada,
-usuarioDB.contraseña_hash
+  "miPassword123",
+  usuario.contraseña_hash
 );
+```
 
-if (esValido) {
-// ✅ Éxito: Generar Token JWT
-} else {
-// ❌ Error: Credenciales inválidas
-}
+> ⚠️ **Importante:** El factor de salt de 10 es el estándar de seguridad.
 
-🔐 Servicio de Autenticación de Dos Factores (2FA)
-auth2faService.js (Backend)
-Gestiona la Autenticación de Dos Factores utilizando la librería speakeasy para implementar el estándar TOTP (Time-based One-Time Password).
-Relación con el modelo Usuario:
+---
 
-is_2fa_enabled (boolean)
-twofa_secret (string encriptado)
+### 🔐 2. Servicio de Autenticación 2FA (auth2faService)
 
-Métodos Principales
-MétodoPropósitoRegla de Negocio CríticagenerateSecretCrea la clave secreta y la URL de aprovisionamiento (código QR)INTEGRACIÓN: La URL debe incluir el email del usuario para identificación clara en la app 2FAverifyTokenVerifica si el código de 6 dígitos es válidoSEGURIDAD: Usa window: 1 para permitir ±30 segundos de desfaseenable2FAMarca al usuario como is_2fa_enabled: trueVALIDACIÓN: Solo llamar después de validar el token de prueba inicialdisable2FADeshabilita el 2FADOBLE VERIFICACIÓN: Requiere contraseña actual + código TOTP actual
+**Propósito:** Gestión de autenticación de dos factores (TOTP).
 
-Flujo Crítico: Activación de 2FA
-La implementación del 2FA impone reglas estrictas sobre el flujo de seguridad.
-Proceso de Activación (2 Pasos)
-PasoMétodoAcciónPaso A: GeneracióngenerateSecret(email)El sistema genera el código QR y guarda el secreto temporalmentePaso B: ConfirmaciónverifyToken(secret, token)El usuario ingresa un código de prueba. Si es válido, se llama a enable2FA para hacerlo permanente
-⚠️ Importante: El secreto NO debe guardarse en la DB hasta confirmar que el usuario configuró correctamente la app.
+**Librería:** `speakeasy`
 
-Flujo Crítico: Desactivación de 2FA
-El método disable2FA combina verificaciones de otros servicios para garantizar máxima seguridad:
-javascript/_ Lógica clave en disable2FA _/
+#### Métodos Principales
 
-// 1. Verificar Contraseña (Usa authService)
-const passwordMatch = await authService.comparePassword(
-currentPassword,
-user.contraseña_hash
-);
+| Método | Propósito | Regla Crítica |
+|--------|-----------|---------------|
+| `generateSecret` | Genera código QR | Incluye email del usuario |
+| `verifyToken` | Valida código 2FA | Ventana de ±30 segundos |
+| `enable2FA` | Activa 2FA | Solo después de validar token |
+| `disable2FA` | Desactiva 2FA | Requiere contraseña + código 2FA |
 
-// 2. Verificar Código TOTP (Usa verifyToken del propio servicio)
-const isTotpValid = auth2faService.verifyToken(user.twofa_secret, totpCode);
+#### Flujo de Activación 2FA
 
-// 3. Desactivar si ambos son correctos
-if (passwordMatch && isTotpValid) {
-await user.update({
-is_2fa_enabled: false,
-twofa_secret: null // Eliminar la clave secreta
-});
-}
-Reglas:
+```mermaid
+graph LR
+A[Usuario solicita 2FA] --> B[generateSecret]
+B --> C[Mostrar QR]
+C --> D[Usuario ingresa código]
+D --> E[verifyToken]
+E -->|Válido| F[enable2FA]
+E -->|Inválido| C
+```
 
-✅ Verificación de contraseña → Confirma identidad del usuario
-✅ Verificación de código 2FA → Confirma acceso al dispositivo
-✅ Eliminación del secreto → Previene reutilización
+---
 
-📄 Servicio de Gestión e Integridad de Contratos
-contratoService.js (Backend)
-Administra los registros del modelo Contrato. Su función más crítica es garantizar criptográficamente que los documentos legales no han sido manipulados.
-Dependencia: Utiliza generateFileHash para verificar integridad.
+### 📄 3. Servicio de Contratos (contratoService)
 
-Métodos Principales
-MétodoPropósitoLógica de Negocio Críticacreate(data)Registra un nuevo contratoRequiere hash_archivo_original en data al momento de la creaciónfindAndVerifyById(id)MÉTODO CENTRAL: Obtiene el contrato y verifica su integridadCompara hash_archivo_original (DB) con hash actual del archivo físicofindById(id)Wrapper de findAndVerifyByIdAsegura que la verificación se ejecute siempre por defectocreateSignedContractRegistra el contrato generado y firmado individualmenteEspera URL, Hash y id_usuario_firmante únicosregisterSignatureActualiza un contrato base con datos de firma electrónicaVincula id_inversion_asociada y hash de firma al contrato basesoftDelete(id)Desactiva un contrato (borrado suave)Usa activo: false para mantener historial legal
+**Propósito:** Gestión e integridad criptográfica de documentos legales.
 
-Regla Crítica: Integridad Criptográfica (Hash Check)
-La lógica más importante reside en findAndVerifyById.
-🔑 Concepto de Integridad
-El campo Contrato.hash_archivo_original almacena el valor de hash del archivo PDF cuando fue cargado por primera vez.
-Si el archivo físico cambia de alguna manera, generateFileHash devolverá un valor diferente.
+#### Métodos Principales
 
-🚨 Mecanismo de Verificación
-javascript// Lógica clave dentro de findAndVerifyById
+| Método | Propósito | Regla Crítica |
+|--------|-----------|---------------|
+| `create` | Registra contrato | Requiere `hash_archivo_original` |
+| `findAndVerifyById` | Verifica integridad | Compara hash almacenado vs actual |
+| `registerSignature` | Vincula firma | Asocia inversión con contrato firmado |
+
+#### Verificación de Integridad
+
+```javascript
+// El sistema compara hashes
 const hashActual = await generateFileHash(contrato.url_archivo);
 
 if (hashActual !== contrato.hash_archivo_original) {
-// ⚠️ ¡El archivo físico no coincide con el registro original!
-contrato.dataValues.integrity_compromised = true;
-console.warn('🚨 INTEGRIDAD COMPROMETIDA:', contrato.id);
-} else {
-contrato.dataValues.integrity_compromised = false;
+  // ⚠️ ¡ARCHIVO MODIFICADO!
+  contrato.integrity_compromised = true;
 }
+```
 
-return contrato;
-Pasos:
+> 🔒 **Seguridad:** Si el hash no coincide, el archivo fue alterado.
 
-Obtener el registro del contrato de la DB (incluye hash_archivo_original)
-Calcular hash actual del archivo físico con generateFileHash(url_archivo)
-Comparar:
+---
 
-✅ Iguales → integrity_compromised: false
-❌ Diferentes → integrity_compromised: true + console.warn de seguridad
+### 💰 4. Servicio de Cuotas Mensuales (cuotaMensualService)
 
-Flujo de Firma de Contratos
-El método registerSignature es clave para finalizar una inversión:
-javascript/_ Ejemplo de Uso de registerSignature _/
-const firmaExitosa = {
-url_documento_firmado: '...',
-hash_documento_firmado: '...',
-id_inversion_asociada: 45,
-fecha_firma: new Date(),
-};
+**Propósito:** Cálculo del monto mensual para suscripciones.
 
-await contratoService.registerSignature(idContratoBase, firmaExitosa);
-Proceso:
+#### Fórmula de Cálculo
 
-Usuario realiza una inversión
-Se genera un documento PDF único para la inversión
-registerSignature vincula este documento firmado y su hash de integridad con el contrato base del proyecto
-La inversión queda legalmente respaldada
+```
+1. Costo Base = valor_cemento_unidades × valor_cemento
+2. Total del Plan = Costo Base × (porcentaje_plan / 100)
+3. Valor Mensual = Total del Plan / total_cuotas
+4. Carga Admin = Costo Base × (porcentaje_admin / 100)
+5. IVA = Carga Admin × (porcentaje_iva / 100)
+6. VALOR FINAL = Valor Mensual + Carga Admin + IVA
+```
 
-💰 Servicio de Cálculo de Cuotas Mensuales
-cuotaMensualService.js (Backend)
-Administra el modelo CuotaMensual. Su propósito principal es calcular el monto exacto que los usuarios deben pagar mensualmente por una suscripción.
-Aplica directamente la Regla: Los proyectos de tipo mensual DEBEN tener una configuración de cuota.
+> 💡 **Nota:** Todos los valores se redondean a 2 decimales.
 
-Métodos Principales
-MétodoPropósitoLógica de Negocio Clave_calculateValuesFUNCIÓN CENTRAL: Realiza todos los cálculos financierosDefine valor_mensual_final sumando plan + administración + IVA. Redondea a 2 decimalescreateAndSetProjectAmountCrea la cuota y la vincula al proyectoTRANSACCIÓN CRÍTICA: Usa transacción de Sequelize para crear Cuota Y actualizar monto_inversion del Proyecto atómicamenteupdateRecalcula y actualiza una cuota existenteMantiene coherencia financiera al recalcular y actualizar montos del ProyectofindByProjectIdObtiene historial de cuotas de un proyectoÚtil para seguimiento administrativo
+---
 
-Lógica de Cálculo Financiero
-🧮 Fórmula Completa
-javascript// 1. Costo Base (valor_movil)
-valor_movil = valor_cemento_unidades × valor_cemento
+### 📧 5. Servicio de Email (emailService)
 
-// 2. Total del Plan
-total_del_plan = valor_movil × (porcentaje_plan / 100)
+**Propósito:** Envío de correos transaccionales.
 
-// 3. Valor Mensual (Sin Cargos)
-valor_mensual = total_del_plan / total_cuotas_proyecto
+**Librería:** `nodemailer`
 
-// 4. Carga Administrativa
-carga_administrativa = valor_movil × (porcentaje_administrativo / 100)
+#### Métodos Principales
 
-// 5. IVA sobre Administración
-iva_carga_administrativa = carga_administrativa × (porcentaje_iva / 100)
+| Método | Cuándo se Envía | Propósito |
+|--------|----------------|-----------|
+| `sendConfirmationEmail` | Al registrarse | Activar cuenta |
+| `notificarGanadorPuja` | Al ganar subasta | Informar victoria y plazo |
+| `notificarImpago` | Después de 90 días | Informar pérdida del lote |
 
-// 6. Valor Mensual FINAL
-valor_mensual_final = valor_mensual + carga_administrativa + iva_carga_administrativa
-⚠️ Nota Crítica: Todos los valores se redondean a 2 decimales (toFixed(2)) para garantizar precisión financiera.
+---
 
-Transacciones Atómicas
-ObjetoPropósitoImpacto si FallaCuotaMensualCreación/Actualización del registro de cuotaSi falla, el proyecto nunca se actualizaProyectoActualización de monto_inversion con valor_mensual_finalSi falla, la creación de cuota se revierte (rollback)
-El flujo asegura: Ambas operaciones se completan con éxito, o ninguna lo hace.
-Esto previene que un proyecto de suscripción tenga una cuota en la DB pero muestre un monto de inversión incorrecto.
+### 🖼️ 6. Servicio de Imágenes (imagenService)
 
-📧 Servicio de Correo Electrónico (Notificaciones)
-emailService.js (Backend)
-Gestiona el envío de correos electrónicos transaccionales utilizando nodemailer.
+**Propósito:** Gestión de contenido visual.
 
-Configuración Base
-ComponenteConfiguraciónConsideraciones de SeguridadTransportadornodemailer.createTransportUtiliza variables de entorno (EMAIL_USER, EMAIL_PASS)Proveedorservice: "gmail"En producción, migrar a SendGrid, Mailgun o AWS SESFunción BasesendEmail(to, subject, text, html)Es la única que interactúa con el transportador
+**Concepto Clave:** Borrado suave (soft delete)
 
-Flujos de Comunicación Críticos
+```javascript
+// No elimina físicamente, solo marca como inactivo
+await imagenService.softDelete(imagenId);
 
-1. Confirmación de Cuenta 🔒
-   Método: sendConfirmationEmail
-   Propósito: Activar la cuenta del usuario recién registrado, asegurando la validez del correo.
-   Regla CRÍTICA: La URL de confirmación en el correo debe apuntar a un endpoint del backend que valide el token y cambie el estado del usuario (is_active: true) antes de redirigirlo al frontend.
-   javascript/_ Endpoint de ejemplo _/
-   // Después de crear el nuevo usuario:
-   const token = generateConfirmationToken(newUser.id);
-   await emailService.sendConfirmationEmail(newUser, token);
+// Consulta solo imágenes activas
+const imagenes = await imagenService.findByProjectIdActivo(proyectoId);
+```
 
-2. Notificación de Ganador de Lote 🏆
-   Método: notificarGanadorPuja
-   Propósito: Informar al usuario que ha ganado una puja y establecer fecha límite de pago.
-   Flujo:
+> ✅ **Beneficio:** Mantiene historial y permite auditoría.
 
-Se activa por el servicio de pujas/lotes al finalizar una subasta
-Se maneja la lógica de Reasignación (esReasignacion)
-Se establece el plazo fijo de 90 días para completar el pago
+---
 
-javascriptconst limite = new Date(Date.now() + 90 _ 24 _ 60 _ 60 _ 1000).toLocaleDateString();
+### 💼 7. Servicio de Inversiones (inversionService)
 
-await emailService.notificarGanadorPuja(
-ganador,
-lote.id,
-limite,
-true // esReasignacion
-);
+**Propósito:** Gestión de inversiones en proyectos.
 
-3. Notificación de Impago 🛑
-   Método: notificarImpago
-   Propósito: Informar al usuario que ha perdido un lote por no cumplir con el plazo de 90 días.
-   Regla CRÍTICA: El correo debe confirmar explícitamente que el token de subasta ha sido devuelto a la cuenta del usuario.
+#### Flujo de Inversión
 
-🖼️ Servicio de Gestión de Imágenes
-imagenService.js (Backend)
-Administra el modelo Imagen para controlar el contenido visual asociado a Proyectos y Lotes.
-Concepto clave: Borrado suave (soft delete) para mantener historial de activos visuales.
+```mermaid
+sequenceDiagram
+participant U as Usuario
+participant F as Frontend
+participant B as Backend
+participant MP as Mercado Pago
+participant DB as Database
 
-Métodos Principales
-MétodoPropósitoLógica de Negocio Clavecreate(data)Registra la URL y metadatos de una nueva imagenAsume que el archivo ya fue subido a S3/GCS/etc.softDelete(id)Borrado Lógico: Desactiva la imagen (activo: false)Previene eliminación física del archivofindByProjectIdActivoObtiene galería visual de un proyectoCRÍTICO: Usa activo: true para mostrar solo imágenes disponiblesfindByLoteIdActivoObtiene imágenes específicas de un loteFiltra por activo: truefindAllActivoConsulta general de imágenes visiblesEstándar de la plataforma para listas públicas
+U->>F: Clic en "Invertir"
+F->>B: POST /api/inversiones
+B->>DB: Crear Inversion (pendiente)
+B->>MP: Generar URL de pago
+MP-->>B: URL de checkout
+B-->>F: {checkoutUrl}
+F->>U: Redirigir a Mercado Pago
+U->>MP: Completar pago
+MP->>B: Webhook (pago exitoso)
+B->>DB: confirmarInversion (pagado)
+B->>DB: Actualizar proyecto
+DB-->>B: ✅
+B-->>MP: 200 OK
+```
 
-Lógica de Borrado Suave
-javascript// Borrado suave
-async softDelete(id) {
-const imagen = await Imagen.findByPk(id);
-if (!imagen) return null;
+---
 
-imagen.activo = false; // Solo cambia el estado
-return await imagen.save();
+### 🔑 8. Servicio de JWT (jwtService)
+
+**Propósito:** Creación y verificación de tokens de sesión.
+
+**Librería:** `jsonwebtoken`
+
+#### Tipos de Tokens
+
+| Tipo | Duración | Contenido | Uso |
+|------|----------|-----------|-----|
+| **Sesión** | 1 hora | `id`, `nombre_usuario`, `rol` | Operaciones diarias |
+| **2FA** | 5 minutos | Solo `id` | Verificación de segundo factor |
+
+**Ejemplo de payload:**
+
+```json
+{
+  "id": 42,
+  "nombre_usuario": "admin_pablo",
+  "rol": "administrador",
+  "iat": 1634283600,
+  "exp": 1634287200
 }
+```
 
-// Consulta activa
-async findByProjectIdActivo(id_proyecto) {
-return await Imagen.findAll({
-where: {
-id_proyecto: id_proyecto,
-activo: true, // FILTRO CRÍTICO DE NEGOCIO
-},
-});
-}
-Beneficios:
+> 🔐 **Crítico:** La variable `JWT_SECRET` debe ser larga y compleja en producción.
 
-✅ Seguridad y auditoría
-✅ Mantiene historial de URLs de contenido subido
-✅ Evita que URLs eliminadas accidentalmente reaparezcan
-✅ Administradores pueden ver historial completo
+---
 
-💼 Servicio de Gestión de Inversiones
-inversionService.js (Backend)
-Maneja la creación y confirmación de inversiones de usuarios en proyectos.
-Clave: Transaccionalidad y aplicación de reglas para garantizar que los proyectos no acepten inversiones cuando no deben.
+### 🏆 9. Servicio de Lotes y Subastas (loteService)
 
-Métodos Principales
-MétodoPropósitoLógica de Negocio ClavecrearInversionRegistra la intención de inversiónValidación Previa: Chequea que el proyecto no esté Finalizado/Cancelado, sea tipo directo y tenga monto_inversion definidoconfirmarInversionProcesa el pago exitoso de una inversiónTRANSACCIÓN CRÍTICA: Actualiza estado a pagado, incrementa suscripciones_actuales, finaliza Proyecto si es tipo directofindByUserIdObtiene historial de inversiones de un usuarioEsencial para "Mis Inversiones" en el frontendsoftDeleteDesactiva una inversión (borrado suave)Mantiene historial de transacciones
+**Propósito:** Gestión completa del ciclo de vida de las subastas.
 
-Flujo de Creación de Inversión
-Paso 1: crearInversion (Solo registra intención)
-javascriptconst nuevaInversion = await Inversion.create({
-monto: proyecto.monto_inversion,
-estado: "pendiente", // CRÍTICO: Esperando webhook de pago
-// ...
-});
-Validaciones:
+#### Métodos Críticos
 
-✅ Estado: Impide inversión en proyectos Finalizados o Cancelados
-✅ Tipo: Asegura que solo proyectos tipo_inversion: 'directo' usen este endpoint
-✅ Transacción: Usa transacción de DB para atomicidad
+| Método | Propósito | Lógica de Negocio |
+|--------|-----------|-------------------|
+| `endAuction` | Finaliza subasta | Asigna ganador, plazo de 90 días |
+| `procesarImpagoLote` | Maneja impagos | Después de 90 días, reasigna al siguiente |
+| `asignarSiguientePuja` | Reasignación | Ofrece al 2º postor |
+| `prepararLoteParaReingreso` | Limpia lote | Después de 3 intentos fallidos |
 
-Flujo de Confirmación de Pago
-Paso 2: confirmarInversion (Llamado desde webhook de pagos)
-Exige una transacción de Sequelize (t) ya iniciada.
-javascript// Bloqueo de registros
-const inversion = await Inversion.findByPk(id, {
-transaction: t,
-lock: t.LOCK.UPDATE
-});
+#### Flujo de Subasta
 
-// Incremento de fondeo
-proyecto.suscripciones_actuales += inversion.monto;
+```
+1. Subasta Activa
+   ↓
+2. endAuction → Ganador P1 (90 días para pagar)
+   ↓
+3a. ✅ Paga → procesarPujaGanadora
+   ↓
+   Aplica excedente, libera tokens
+   
+3b. ❌ No paga → procesarImpagoLote
+   ↓
+   Reasigna a P2 (90 días)
+   ↓
+   Si P2 no paga → Reasigna a P3
+   ↓
+   Si P3 no paga → prepararLoteParaReingreso
+```
 
-// Actualización de estados
-inversion.estado = "pagado";
+---
 
-if (proyecto.tipo_inversion === "directo") {
-proyecto.estado_proyecto = "Finalizado";
-}
-Si alguna operación falla: Rollback automático mantiene coherencia de datos.
+### 💬 10. Servicio de Mensajes (mensajeService)
 
-🔑 Servicio de JSON Web Token (JWT)
-jwtService.js (Backend)
-Se encarga de la creación, firma y verificación de JSON Web Tokens para manejar sesiones de usuario y flujos de seguridad críticos (como 2FA).
-Librería: jsonwebtoken
-Clave secreta: process.env.JWT_SECRET
+**Propósito:** Sistema de mensajería interno.
 
-Métodos Principales
-MétodoPropósitoDuración (expiresIn)Lógica de Negocio ClavegenerateTokenCrea el token de sesión principal (en login exitoso)1 horaContiene id, nombre_usuario y rol. Se usa para autorización en cada solicitudverifyTokenVerifica y decodifica el token de sesión-Utilizado por middleware de autenticación para proteger rutasgenerate2FATokenCrea un token temporal para proceso de verificación 2FA5 minutosSolo contiene id. Su corta duración mitiga riesgo de roboverify2FATokenVerifica el token de 2FA-Usado para finalizar login después del código TOTP
+**Regla Crítica:** Usuario del Sistema (ID = 1)
 
-Reglas de Seguridad Clave
-
-1. Separación de Propósito y Duración (TTL)
-   Tipo de TokenTTLUsoSesión (generateToken)1 horaActividad diaria del usuario (consultar proyectos, inversiones, etc.)Proceso (generate2FAToken)5 minutosValidar pasos sensibles (2FA, recuperación contraseña). No reusable
-
-2. Información del Payload
-   Sesión Normal:
-   javascriptconst payload = {
-   id: 42,
-   nombre_usuario: "admin_pablo",
-   rol: "administrador",
-   iat: 1634283600, // Emitido en...
-   exp: 1634287200, // Expira en...
-   };
-   2FA:
-   javascriptconst payload = {
-   id: 42, // Solo ID
-   };
-   ⚠️ Consideración CRÍTICA: La variable JWT_SECRET debe ser larga, compleja y única para producción. Si se compromete, todos los tokens quedan vulnerables.
-
-🏆 Servicio de Lotes y Subastas
-loteService.js (Backend)
-Administra el modelo Lote, que representa los activos que se subastan. Contiene la lógica de negocio más crítica y compleja de la plataforma.
-
-Métodos Principales
-MétodoPropósitoLógica de Negocio ClaveupdateActualiza un loteNotificación: Si estado cambia de inactivo a activa, envía mensajes a todos los usuarios activosendAuctionFinaliza una subasta activaTRANSACCIÓN CRÍTICA: Asigna ganador potencial, marca puja ganadora, establece plazo de 90 días, libera tokensasignarSiguientePujaReasigna el lote al siguiente postor válidoNotificación de Reasignación: Usa emailService con flag esReasignacion: trueprocesarImpagoLoteManeja el vencimiento del plazo de pagoCRON JOB: Marca puja como ganadora_incumplimiento, devuelve token, notifica, inicia reasignaciónprepararLoteParaReingresoLimpia un lote para ser reutilizadoDespués de 3 intentos fallidos. Libera último token, elimina pujas, reinicia estado a pendiente
-
-Flujo de Subasta, Pago y Reasignación
-
-1. Finalización de Subasta (endAuction)
-   javascriptconst t = await sequelize.transaction();
-
-try {
-// Identificación de ganador
-const pujaGanadora = await encontrarPujaMasAlta();
-
-// Actualización de estados
-lote.estado_subasta = "finalizada";
-lote.id_ganador = pujaGanadora.id_usuario;
-lote.intentos_fallidos_pago = 1; // Primer intento
-
-puja.estado_puja = "ganadora_pendiente";
-puja.fecha_vencimiento_pago = new Date(Date.now() + 90 _ 24 _ 60 _ 60 _ 1000);
-
-await t.commit();
-
-// Post-Commit: Notificar ganador y liberar tokens de perdedores
-} catch (error) {
-await t.rollback();
-}
-
-2. Gestión de Impago (Cron Job → procesarImpagoLote)
-   Esta es la lógica de negocio más delicada.
-   javascript// Identificación de incumplidor
-   const pujaIncumplidora = await encontrarPujaVencida();
-
-// Acciones sobre incumplidor
-puja.estado_puja = "ganadora_incumplimiento";
-
-// CRÍTICO: Devolver token
-await PujaService.devolverTokenPorImpago(puja);
-
-// Notificar
-await emailService.notificarImpago(usuario);
-
-// Contador de intentos
-lote.intentos_fallidos_pago++;
-
-if (lote.intentos_fallidos_pago <= 3) {
-// Reasignar al siguiente postor
-await asignarSiguientePuja(lote.id);
-} else {
-// Limpiar lote para próximo ciclo
-await prepararLoteParaReingreso(lote.id);
-}
-
-13.1 mensajeService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-enviarMensajeSistema FUNCIÓN CLAVE. Crea un mensaje automático con el remitente fijo SYSTEM_USER_ID (ID 1). NOTIFICACIONES: Usado por otros servicios (como loteService) para enviar avisos críticos (ganadores de pujas, impagos, activaciones, etc.).
-obtenerPorUsuario Obtiene la bandeja de entrada y salida completa de un usuario. Utiliza el operador [Op.or] para buscar mensajes donde el usuario sea remitente O receptor, permitiendo la vista unificada del buzón.
-obtenerConversacion Filtra mensajes entre dos usuarios específicos. Útil para la funcionalidad de chat o soporte directo entre usuarios.
-contarNoLeidos Devuelve el número de mensajes pendientes de lectura. Esencial para la funcionalidad del indicador de notificaciones en la interfaz de usuario.
-marcarComoLeido Actualiza el estado del mensaje. SEGURIDAD: Solo permite que el usuario que es el receptor del mensaje cambie su estado a leido: true.
-
-Exportar a Hojas de cálculo
-13.2 Regla de Negocio Crítica: Usuario del Sistema
-La variable SYSTEM_USER_ID = 1 establece una regla de negocio estricta para la mensajería:
-
-Identidad: El usuario con el ID 1 se reserva exclusivamente para la Administración y Notificaciones Automáticas del Sistema.
-
-Propósito de enviarMensajeSistema: Esta función garantiza que las notificaciones transaccionales o críticas enviadas por la aplicación (como la activación de una subasta o la pérdida de un lote) tengan una fuente clara y consistente.
-
-JavaScript
-
-/_ Uso en otro servicio, por ejemplo, al notificar al ganador de una puja _/
+```javascript
+// Mensaje automático del sistema
 await mensajeService.enviarMensajeSistema(
-ganador.id,
-"¡Felicidades! Has ganado el Lote #10."
+  userId,
+  "¡Felicidades! Has ganado el Lote #10."
 );
-// En la DB, el id_remitente será '1' (Sistema).
-13.3 Consistencia de la Bandeja de Entrada
-El método obtenerPorUsuario es la puerta de entrada a la mensajería, asegurando que el usuario vea todos los mensajes relevantes:
+// El remitente será siempre el ID 1 (Sistema)
+```
 
-Al usar [Op.or] en la consulta, se combinan todos los mensajes donde:
+---
 
-El id_remitente es el usuario actual (mensajes enviados).
+### 💳 11. Servicio de Pagos (pagoService)
 
-El id_receptor es el usuario actual (mensajes recibidos).
+**Propósito:** Gestión de cuotas mensuales y descuentos.
 
-Las cláusulas include: [ {model: Usuario, as: "remitente"}, ... ] son necesarias para mostrar en el frontend el nombre de la persona que envía o recibe el mensaje, en lugar de solo su ID.
+#### Método Clave: `generarPagoMensualConDescuento`
 
-Servicio de Gestión de Pagos
+```javascript
+// Lógica de descuento
+const saldoAFavor = suscripcion.saldo_a_favor;
+const montoAPagar = Math.max(0, cuotaMensual - saldoAFavor);
 
-El servicio pagoService.js administra el modelo Pago y es el responsable de la lógica de facturación mensual para los proyectos de tipo suscripción. Combina el cobro recurrente con la compleja aplicación de saldos a favor generados en el sistema de Pujas.
+if (montoAPagar === 0) {
+  // Cuota cubierta completamente por saldo
+  estado_pago = "cubierto_por_puja";
+} else {
+  estado_pago = "pendiente";
+}
+```
 
-14.1 pagoService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-generarPagoMensualConDescuento Crea la cuota del mes, aplicando saldo a favor del usuario. Transacción para decrementar el saldo a favor en la Suscripcion y crear el Pago. Si el saldo cubre la cuota, el estado_pago se marca como cubierto_por_puja.
-markAsPaid Finaliza el proceso de pago exitoso. Transacción para marcar el pago como pagado, establecer fecha_pago y enviar notificaciones (email y mensaje interno).
-handlePaymentFailure Maneja una transacción de pago fallida (ej. webhook de pasarela). CRÍTICO: Si es el Pago del Mes 1, lo marca como cancelado para prevenir la generación de cuotas futuras. Si es un mes posterior, mantiene el estado pendiente/vencido.
-getValidPaymentDetails Recupera y valida un pago para ser procesado por el controlador de pago. Verifica que el usuario autenticado sea el propietario del pago a través de la Suscripcion asociada y que el estado sea pendiente o vencido.
-findPaymentsDueSoon / findOverduePayments Consulta pagos próximos a vencer o vencidos. Destinados a ser utilizados por un Scheduler (Cron Job) para enviar recordatorios y notificaciones de morosidad.
+---
 
-Exportar a Hojas de cálculo
-14.2 Flujo de Generación de Pagos y Descuentos (generarPagoMensualConDescuento)
-Esta función es clave para la automatización de cobros mensuales y la integración del sistema de recompensas (saldos a favor):
+### 💰 12. Servicio de Pagos Mercado Pago (paymentService)
 
-Transacción y Obtención de Datos: Se abre una transacción para buscar la SuscripcionProyecto y el Proyecto asociado.
+**Propósito:** Integración con la pasarela de pagos.
 
-Determinación del Próximo Mes: Se busca el último pago para determinar el proximoMes (Mes 1, 2, 3, etc.).
+#### Flujo de Webhook
 
-Lógica de Descuento (Saldo a Favor):
+```mermaid
+sequenceDiagram
+participant MP as Mercado Pago
+participant B as Backend
+participant T as TransaccionService
+participant DB as Database
 
-Se obtiene el saldoAFavor actual de la suscripción.
+MP->>B: POST /webhooks/mercadopago
+B->>B: Verificar firma del webhook
+B->>MP: GET /payments/{id}
+MP-->>B: Detalles del pago
+B->>T: confirmarTransaccion
+T->>DB: Actualizar estados
+DB-->>T: ✅
+T-->>B: Success
+B-->>MP: 200 OK
+```
 
-Si saldoAFavor > 0, se calcula el montoAPagar = Math.max(0, cuotaMensual - saldoAFavor).
+---
 
-Se actualiza el campo suscripcion.saldo_a_favor con el remanente.
+### 🏗️ 13. Servicio de Proyectos (proyectoService)
 
-Estado del Pago:
+**Propósito:** Creación y validación de proyectos.
 
-Si montoAPagar > 0: estado_pago es "pendiente".
+#### Validaciones por Tipo
 
-Si montoAPagar === 0: estado_pago es "cubierto_por_puja". Esto cierra el pago inmediatamente sin requerir una transacción de pasarela.
+| Tipo | Moneda | Lotes | Requisito |
+|------|--------|-------|-----------|
+| **directo** | USD | ✅ true | `monto_inversion` definido |
+| **mensual** | ARS | ❌ false | `obj_suscripciones` > 0 |
 
-Creación y Decremento: Se crea el nuevo registro de Pago con el monto final y se decrementa suscripcion.meses_a_pagar.
-
-Plazo de Vencimiento Fijo
-La fecha de vencimiento (fecha_vencimiento) se establece de forma fija al día 10 del mes en curso, facilitando la gestión de la morosidad.
-
-14.3 Gestión de la Morosidad (Cron Jobs)
-Los métodos findPaymentsDueSoon y findOverduePayments son la base para un sistema de recordatorios automatizados:
-
-Método Filtro Lógico Propósito
-findPaymentsDueSoon Pagos pendiente con fecha_vencimiento entre Hoy y Hoy + 3 días. Enviar Alertas de recordatorio (ej., "Tu pago vence en 3 días").
-findOverduePayments Pagos pendiente con fecha_vencimiento anterior a Hoy ([Op.lt]). Enviar Avisos de morosidad y eventualmente aplicar la lógica de suspensión de la suscripción.
-
-Exportar a Hojas de cálculo
-El método updateLastNotificationDate es necesario para evitar enviar múltiples recordatorios en un corto período de tiempo a un mismo usuario para el mismo pago pendiente.
-
-Servicio de Pagos (Mercado Pago Integration)
-
-El servicio paymentService.js es la capa de abstracción entre la lógica de negocio de la plataforma y el SDK de Mercado Pago. Su principal responsabilidad es la gestión transaccional de los pagos, asegurando que el estado de la Transaccion interna y los pagos externos sean consistentes.
-
-15.1 paymentService.js (Backend)
-Método Propósito Principal Integración Externa Lógica de Negocio Clave
-createPaymentSession Genera la URL de pago de Mercado Pago. Preference Envía la transaccionId local como external_reference y configura la notification_url (webhook) para la comunicación asíncrona.
-verifyAndFetchPayment Extrae y verifica los detalles de un pago desde un webhook. Payment Filtra por el topic payment y utiliza el paymentId para consultar los detalles a Mercado Pago.
-procesarPagosDeMerchantOrder Maneja los pagos agrupados por una Orden de Comercio (MO). MerchantOrder CRÍTICO/TRANSACCIONAL: Procesa cada pago dentro de la MO. Llama a transaccionService.confirmarTransaccion o procesarFalloTransaccion dentro de una transacción de DB para garantizar la atomicidad.
-refreshPaymentStatus Consulta el estado de una transacción de forma síncrona (ej., desde un redirect de usuario). Payment Actualiza la tabla PagoMercado y confirma la Transaccion si el estado es pagado.
-
-Exportar a Hojas de cálculo
-15.2 Flujo Crítico: Webhooks y Transacciones
-La función más importante es procesarPagosDeMerchantOrder, que maneja el webhook de merchant_order. Esta garantiza que las actualizaciones de estado de pago afecten correctamente a la lógica de negocio local:
-
-1. Transaccionalidad (Atomicidad)
-   El método inicia una transacción de base de datos (t = await sequelize.transaction()) antes de cualquier procesamiento. Esto es fundamental porque un solo evento de Mercado Pago puede desencadenar múltiples cambios en la base de datos (actualizar Transaccion, crear PagoMercado, actualizar Inversion, etc.).
-
-JavaScript
-
-const t = await sequelize.transaction({ ... });
-
-try {
-// ... Lógica de consulta a MP y procesamiento
-await transaccionService.confirmarTransaccion(transaccionId, { transaction: t });
-// ...
-await t.commit();
-} catch (error) {
-await t.rollback(); // Si algo falla, se revierte todo
-// ...
-} 2. Mapeo de Estados
-El objeto MP_STATUS_MAP es crucial para traducir los estados de la pasarela de pago (ej., approved, rejected) a estados de la plataforma local (pagado, rechazado), manteniendo una nomenclatura interna consistente.
-
-3. Proceso de Pago
-   Estado pagado (Aprobado): Si el estado final es pagado, se llama a transaccionService.confirmarTransaccion(..., { transaction: t }). Este servicio es el responsable de ejecutar la lógica de negocio real (ej., crear la inversión o marcar la suscripción como activa).
-
-Estado rechazado/devuelto: Se llama a transaccionService.procesarFalloTransaccion(..., { transaction: t }) para revertir la transacción interna (si es necesario) y notificar al usuario.
-
-Este diseño separa la responsabilidad: el paymentService maneja la comunicación con Mercado Pago, mientras que el transaccionService maneja las reglas de negocio posteriores a la confirmación/falla del pago.
-
-Servicio de Proyectos
-
-¡Perfecto! El proyectoService es crucial para definir la estructura de la inversión, estableciendo las reglas sobre cómo se creará y fondeará cada oportunidad.
-
-Aquí tienes la documentación en formato Markdown para el servicio proyectoService.js:
-
-🏗️ PASO 16: Servicio de Proyectos
-El servicio proyectoService.js gestiona el modelo Proyecto, que es el contenedor principal de una oportunidad de inversión. Su función más importante es la validación de las reglas de negocio al momento de la creación, asegurando la consistencia entre el tipo de inversión y sus parámetros asociados (montos, monedas, y lotes).
-
-16.1 proyectoService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-crearProyecto Crea un proyecto y valida la unicidad de los lotes. Validación Dual: 1. Reglas estrictas por tipo_inversion (directo vs. mensual). 2. CRÍTICO: Evita que los lotes sean reutilizados, buscando conflictos de idProyecto en la base de datos.
-findByUserId Obtiene los proyectos en los que un usuario ha invertido. Relación de Inversión: Utiliza include para filtrar proyectos que tienen al menos una Inversion con el id_usuario y estado: "pagado".
-update Actualiza un proyecto existente. Flexibilidad: Permite la actualización dentro de una transacción (transaction), lo cual es esencial si la actualización forma parte de un flujo mayor (ej., un proceso de cambio de estado).
-findAllActivo / findByIdActivo Consulta proyectos visibles para el usuario. Filtra por activo: true y siempre incluye los modelos Lote e Imagen para presentar la información completa.
-
-Exportar a Hojas de cálculo
-16.2 Reglas de Negocio en la Creación (crearProyecto)
-La lógica de creación aplica validaciones estrictas basadas en el campo tipo_inversion, definiendo si el proyecto será una inversión única o un fondo de suscripción mensual:
-
-A. Tipo directo (Inversión Única)
-Moneda: Fija a "USD".
-
-Objetivo de Suscripciones: Fijo a 0 (irrelevante para este tipo).
-
-Pack de Lotes: Fijo a true (Entrega anticipada activa).
-
-Requisito: monto_inversion debe ser definido (será el monto que cada inversor debe pagar).
-
-B. Tipo mensual (Suscripción)
-Moneda: Fija a "ARS".
-
-Pack de Lotes: Fijo a false (Entrega anticipada inactiva).
-
-Requisito: obj_suscripciones debe ser mayor a cero (define la meta de fondeo).
-
-Requisito: monto_inversion debe ser definido (será la cuota base mensual a pagar).
-
-C. Validación de Unicidad de Lotes
-Es una regla de negocio crítica que un lote solo puede estar asociado a UN proyecto a la vez.
-
-El servicio busca lotes que el usuario quiere asignar (lotesIds).
-
-Utiliza Lote.findAll con where: { idProyecto: { [Op.ne]: null } } para encontrar cualquier lote de la lista que ya tenga un idProyecto asignado.
-
-Si se encuentran lotes asignados, se lanza un error que impide la creación del proyecto, protegiendo la integridad de la inversión.
-
-JavaScript
-
-// La validación clave de unicidad de lotes
+```javascript
+// Validación de unicidad de lotes
 const lotesAsignados = await Lote.findAll({
-where: {
-id: lotesIds,
-idProyecto: { [require("sequelize").Op.ne]: null },
-},
+  where: {
+    id: lotesIds,
+    idProyecto: { [Op.ne]: null } // Ya están asignados
+  }
 });
-16.3 Relación Inversor-Proyecto (findByUserId)
-Este método es esencial para la interfaz del usuario ("Mis Proyectos"). En lugar de tener una relación directa, la propiedad se determina a través de la tabla Inversion:
 
-Filtra los Proyectos.
-
-Incluye la tabla Inversion con un filtro anidado (where) que exige que el id_usuario sea el consultado Y que el estado de la inversión sea "pagado" (required: true garantiza que solo se traigan los proyectos con esa inversión confirmada).
-
-Esto asegura que solo se muestren los proyectos en los que el usuario es un inversor activo y con pago completado.
-
-Servicio de Pujas y Subastas
-El servicio pujaService.js administra el modelo Puja y el sistema de subastas por lote. Es responsable de las reglas de oferta, la gestión del token de subasta (tokens_disponibles en SuscripcionProyecto) y el crucial proceso de aplicación de excedente (saldo_a_favor).
-
-17.1 pujaService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-create Crea o actualiza una puja en un lote activo. Token Consumo: Si es la primera puja del usuario en el lote, consume 1 token_disponible de la SuscripcionProyecto. Si es una actualización, no consume más tokens. Validación: Asegura que el monto sea mayor que la puja anterior y mayor que la puja más alta.
-procesarPujaGanadora CRÍTICO. Aplica el excedente de la puja ganadora después del pago. Transacción que: 1. Cubre Pagos Pendientes (estado_pago: 'pendiente'). 2. Pre-paga Meses Futuros (decrement 'meses_a_pagar'). 3. Asigna el resto a saldo_a_favor. 4. Libera el token de los perdedores (P3, etc.).
-requestCheckoutForPuja Inicia el flujo de pago de la puja ganadora. Llama a getValidPaymentDetails para validar la propiedad y el estado, y luego utiliza el transaccionService para generar el checkout de la pasarela.
-getValidPaymentDetails Valida que una puja esté lista para pagarse. Asegura que el estado sea ganadora_pendiente y que el userId autenticado sea el propietario.
-gestionarTokensAlFinalizar Prepara el lote para la liquidación. Libera los tokens de todos los participantes EXCEPTO el Top 3 (P1, P2, P3), quienes quedan bloqueados hasta que se defina el ganador.
-findExpiredGanadoraPendiente Busca pujas que han incumplido su plazo de pago. Utilizado por un Scheduler (Cron Job) para iniciar el proceso de morosidad/impago y reasignación al siguiente postor.
-devolverTokenPorImpago Revierte el bloqueo del token tras un impago (más de 90 días). Seguridad: Incrementa solo si el tokens_disponibles es < 1, asegurando que el usuario no obtenga tokens duplicados.
-
-Exportar a Hojas de cálculo
-17.2 La Lógica del Excedente (procesarPujaGanadora)
-Cuando un usuario paga exitosamente el monto de su puja ganadora, el excedente (monto_puja - precio_base) se distribuye en una estricta jerarquía de prioridades:
-
-Prioridad 1: Cubrir Pagos Pendientes: El excedente se utiliza para cambiar el estado de cualquier Pago mensual pendiente del usuario en ese proyecto a cubierto_por_puja.
-
-Prioridad 2: Pre-pagar Meses Futuros: Si queda excedente, se utiliza para reducir la cuenta de suscripcion.meses_a_pagar al monto de la cuota mensual (monto_inversion).
-
-Prioridad 3: Saldo a Favor: Cualquier remanente después de cubrir los meses futuros se agrega a suscripcion.saldo_a_favor. Este saldo se aplicará automáticamente a la próxima cuota pendiente (ver pagoService).
-
-Prioridad 4: Excedente de Visualización: Si la suscripción ya está totalmente cubierta (meses_a_pagar <= 0), el resto se almacena en lote.excedente_visualizacion.
-
-17.3 Gestión del Token de Subasta (Tokens)
-El servicio impone una regla estricta de "Un Token por Proyecto Activo" para la participación:
-
-Bloqueo al Pujar (create): Al hacer la primera puja en cualquier lote de un proyecto, el tokens_disponibles de la SuscripcionProyecto pasa de 1 a 0. Esto impide que el usuario puje en otros lotes del mismo proyecto.
-
-Liberación de Perdedores Masivos (gestionarTokensAlFinalizar): Al final de la subasta, se devuelven los tokens a todos, excepto al Top 3 de postores.
-
-Liberación Final del Perdedor (procesarPujaGanadora): Cuando el ganador (P1 o P2) paga, se libera inmediatamente el token del postor que queda bloqueado (P2 o P3), dejándolo disponible para otro proyecto.
-
-Liberación por Impago (devolverTokenPorImpago): Si un ganador incumple el pago (ej. 90 días), se le devuelve el token para que pueda participar en el futuro, pero la puja se marca como ganadora_incumplimiento.
-
-Servicio de Resumen de Cuenta
-El servicio resumenCuentaService.js gestiona el modelo ResumenCuenta, el cual actúa como un snapshot y un indicador de progreso para las inversiones tipo suscripción mensual. Combina los datos de la SuscripcionProyecto y los Pagos realizados para mostrar al usuario su estatus actual.
-
-18.1 resumen_cuenta.service.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-createAccountSummary Inicializa el resumen al crear una suscripción. Atomicidad: Utiliza options (transacción) para asegurar que el resumen se cree junto con la suscripción. Snapshot: Captura el detalle de la CuotaMensual y el total_cuotas_proyecto en el momento de la suscripción para evitar inconsistencias futuras.
-updateAccountSummaryOnPayment CRÍTICO. Actualiza el progreso después de un pago exitoso. Cálculo de Progreso: Cuenta los pagos con estado pagado o cubierto_por_puja. Cálculo de Morosidad: Estima las cuotas_vencidas restando las cuotas_pagadas de los mesesTranscurridos desde la creación de la suscripción (moment().diff(...)).
-getAccountSummariesByUserId Obtiene todos los resúmenes del usuario. Consulta las SuscripcionProyecto del usuario y realiza un join con ResumenCuenta y Proyecto para retornar la información clave.
-findResumenByIdAndUserId Seguridad para consultas individuales. Usa un where en la inclusión de SuscripcionProyecto (where: { id_usuario: userId }) para prevenir el acceso a resúmenes de otros usuarios.
-actualizarSaldoGeneral (Simulación) Placeholder para saldos de inversiones directas/pujas. Función de apoyo que indica dónde se integraría la lógica de saldo general del usuario si la plataforma lo requiriera (ej., para reinversión).
-
-Exportar a Hojas de cálculo
-18.2 Lógica de Actualización y Progreso (updateAccountSummaryOnPayment)
-Esta función es vital para reflejar el estado financiero del inversor.
-
-1. Conteo de Pagos Pagados
-   La métrica de cuotas_pagadas es la suma de todos los registros en la tabla Pago asociados a la suscripción que tienen un estado final y exitoso:
-
-Pagos Completados=Pagos(estado=’pagado’)∪Pagos(estado=’cubierto_por_puja’)
-El filtro se realiza directamente al incluir el modelo Pago en la consulta a SuscripcionProyecto.
-
-2. Cálculo de Porcentaje
-   El porcentaje_pagado se calcula utilizando la cantidad de pagos completados sobre el total de cuotas del proyecto (meses_proyecto):
-
-Porcentaje Pagado=
-Total Cuotas Proyecto
-Cuotas Pagadas
-​
-×100 3. Cálculo de Cuotas Vencidas (Morosidad)
-El cálculo de cuotas_vencidas es una estimación basada en el tiempo transcurrido desde que se creó la suscripción (fecha de inicio):
-
-Meses Transcurridos: Se calcula la diferencia en meses entre la fecha actual y la fecha de creación de la suscripción (suscripcion.createdAt) usando moment().
-
-Cuotas Vencidas: La morosidad se define como el número de meses que deberían haber sido pagados menos el número de cuotas que fueron pagadas:
-
-Cuotas Vencidas=max(0,Meses Transcurridos−Cuotas Pagadas)
-Este cálculo es crucial para generar reportes y automatizar procesos de cobranza o notificación de mora.
-
-Servicio de Suscripción a Proyectos
-El servicio suscripcionProyectoService.js administra el modelo SuscripcionProyecto, la entidad que formaliza la relación entre un Usuario y un Proyecto de inversión de tipo mensual. Su responsabilidad principal es gestionar el estado inicial, la vinculación a proyectos y la activación de la lógica de negocio tras el fondeo del proyecto.
-
-19.1 suscripcionProyectoService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-\_createSubscriptionRecord Crea el registro de suscripción y actualiza el proyecto. Transaccionalidad: Es llamado por TransaccionService y opera dentro de su transacción (t). Fondeo/Notificación: Incrementa suscripciones_actuales del proyecto. Si se alcanza el obj_suscripciones, notifica a todos los usuarios y cambia el estado_proyecto a "En proceso". Inicialización: Fija meses_a_pagar al plazo_inversion total del proyecto.
-findByUserId Consulta todas las suscripciones activas de un usuario. Garantiza que solo se muestren las suscripciones a proyectos que también están activo: true (se asume que existe la corrección del alias proyectoAsociado).
-findUsersByProjectId Obtiene la lista de usuarios (inversores) de un proyecto. Utiliza include para obtener las instancias de Usuario asociadas a las suscripciones activas.
-findSubscriptionsReadyForPayments (CRON Job / Scheduler) Busca suscripciones para generar pagos. Filtra por pago_generado: false y proyectos con objetivo_cumplido: true, indicando que el proceso de generación de cuotas debe iniciar.
-
-Exportar a Hojas de cálculo
-19.2 Flujo Crítico: Creación y Fondeo (\_createSubscriptionRecord)
-Esta función se ejecuta después de que el usuario ha completado el pago inicial (la primera cuota o el monto base) a través del TransaccionService.
-
-1. Verificación del Proyecto
-   Asegura que el proyecto esté activo y no esté en estado "Finalizado" o "Cancelado".
-
-2. Configuración Inicial del Inversor
-   El campo meses_a_pagar de la suscripción se inicializa con el plazo_inversion total definido en el proyecto. Este valor se irá decrementando a medida que se realicen pagos o se aplique excedente de pujas.
-
-3. Proceso de Fondeo (Lógica de "Crowdfunding")
-   Incremento: El contador proyecto.suscripciones_actuales se incrementa en 1.
-
-Verificación de Objetivo: Comprueba si suscripciones_actuales ha alcanzado o superado el obj_suscripciones.
-
-Activación del Proyecto:
-
-Si se cumple el objetivo y aún no se ha notificado (objetivo_notificado: false), el proyecto se marca como fondeado.
-
-Se actualiza el estado del proyecto a "En proceso".
-
-Notificación Masiva: Se utiliza el MensajeService para enviar una notificación a todos los usuarios activos de la plataforma, informando que el proyecto ha sido fondeado exitosamente y ha comenzado su fase de ejecución.
-
-Atomicidad: Al ejecutarse dentro de la misma transacción (t) que el pago de la Transaccion, se garantiza que el usuario solo obtiene su suscripción si el proyecto se actualiza correctamente y viceversa.
-
-19.3 Inclusión del resumenCuentaService
-Aunque el método \_createSubscriptionRecord no llama directamente a resumenCuentaService.createAccountSummary, la importación (// >>> CAMBIO CLAVE 1 <<<) indica que este es el punto lógico en el flujo completo donde se debe inicializar el ResumenCuenta después de la creación de la suscripción, garantizando que el usuario tenga un dashboard financiero desde el inicio.
-
-Servicio de Bajas (Cancelación de Suscripción)
-
-El servicio suscripcionService.js se centra en la gestión del ciclo de vida de la SuscripcionProyecto, siendo su método principal el softDelete, que implementa la lógica de negocio para la cancelación de una suscripción por parte del usuario.
-
-20.1 suscripcionService.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-softDelete CRÍTICO. Cancela una suscripción y prepara el reembolso. Transacción: Opera atómicamente. 1. Soft Delete: Marca activo: false en SuscripcionProyecto. 2. Contadores: Decrementa el contador suscriptores_actuales del proyecto. 3. Registro de Cancelación: Crea un registro detallado en SuscripcionCancelada para registrar el historial de pagos y el monto total pagado, lo cual se usará posteriormente para el proceso de reembolso.
-findById Búsqueda simple por ID. Permite obtener la instancia de la suscripción.
-findByUserIdAndProjectId Búsqueda por par de claves (Usuario-Proyecto). Útil para verificar si un usuario tiene una suscripción activa a un proyecto específico.
-
-Exportar a Hojas de cálculo
-20.2 Flujo Crítico: Cancelación de Suscripción (softDelete)
-El método softDelete no realiza una eliminación física, sino que orquesta un proceso transaccional para registrar la cancelación y sus implicaciones financieras.
-
-Inicio Transacción: Se inicia una transacción de Sequelize (t) para asegurar la atomicidad de las operaciones.
-
-Validación: Verifica que la suscripción exista y que aún esté activa.
-
-Soft Delete: La suscripción se actualiza, estableciendo activo en false.
-
-Actualización del Proyecto: El campo suscriptores_actuales en el modelo Proyecto se decrementa en 1, reflejando la pérdida del inversor.
-
-Registro para Reembolso (Modelo SuscripcionCancelada):
-
-Identificación de Pagos: Se consultan todos los registros en la tabla Pago asociados a la suscripción con el estado 'pagado'.
-
-Cálculo: Se suman los montos de todos los pagos exitosos para obtener el montoTotalPagado.
-
-Creación del Registro: Se crea una nueva entrada en el modelo SuscripcionCancelada, capturando:
-
-id_suscripcion_original
-
-monto_pagado_total
-
-meses_pagados
-
-fecha_cancelacion
-
-Propósito: El registro de SuscripcionCancelada es la única fuente de verdad para que el equipo administrativo o un sistema de terceros pueda procesar el reembolso final al inversor de acuerdo con los términos y condiciones de la plataforma.
-
-Cierre de Transacción: Si todas las operaciones son exitosas, se realiza el commit (await t.commit()). En caso de cualquier error, se realiza el rollback (await t.rollback()), dejando la base de datos en su estado original.
-
-Servicio de Transacciones (Motor de Pagos)
-
-El servicio transaccionService.js es la capa de integración de la pasarela de pagos. Su responsabilidad principal es orquestar la creación de la transacción, la generación del checkout y, lo más importante, la ejecución de la lógica de negocio atómica al recibir una confirmación de pago (Webhook).
-
-21.1 transaccion.service.js (Backend)
-Método Propósito Principal Lógica de Negocio Clave
-iniciarTransaccionYCheckout Punto de Entrada. Crea o reutiliza una Transaccion pendiente y genera la URL de pago. Reintento/Idempotencia: Busca transacciones pendiente o fallido para el mismo ítem (Inversión/Pago) y regenera el checkout (generarCheckoutParaTransaccionExistente). Puja Excepción: Para las Pujas, anula transacciones antiguas y crea una nueva para asegurar el monto actualizado.
-generarCheckoutParaTransaccionExistente Flujo de Bajo Nivel. Genera la preferencia de pago en la pasarela. Garantiza que la Transaccion tenga un registro asociado en PagoMercado (findOrCreate), asegurando que el ID de la pasarela (preferenceId) esté vinculado y que la Transaccion esté marcada como pendiente. Requiere una transacción de BD activa.
-confirmarTransaccion CRÍTICO (Webhook/Éxito). Procesa el éxito del pago. Idempotencia: Usa Lock de Actualización (t.LOCK.UPDATE) para prevenir doble procesamiento. Switch de Negocio: Ejecuta el flujo específico (manejarPagoSuscripcionInicial, manejarPagoMensual, inversionService.confirmarInversion, pujaService.procesarPujaGanadora) según el tipo_transaccion. Cierre: Marca la Transaccion como pagado y actualiza el saldo general del usuario (resta el monto).
-revertirTransaccion CRÍTICO (Reembolso/Error). Procesa la reversión de un pago exitoso. Idempotencia: Solo revierte si el estado es pagado. Switch Inverso: Ejecuta la lógica de negocio opuesta a la confirmación (ej., pagoService.markAsReverted, inversionService.revertirInversion). Cierre: Marca la Transaccion como revertido y devuelve el monto al saldo general del usuario (suma el monto).
-fallarTransaccion Maneja fallos notificados por la pasarela (Webhook). Si es un Pago Mensual o Inicial, invoca pagoService.handlePaymentFailure (lo que puede desencadenar la cancelación de la suscripción si es el Mes 1). Marca la Transaccion como fallido.
-
-Exportar a Hojas de cálculo
-21.2 Lógica de Suscripciones (Flujos de Confirmación)
-El transaccionService contiene la lógica específica para el manejo de los pagos mensuales, que son los flujos más complejos.
-
-A. Flujo pago_suscripcion_inicial (Pago 1)
-Cuando se confirma el pago inicial, ocurre una cascada de operaciones críticas:
-
-Se invoca suscripcionService.\_createSubscriptionRecord: Se crea la entidad SuscripcionProyecto, se incrementa el contador del Proyecto y se notifica el fondeo si aplica.
-
-Se vincula la nueva Suscripcion al Pago y a la Transaccion.
-
-Se realiza un decrement atómico en SuscripcionProyecto.meses_a_pagar (se paga el primer mes).
-
-Se invoca pagoService.markAsPaid en el modelo Pago.
-
-Se invoca resumenCuentaService.createAccountSummary: Se inicializa el dashboard financiero del usuario.
-
-Se invoca resumenCuentaService.updateAccountSummaryOnPayment: Se actualiza el resumen (1 cuota pagada, 0% vencido).
-
-B. Flujo mensual (Pagos 2+)
-Cuando se confirma un pago mensual recurrente:
-
-Se invoca pagoService.markAsPaid en el modelo Pago.
-
-Se realiza un decrement atómico en SuscripcionProyecto.meses_a_pagar.
-
-Se invoca resumenCuentaService.updateAccountSummaryOnPayment: Se recalcula el progreso (cuotas pagadas y morosidad).
-
-21.3 Manejo de Saldo General (Billetera)
-El servicio actúa como el controlador del saldo general del usuario (simulado por resumenCuentaService.actualizarSaldoGeneral):
-
-Operación Tipo de Transacción Impacto en Saldo General
-Confirmación (Éxito de Pago) pago_suscripcion_inicial, mensual, directo, Puja Resta el monto (-montoTransaccion). El dinero se va de la cuenta del usuario.
-Reversión (Reembolso) Todas (si estaban pagado) Suma el monto (montoTransaccion). El dinero regresa a la cuenta del usuario.
-
-Exportar a Hojas de cálculo
-Esto garantiza la doble entrada: al pagar sale dinero, al reembolsar entra dinero.
-
-Servicio de Usuarios
-El servicio usuarioService.js es el punto de control para la administración del modelo Usuario. Maneja las funciones de creación de cuentas, verificación de identidad por email, restablecimiento de contraseñas y tareas de mantenimiento del sistema (limpieza de cuentas no utilizadas).
-
-22.1 usuario.service.js (Backend)
-Método Propósito Principal Lógica de Negocio/Seguridad Clave
-create Registra un nuevo usuario en el sistema. Verificación: Genera un confirmacion_token único y con fecha de expiracion (24 horas). Marca el usuario como confirmado_email: false. Notificación: Envía el email de confirmación inmediatamente a través de emailService.
-confirmEmail Activa la cuenta de un usuario. Validación: Busca el token y verifica que confirmacion_token_expiracion no haya pasado ([Op.gt]: new Date()). Activación: Si es válido, actualiza confirmado_email: true y activo: true (se asume que activo es el estado principal de la cuenta).
-resendConfirmationEmail Permite reenviar el correo de activación. Genera un nuevo token de confirmación y expira el anterior, actualizando la fecha de caducidad.
-generatePasswordResetToken Inicia el flujo de recuperación de contraseña. Genera un reset_password_token seguro y con una expiración corta (1 hora).
-findByResetToken Valida el token de recuperación. Busca el token y verifica que no haya expirado, garantizando que el proceso de cambio de contraseña sea sensible al tiempo.
-cleanUnconfirmedAccounts Mantenimiento. Elimina cuentas que nunca se activaron. Realiza un Hard Delete (eliminación física de la BD) de los usuarios que no han confirmado su email (confirmado_email: false) y que fueron creados hace más de X días (por defecto 7 días), liberando espacio y garantizando la higiene de la base de datos.
-softDelete Desactiva temporalmente un usuario. Establece activo: false para inhabilitar el acceso sin borrar el registro.
-findAllActivos Obtiene solo usuarios con cuentas activas. Útil para tareas masivas como notificaciones (visto en suscripcion_proyecto.service).
-
-Exportar a Hojas de cálculo
-22.2 Flujos de Seguridad y Tokens
-El servicio utiliza crypto.randomBytes(20).toString("hex") para generar tokens criptográficamente seguros para dos propósitos principales:
-
-Propósito Token Almacenado Vigencia Efecto al Fallar la Validación
-Confirmación de Email (create, resendConfirmationEmail) confirmacion_token 24 horas El usuario no puede iniciar sesión. Si el token expira, debe solicitar un reenvío.
-Restablecimiento de Contraseña (generatePasswordResetToken) reset_password_token 1 hora El usuario no puede cambiar su contraseña y debe iniciar el proceso de recuperación nuevamente.
-
-Exportar a Hojas de cálculo
-Nota de Implementación: El uso de [Op.gt]: new Date() es crucial para asegurar que el token sea verificado como "aún no expirado" directamente en la consulta a la base de datos.
-
+if (lotesAsignados.length > 0) {
+  throw new Error("Los lotes ya están asignados a otro proyecto");
+}
 ```
 
-```
+---
+
+###
