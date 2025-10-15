@@ -15,15 +15,13 @@ const authMiddleware = {
       const token = authHeader.split(" ")[1];
       if (!token) {
         return res.status(401).json({ error: "Formato de token inválido." });
-      }
+      } // Usamos verifyToken que verifica el JWT_SECRET
 
-      // Usamos verifyToken que verifica el JWT_SECRET
       const decodedToken = jwtService.verifyToken(token);
       if (!decodedToken) {
         return res.status(401).json({ error: "Token inválido o expirado." });
-      }
+      } // 2. Obtener el usuario de la BD
 
-      // 2. Obtener el usuario de la BD
       const usuario = await usuarioService.findById(decodedToken.id);
 
       if (!usuario) {
@@ -32,42 +30,31 @@ const authMiddleware = {
           .json({ error: "Usuario asociado al token no encontrado." });
       }
 
-      // 🛑 3. VERIFICACIÓN CLAVE: Bloquear si 2FA está activo pero no fue completado 🛑
-
-      // La verificación clave aquí es:
-      // Si el usuario tiene 2FA habilitado (is_2fa_enabled: true)
-      // Y, además, el usuario NO ha completado la confirmación de email (confirmado_email: false)
-      // O, MÁS IMPORTANTE, si el token utilizado NO ES un token de sesión final.
-
-      // Dado que estás usando el MISMO JWT_SECRET para ambos tokens:
-      // Debemos asegurar que el middleware SOLO permita el acceso si el 2FA está completado.
+      // 🛑 3. VERIFICACIÓN DE ESTADO ACTIVO (CLAVE PARA SOFT DELETE) 🛑
+      if (!usuario.activo) {
+        // Si el usuario está inactivo (eliminado lógicamente), forzamos el deslogeo
+        return res
+          .status(403)
+          .json({ error: "Acceso denegado. Su cuenta ha sido desactivada." });
+      } // 🛑 4. Bloquear si 2FA está activo pero no fue completado 🛑
 
       if (usuario.is_2fa_enabled) {
-        // El token temporal de 2FA (twoFaToken) no debería tener el campo 'rol' o 'nombre_usuario'
-        // En cambio, el token final SÍ los tiene (mira tu jwt.service.js)
-
-        // UNA SOLUCIÓN LIMPIA ES VERIFICAR SI EL TOKEN ES UN TOKEN DE SESIÓN FINAL
-        // Al revisar si tiene el campo 'rol' que solo le ponemos al token final.
-
+        // Verificamos si el token tiene el campo 'rol', lo que indica que es un token de SESIÓN FINAL.
         if (!decodedToken.rol) {
-          // Si el token es solo el token temporal (que solo tiene 'id'), y el 2FA está activo, ¡Bloquear!
-          return res
-            .status(403)
-            .json({
-              error:
-                "Acceso denegado. Se requiere completar la verificación 2FA.",
-            });
+          // Si el token es solo el temporal (que solo tiene 'id'), y el 2FA está activo, ¡Bloquear!
+          return res.status(403).json({
+            error:
+              "Acceso denegado. Se requiere completar la verificación 2FA.",
+          });
         }
-      }
+      } // 🛑 5. (Verificación de email ya existente, pero clave) 🛑
 
-      // 🛑 4. (Verificación de email ya existente, pero clave) 🛑
       if (!usuario.confirmado_email) {
         return res
           .status(403)
           .json({ error: "Acceso denegado. Confirme su correo electrónico." });
-      }
+      } // 6. Almacenar los datos del usuario
 
-      // 5. Almacenar los datos del usuario
       req.user = usuario;
       next();
     } catch (error) {
@@ -77,7 +64,6 @@ const authMiddleware = {
         .json({ error: "Token inválido o expirado. Vuelva a iniciar sesión." });
     }
   },
-  
   authorizeAdmin(req, res, next) {
     // El rol del usuario ya está en 'req.user' gracias al middleware anterior
     if (req.user && req.user.rol === "admin") {

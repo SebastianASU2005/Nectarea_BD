@@ -7,6 +7,12 @@ const Usuario = sequelize.define(
   "Usuario",
   {
     ...baseAttributes,
+    activo: {
+      // <<-- AÑADE ESTO
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false, // <<-- ESTO ASEGURA QUE LA CUENTA EMPIEZA INACTIVA
+    },
     nombre: {
       type: DataTypes.STRING(100),
       allowNull: false,

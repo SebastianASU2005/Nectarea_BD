@@ -21,9 +21,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "      ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "      ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("      El servicio de pagos NO funcionará.");
+  console.error("      El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -111,7 +111,7 @@ const cuotaMensualRoutes = require("./routes/cuota_mensual.routes");
 const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
 const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
-const testRoutes = require("./routes/test.routes")
+const testRoutes = require("./routes/test.routes");
 
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 
@@ -119,6 +119,7 @@ const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 const monthlyPaymentGenerationTask = require("./tasks/monthlyPaymentGenerationTask");
 const overduePaymentManager = require("./tasks/OverduePaymentManager");
 const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
+const cleanupUnconfirmedUsersTask = require("./tasks/cleanupUnconfirmedUsersTask"); // CRON JOB DE LIMPIEZA
 
 // 🛑 NUEVA IMPORTACIÓN DEL CRON JOB DE IMPAGO 🛑
 const { startCronJobs } = require("./tasks/ManejoImpagoPuja");
@@ -147,7 +148,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
-app.use("/api/test",testRoutes)
+app.use("/api/test", testRoutes);
 
 // 6. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
@@ -173,17 +174,10 @@ async function synchronizeDatabase() {
     await PagoMercado.sync({ alter: true });
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
-    await Contrato.sync({ alter: true });
+    await Contrato.sync({ alter: true }); // ========================================================== // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ, después de que // todas las tablas existen en la base de datos. // ==========================================================
 
-    // ==========================================================
-    // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ, después de que
-    // todas las tablas existen en la base de datos.
-    // ==========================================================
-    configureAssociations();
+    configureAssociations(); // ========================================================== // FASE 2: Sincronización para añadir las Claves Foráneas (FKs) // ==========================================================
 
-    // ==========================================================
-    // FASE 2: Sincronización para añadir las Claves Foráneas (FKs)
-    // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
@@ -199,17 +193,14 @@ async function synchronizeDatabase() {
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
 
-    console.log("¡Base de datos y relaciones sincronizadas correctamente!");
+    console.log("¡Base de datos y relaciones sincronizadas correctamente!"); // ========================================================== // 🚀 INICIO DE TAREAS PROGRAMADAS // ==========================================================
 
-    // ==========================================================
-    // 🚀 INICIO DE TAREAS PROGRAMADAS
-    // ==========================================================
     paymentReminderScheduler.scheduleJobs();
     monthlyPaymentGenerationTask.start();
     overduePaymentManager.start();
     overduePaymentNotifier.start();
+    cleanupUnconfirmedUsersTask.start(); // El cron job de limpieza se inicia aquí // 🛑 INICIAR EL CRON JOB DE MANEJO DE IMPAGOS 🛑
 
-    // 🛑 INICIAR EL CRON JOB DE MANEJO DE IMPAGOS 🛑
     startCronJobs();
 
     app.listen(PORT, () => {

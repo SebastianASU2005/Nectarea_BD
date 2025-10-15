@@ -52,6 +52,7 @@ const usuarioService = {
 
     return usuario.update({
       confirmado_email: true,
+      activo: true,
       confirmacion_token: null,
       confirmacion_token_expiracion: null,
     });
@@ -167,8 +168,39 @@ const usuarioService = {
   async findAllActivos() {
     return Usuario.findAll({ where: { activo: true } });
   },
+  /**
+   * Elimina permanentemente cuentas no confirmadas y expiradas.
+   */
+  async cleanUnconfirmedAccounts(daysOld = 7) {
+    // Calcular la fecha límite.
+    const limiteFecha = new Date();
+    limiteFecha.setDate(limiteFecha.getDate() - daysOld); // Encontrar usuarios que cumplen las condiciones: // - confirmado_email: false // - Creados antes de la fecha límite ('createdAt' se asume de baseAttributes)
 
-  // ❌ No hay función de sanción por impago al usuario aquí.
+    const usuariosParaEliminar = await Usuario.findAll({
+      where: {
+        confirmado_email: false,
+        createdAt: {
+          [Op.lt]: limiteFecha, // anterior a la fecha límite
+        },
+      },
+      attributes: ["id", "email"],
+    });
+
+    if (usuariosParaEliminar.length === 0) {
+      return 0;
+    } // Eliminar las cuentas encontradas (Hard Delete - Eliminación física)
+
+    const idsAEliminar = usuariosParaEliminar.map((u) => u.id);
+    const resultado = await Usuario.destroy({
+      where: {
+        id: {
+          [Op.in]: idsAEliminar,
+        },
+      },
+    });
+
+    return resultado;
+  },
 };
 
 module.exports = usuarioService;
