@@ -168,6 +168,7 @@ EMAIL_FROM=noreply@nectarea.com
 ```
 
 ⚠️ **MUY IMPORTANTE:**
+
 - Usa los mismos valores que creaste en el paso 1.4
 - Si tu contraseña de PostgreSQL es diferente, cámbiala en `DB_PASSWORD`
 - Si usas otro puerto, cámbialo en `DB_PORT`
@@ -249,17 +250,17 @@ Crea un archivo: `src/services/api.js`
 
 ```javascript
 // src/services/api.js
-import axios from 'axios';
+import axios from "axios";
 
 // URL del backend (cámbialo según tu entorno)
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
 
 // Crear instancia de axios con configuración base
 const apiClient = axios.create({
   baseURL: API_URL,
   timeout: 15000, // 15 segundos
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
@@ -269,18 +270,18 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     // Obtener el token del localStorage
-    const token = localStorage.getItem('token');
-    
+    const token = localStorage.getItem("token");
+
     // Si existe, agregarlo al header
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
     console.log(`📤 ${config.method.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
-    console.error('❌ Error en request:', error);
+    console.error("❌ Error en request:", error);
     return Promise.reject(error);
   }
 );
@@ -296,23 +297,23 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response) {
       const { status } = error.response;
-      
+
       // Si el token expiró o es inválido
       if (status === 401) {
-        console.error('🚫 Token inválido o expirado');
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
+        console.error("🚫 Token inválido o expirado");
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
       }
-      
+
       // Si no tiene permisos
       if (status === 403) {
-        console.error('🚫 No tienes permisos para esta acción');
+        console.error("🚫 No tienes permisos para esta acción");
       }
     } else if (error.request) {
-      console.error('❌ No se pudo conectar con el servidor');
+      console.error("❌ No se pudo conectar con el servidor");
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -334,16 +335,16 @@ Crea un archivo: `src/services/authService.js`
 
 ```javascript
 // src/services/authService.js
-import apiClient from './api';
+import apiClient from "./api";
 
 // Función de prueba
 export const testConnection = async () => {
   try {
-    const response = await apiClient.get('/health');
-    console.log('✅ Conexión exitosa:', response.data);
+    const response = await apiClient.get("/health");
+    console.log("✅ Conexión exitosa:", response.data);
     return response.data;
   } catch (error) {
-    console.error('❌ Error de conexión:', error);
+    console.error("❌ Error de conexión:", error);
     throw error;
   }
 };
@@ -352,8 +353,8 @@ export const testConnection = async () => {
 Ahora, en tu componente principal (App.jsx o similar):
 
 ```jsx
-import { useEffect } from 'react';
-import { testConnection } from './services/authService';
+import { useEffect } from "react";
+import { testConnection } from "./services/authService";
 
 function App() {
   useEffect(() => {
@@ -384,158 +385,230 @@ Abre la consola del navegador (F12) y deberías ver:
 
 ---
 
-## 📦 PASO 3: Entendiendo los Modelos
+## 🚀 PASO 3: Entendiendo los Modelos de Base de Datos
 
 ### ¿Qué es un Modelo?
 
-Un modelo es una **representación de una tabla** en la base de datos. Por ejemplo:
+Un **Modelo** es la representación en código de una **tabla** en la base de datos (DB), utilizando Sequelize. Define las columnas, los tipos de datos y las restricciones.
 
-- Modelo `Usuario` = Tabla `usuarios`
-- Modelo `Proyecto` = Tabla `proyectos`
+| Modelo (Sequelize)    | Tabla (DB)             | Propósito Principal                                             |
+| :-------------------- | :--------------------- | :-------------------------------------------------------------- |
+| `Usuario`             | `usuario`              | Gestión de cuentas de usuario.                                  |
+| `Proyecto`            | `proyecto`             | Detalles y estado de los proyectos de inversión.                |
+| `Transaccion`         | `transaccion`          | Registro central de flujos de dinero.                           |
+| `SuscripcionProyecto` | `suscripcion_proyecto` | Vínculo y estado de la suscripción de un usuario a un proyecto. |
+| `Puja`                | `puja`                 | Registro de las ofertas en las subastas de lotes.               |
 
-### Modelos Principales de Nectárea
+---
 
-#### 1. Usuario
+### Modelos Principales del Sistema
 
-```javascript
-{
-  id: 1,
-  email: "usuario@example.com",
-  password: "***", // Hasheada, nunca la verás en texto plano
-  nombre: "Juan",
-  apellido: "Pérez",
-  rol: "usuario", // Puede ser: "usuario", "admin", "inversor"
-  saldo_general: 0, // Dinero disponible del usuario
-  activo: true,
-  createdAt: "2025-01-15T10:00:00.000Z",
-  updatedAt: "2025-01-15T10:00:00.000Z"
-}
-```
+#### 1. Usuario (`usuario`)
 
-#### 2. Proyecto
+| Atributo             | Tipo de Dato  | Observaciones Clave                                          |
+| :------------------- | :------------ | :----------------------------------------------------------- |
+| **`id`**             | `INTEGER`     | Clave primaria.                                              |
+| `nombre`, `apellido` | `STRING(100)` |                                                              |
+| **`email`**          | `STRING(255)` | Único.                                                       |
+| **`dni`**            | `STRING(20)`  | Único.                                                       |
+| `nombre_usuario`     | `STRING(50)`  | Único.                                                       |
+| `contraseña_hash`    | `STRING(255)` | Clave hasheada.                                              |
+| **`rol`**            | `ENUM`        | Opciones: **`"admin"`, `"cliente"`** (Defecto: `"cliente"`). |
+| **`activo`**         | `BOOLEAN`     | **Define si la cuenta está activa** (Defecto: `false`).      |
+| `confirmado_email`   | `BOOLEAN`     | Indica si el email ha sido verificado.                       |
+| `is_2fa_enabled`     | `BOOLEAN`     | Indica si la Autenticación de Dos Factores está activa.      |
+| `twofa_secret`       | `STRING(255)` | Clave secreta para TOTP/2FA.                                 |
 
-```javascript
-{
-  id: 1,
-  nombre: "Proyecto Solar",
-  descripcion: "Instalación de paneles solares",
-  monto_objetivo: 100000, // Dinero que se quiere recaudar
-  tokens_totales: 10000, // Total de tokens disponibles
-  tokens_disponibles: 7500, // Tokens que aún se pueden comprar
-  precio_token: 10, // Precio de cada token
-  tipo_inversion: "directo", // "directo" o "puja" o "suscripcion"
-  estado: "activo", // "activo", "finalizado", "cancelado"
-  permite_pujas: false,
-  es_mensual: false, // Si es un proyecto de suscripción mensual
-  fecha_inicio: "2025-01-01",
-  fecha_fin: "2025-12-31",
-  imagen_url: "https://...",
-  activo: true
-}
-```
+<br>
 
-#### 3. Inversión
+#### 2. Proyecto (`proyecto`)
 
-```javascript
-{
-  id: 1,
-  id_usuario: 1, // Usuario que invierte
-  id_proyecto: 1, // Proyecto en el que invierte
-  tokens: 100, // Cantidad de tokens comprados
-  monto: 1000, // Dinero invertido
-  estado: "confirmado", // "pendiente", "confirmado", "rechazado"
-  fecha_inversion: "2025-01-15T14:30:00.000Z"
-}
-```
+| Atributo                       | Tipo de Dato     | Observaciones Clave                                          |
+| :----------------------------- | :--------------- | :----------------------------------------------------------- |
+| **`id`**                       | `INTEGER`        | Clave primaria.                                              |
+| `nombre_proyecto`              | `STRING(255)`    |                                                              |
+| `descripcion`                  | `TEXT`           |                                                              |
+| **`tipo_inversion`**           | `ENUM`           | Opciones: **`"directo"`, `"mensual"`**.                      |
+| `monto_inversion`              | `DECIMAL(18, 2)` | El monto objetivo de inversión.                              |
+| **`estado_proyecto`**          | `ENUM`           | Opciones: **`"En Espera"`, `"En proceso"`, `"Finalizado"`**. |
+| `suscripciones_actuales`       | `INTEGER`        | Contador de suscripciones activas.                           |
+| `fecha_inicio`, `fecha_cierre` | `DATEONLY`       |                                                              |
+| `pack_de_lotes`                | `BOOLEAN`        | Indica si el proyecto gestiona subastas de lotes.            |
 
-#### 4. Transacción
+<br>
 
-```javascript
-{
-  id: 1,
-  id_usuario: 1,
-  tipo_transaccion: "directo", // "directo", "puja", "suscripcion"
-  monto: 1000,
-  estado_transaccion: "pagado", // "pendiente", "en_proceso", "pagado", "fallido"
-  id_inversion: 1, // Relacionado con la inversión
-  id_proyecto: 1,
-  id_pago_pasarela: 1, // ID del pago en Mercado Pago
-  fecha_transaccion: "2025-01-15T14:35:00.000Z"
-}
-```
+#### 3. Transacción (`transaccion`)
 
-#### 5. PagoMercado
+| Atributo                 | Tipo de Dato     | Observaciones Clave                                                    |
+| :----------------------- | :--------------- | :--------------------------------------------------------------------- |
+| **`id`**                 | `INTEGER`        | Clave primaria.                                                        |
+| `id_usuario`             | `INTEGER`        | Usuario que realiza la transacción.                                    |
+| `monto`                  | `DECIMAL(15, 2)` | Monto de la transacción.                                               |
+| `tipo_transaccion`       | `STRING(50)`     | Tipo de transacción (e.g., "Inversion", "Puja", "PagoMensual").        |
+| **`estado_transaccion`** | `ENUM`           | Opciones: **`"pendiente"`, `"pagado"`, `"fallido"`, `"reembolsado"`**. |
+| `id_pago_mensual`        | `INTEGER`        | **FK a la tabla `Pago`** (Pago de mensualidad).                        |
+| `id_pago_pasarela`       | `INTEGER`        | **FK a la tabla `PagoMercado`** (Pago vía pasarela).                   |
+| `id_inversion`           | `INTEGER`        | FK a `Inversion` (si aplica).                                          |
+| `id_puja`                | `INTEGER`        | FK a `Puja` (si aplica).                                               |
 
-```javascript
-{
-  id: 1,
-  id_transaccion: 1,
-  id_transaccion_pasarela: "12345678", // ID del pago en Mercado Pago
-  monto_pagado: 1000,
-  metodo_pasarela: "mercadopago",
-  estado: "aprobado", // "aprobado", "rechazado", "en_proceso"
-  tipo_medio_pago: "credit_card",
-  fecha_aprobacion: "2025-01-15T14:35:00.000Z"
-}
-```
+<br>
 
-#### 6. Contrato
+#### 4. PagoMercado (`pagos_mercado`)
 
-```javascript
-{
-  id: 1,
-  id_proyecto: 1,
-  id_usuario: null, // Null si es un contrato general del proyecto
-  nombre_archivo: "contrato_proyecto_1.pdf",
-  ruta_archivo: "/uploads/contratos/contrato_proyecto_1.pdf",
-  tipo_contrato: "inversion", // "inversion", "suscripcion"
-  activo: true,
-  createdAt: "2025-01-10T09:00:00.000Z"
-}
-```
+| Atributo                  | Tipo de Dato     | Observaciones Clave                                                                     |
+| :------------------------ | :--------------- | :-------------------------------------------------------------------------------------- |
+| **`id`**                  | `INTEGER`        | Clave primaria.                                                                         |
+| **`id_transaccion`**      | `INTEGER`        | **FK a la tabla `Transaccion`**.                                                        |
+| `id_transaccion_pasarela` | `STRING`         | ID único en la pasarela (e.g., Mercado Pago ID).                                        |
+| `monto_pagado`            | `DECIMAL(10, 2)` | Monto real pagado a través de la pasarela.                                              |
+| `metodo_pasarela`         | `STRING`         | e.g., `"mercadopago"`, `"stripe"`.                                                      |
+| **`estado`**              | `ENUM`           | Opciones: **`"pendiente"`, `"aprobado"`, `"rechazado"`, `"devuelto"`, `"en_proceso"`**. |
+| `detalles_raw`            | `JSON`           | Objeto completo del webhook/API.                                                        |
 
-#### 7. CuotaMensual
+<br>
 
-```javascript
-{
-  id: 1,
-  id_proyecto: 1,
-  nombre_proyecto: "Proyecto Mensual",
-  valor_mensual_final: 1500, // Cuánto paga el usuario por mes
-  total_cuotas_proyecto: 12, // Duración en meses
-  activo: true
-}
-```
+#### 5. SuscripcionProyecto (`suscripcion_proyecto`)
 
-#### 8. SuscripcionProyecto
+| Atributo             | Tipo de Dato     | Observaciones Clave                          |
+| :------------------- | :--------------- | :------------------------------------------- |
+| **`id`**             | `INTEGER`        | Clave primaria.                              |
+| `id_usuario`         | `INTEGER`        | Usuario suscrito.                            |
+| `id_proyecto`        | `INTEGER`        | Proyecto suscrito.                           |
+| **`meses_a_pagar`**  | `INTEGER`        | Cantidad de meses que el usuario debe pagar. |
+| `tokens_disponibles` | `INTEGER`        | Tokens acumulados para pujas (Defecto: `1`). |
+| `saldo_a_favor`      | `DECIMAL(15, 2)` | Saldo proveniente de pagos excedentes.       |
 
-```javascript
-{
-  id: 1,
-  id_usuario: 1,
-  id_proyecto: 1,
-  meses_a_pagar: 12, // Cuántos meses se suscribió
-  tokens_disponibles: 120, // Tokens acumulados por pagar cuotas
-  saldo_a_favor: 0,
-  activo: true
-}
-```
+<br>
 
-#### 9. Pago (de Suscripción)
+#### 6. Pago (de Suscripción) (`pago`)
 
-```javascript
-{
-  id: 1,
-  id_suscripcion: 1,
-  id_usuario: 1,
-  id_proyecto: 1,
-  monto: 1500,
-  fecha_vencimiento: "2025-02-15",
-  fecha_pago: "2025-02-14",
-  estado_pago: "pagado", // "pendiente", "pagado", "vencido"
-  mes: "Febrero 2025"
-}
-```
+| Atributo             | Tipo de Dato     | Observaciones Clave                                                                         |
+| :------------------- | :--------------- | :------------------------------------------------------------------------------------------ |
+| **`id`**             | `INTEGER`        | Clave primaria.                                                                             |
+| **`id_suscripcion`** | `INTEGER`        | Suscripción a la que pertenece el pago.                                                     |
+| `id_usuario`         | `INTEGER`        | Usuario responsable del pago.                                                               |
+| `id_proyecto`        | `INTEGER`        | Proyecto asociado.                                                                          |
+| `monto`              | `DECIMAL(15, 2)` | Monto a pagar por la cuota.                                                                 |
+| `fecha_vencimiento`  | `DATEONLY`       |                                                                                             |
+| **`estado_pago`**    | `ENUM`           | Opciones: **`"pendiente"`, `"pagado"`, `"vencido"`, `"cancelado"`, `"cubierto_por_puja"`**. |
+| `mes`                | `INTEGER`        | Mes de la cuota.                                                                            |
+
+---
+
+### Modelos de Subasta
+
+#### 7. Lote (`lote`)
+
+| Atributo                     | Tipo de Dato     | Observaciones Clave                                       |
+| :--------------------------- | :--------------- | :-------------------------------------------------------- |
+| **`id`**                     | `INTEGER`        | Clave primaria.                                           |
+| `id_proyecto`                | `INTEGER`        | Proyecto al que pertenece.                                |
+| `nombre_lote`                | `STRING(255)`    | Nombre del lote.                                          |
+| `precio_base`                | `DECIMAL(10, 2)` | Precio mínimo para la subasta.                            |
+| **`estado_subasta`**         | `ENUM`           | Opciones: **`"pendiente"`, `"activa"`, `"finalizada"`**.  |
+| `id_ganador`                 | `INTEGER`        | ID del usuario ganador.                                   |
+| **`intentos_fallidos_pago`** | `INTEGER`        | Contador de incumplimientos de pago del ganador (máx. 3). |
+| `excedente_visualizacion`    | `DECIMAL(10, 2)` | Excedente de la puja ganadora para frontend.              |
+
+<br>
+
+#### 8. Puja (`puja`)
+
+| Atributo                 | Tipo de Dato     | Observaciones Clave                                                         |
+| :----------------------- | :--------------- | :-------------------------------------------------------------------------- |
+| **`id`**                 | `INTEGER`        | Clave primaria.                                                             |
+| `id_lote`                | `INTEGER`        | Lote subastado.                                                             |
+| `id_usuario`             | `INTEGER`        | Usuario que realiza la puja.                                                |
+| `monto_puja`             | `DECIMAL(15, 2)` | Monto ofertado.                                                             |
+| **`estado_puja`**        | `ENUM`           | Estados detallados: `"activa"`, `"ganadora_pendiente"`, `"perdedora"`, etc. |
+| `fecha_vencimiento_pago` | `DATE`           | Fecha límite para que el ganador pague.                                     |
+| `id_suscripcion`         | `INTEGER`        | Suscripción asociada a la puja.                                             |
+
+---
+
+### Otros Modelos de Apoyo
+
+#### 9. Inversion (`inversion`)
+
+| Atributo                         | Tipo de Dato     | Observaciones Clave                                                |
+| :------------------------------- | :--------------- | :----------------------------------------------------------------- |
+| **`id`**                         | `INTEGER`        | Clave primaria.                                                    |
+| `monto`                          | `DECIMAL(15, 2)` | Dinero invertido.                                                  |
+| `id_usuario` / **`id_inversor`** | `INTEGER`        | Usuario que invierte (Nota: FK en asociaciones es `id_inversor`).  |
+| `id_proyecto`                    | `INTEGER`        | Proyecto invertido.                                                |
+| **`estado`**                     | `ENUM`           | Opciones: `"pendiente"`, `"pagado"`, `"fallido"`, `"reembolsado"`. |
+| `fecha_inversion`                | `DATE`           |                                                                    |
+
+<br>
+
+#### 10. Contrato (`contrato`)
+
+| Atributo                | Tipo de Dato | Observaciones Clave                             |
+| :---------------------- | :----------- | :---------------------------------------------- |
+| **`id`**                | `INTEGER`    | Clave primaria.                                 |
+| `id_proyecto`           | `INTEGER`    | Proyecto al que pertenece.                      |
+| `id_usuario_firmante`   | `INTEGER`    | Usuario que ha firmado (puede ser nulo).        |
+| `nombre_archivo`        | `STRING`     | Nombre del archivo PDF.                         |
+| `hash_archivo_original` | `STRING(64)` | **Hash SHA-256 para integridad** del documento. |
+
+<br>
+
+#### 11. CuotaMensual (`cuota_mensual`)
+
+| Atributo                  | Tipo de Dato     | Observaciones Clave                      |
+| :------------------------ | :--------------- | :--------------------------------------- |
+| **`id`**                  | `INTEGER`        | Clave primaria.                          |
+| `id_proyecto`             | `INTEGER`        | Proyecto de suscripción.                 |
+| **`valor_mensual_final`** | `DECIMAL(18, 2)` | Monto final que paga el usuario por mes. |
+| `total_cuotas_proyecto`   | `INTEGER`        | Duración total de las cuotas.            |
+
+<br>
+
+#### 12. ResumenCuenta (`resumenes_cuentas`)
+
+| Atributo                            | Tipo de Dato | Observaciones Clave                        |
+| :---------------------------------- | :----------- | :----------------------------------------- |
+| **`id`**                            | `INTEGER`    | Clave primaria.                            |
+| **`id_suscripcion`**                | `INTEGER`    | Suscripción a la que pertenece el resumen. |
+| `cuotas_pagadas`, `cuotas_vencidas` | `INTEGER`    | Contadores de cuotas.                      |
+| `porcentaje_pagado`                 | `FLOAT`      | Porcentaje de avance de la suscripción.    |
+| `detalle_cuota`                     | `JSONB`      | Detalles completos de la cuota mensual.    |
+
+<br>
+
+#### 13. Mensaje (`mensaje`)
+
+| Atributo       | Tipo de Dato | Observaciones Clave                |
+| :------------- | :----------- | :--------------------------------- |
+| **`id`**       | `INTEGER`    | Clave primaria.                    |
+| `id_remitente` | `INTEGER`    | ID del usuario que envía.          |
+| `id_receptor`  | `INTEGER`    | ID del usuario que recibe.         |
+| `contenido`    | `TEXT`       | Contenido del mensaje.             |
+| `leido`        | `BOOLEAN`    | Indica si el receptor lo ha leído. |
+
+<br>
+
+#### 14. Imagen (`imagen`)
+
+| Atributo      | Tipo de Dato  | Observaciones Clave                 |
+| :------------ | :------------ | :---------------------------------- |
+| **`id`**      | `INTEGER`     | Clave primaria.                     |
+| `url`         | `STRING(255)` | URL de la imagen.                   |
+| `id_proyecto` | `INTEGER`     | Proyecto asociado (puede ser nulo). |
+| `id_lote`     | `INTEGER`     | Lote asociado (puede ser nulo).     |
+
+<br>
+
+#### 15. SuscripcionCancelada (`suscripcion_cancelada`)
+
+| Atributo                      | Tipo de Dato     | Observaciones Clave                      |
+| :---------------------------- | :--------------- | :--------------------------------------- |
+| **`id`**                      | `INTEGER`        | Clave primaria.                          |
+| **`id_suscripcion_original`** | `INTEGER`        | FK de la suscripción que fue cancelada.  |
+| `id_usuario`, `id_proyecto`   | `INTEGER`        |                                          |
+| `meses_pagados`               | `INTEGER`        | Meses pagados hasta la cancelación.      |
+| `monto_pagado_total`          | `DECIMAL(15, 2)` | Monto total pagado hasta la cancelación. |
+| `fecha_cancelacion`           | `DATE`           |                                          |
 
 ---
 
@@ -558,10 +631,12 @@ const invertir = async () => {
 const invertir = async (proyecto) => {
   // Verificar que el proyecto tenga contratos
   if (!proyecto.contratos || proyecto.contratos.length === 0) {
-    alert('Este proyecto no tiene contrato disponible. Contacta al administrador.');
+    alert(
+      "Este proyecto no tiene contrato disponible. Contacta al administrador."
+    );
     return;
   }
-  
+
   await crearInversion({ id_proyecto: proyecto.id, tokens: 100 });
 };
 ```
@@ -574,8 +649,8 @@ try {
   await crearInversion(data);
 } catch (error) {
   if (error.response?.status === 400) {
-    if (error.response.data.error.includes('contrato')) {
-      showError('Este proyecto no tiene contrato. No se puede invertir.');
+    if (error.response.data.error.includes("contrato")) {
+      showError("Este proyecto no tiene contrato. No se puede invertir.");
     }
   }
 }
@@ -596,12 +671,13 @@ Un proyecto donde el usuario paga cuotas mensuales (como una suscripción).
 const proyecto = await getProyectoById(1);
 
 if (proyecto.es_mensual === true) {
-  console.log('Este es un proyecto de suscripción mensual');
+  console.log("Este es un proyecto de suscripción mensual");
 }
 ```
 
 **¿Por qué debe tener CuotaMensual?**  
 Porque si alguien se suscribe, el sistema necesita saber:
+
 - ¿Cuánto paga por mes?
 - ¿Cuántos meses dura el proyecto?
 
@@ -622,13 +698,13 @@ const mostrarBotonSuscripcion = (proyecto) => {
   if (!proyecto.es_mensual) {
     return false; // No mostrar botón
   }
-  
+
   // Verificar que tenga cuota mensual configurada
   if (!proyecto.cuota_mensual) {
-    console.error('Proyecto mensual sin cuota configurada');
+    console.error("Proyecto mensual sin cuota configurada");
     return false;
   }
-  
+
   return true;
 };
 ```
@@ -641,7 +717,7 @@ const mostrarBotonSuscripcion = (proyecto) => {
 const proyecto = await getProyectoById(1);
 
 if (proyecto.tokens_disponibles === 0) {
-  alert('Este proyecto ya no tiene tokens disponibles');
+  alert("Este proyecto ya no tiene tokens disponibles");
   return;
 }
 
@@ -659,7 +735,7 @@ if (tokensAComprar > proyecto.tokens_disponibles) {
 const proyecto = await getProyectoById(1);
 
 if (proyecto.permite_pujas === false) {
-  alert('Este proyecto no acepta pujas');
+  alert("Este proyecto no acepta pujas");
   return;
 }
 ```
@@ -674,7 +750,7 @@ const proyecto = await getProyectoById(1);
 const monto = tokens * proyecto.precio_token;
 
 if (usuario.saldo_general < monto) {
-  alert('No tienes saldo suficiente. Debes recargar tu cuenta.');
+  alert("No tienes saldo suficiente. Debes recargar tu cuenta.");
   return;
 }
 ```
@@ -689,11 +765,13 @@ if (usuario.saldo_general < monto) {
 // Antes de crear una nueva inversión, verifica si ya tiene una pendiente
 const misPendientes = await getMisInversiones();
 const tienePendiente = misPendientes.some(
-  inv => inv.id_proyecto === proyectoId && inv.estado === 'pendiente'
+  (inv) => inv.id_proyecto === proyectoId && inv.estado === "pendiente"
 );
 
 if (tienePendiente) {
-  alert('Ya tienes una inversión pendiente en este proyecto. Completa el pago primero.');
+  alert(
+    "Ya tienes una inversión pendiente en este proyecto. Completa el pago primero."
+  );
   return;
 }
 ```
@@ -707,31 +785,31 @@ if (tienePendiente) {
 Crea `src/services/authService.js`:
 
 ```javascript
-import apiClient from './api';
+import apiClient from "./api";
 
 // ============================================
 // REGISTRO
 // ============================================
 export const register = async (userData) => {
   try {
-    const response = await apiClient.post('/auth/register', {
+    const response = await apiClient.post("/auth/register", {
       email: userData.email,
       password: userData.password,
       nombre: userData.nombre,
       apellido: userData.apellido,
-      telefono: userData.telefono || '',
-      direccion: userData.direccion || '',
+      telefono: userData.telefono || "",
+      direccion: userData.direccion || "",
     });
-    
+
     const { token, user } = response.data.data;
-    
+
     // Guardar en localStorage
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(user));
+
     return { token, user };
   } catch (error) {
-    console.error('Error en registro:', error);
+    console.error("Error en registro:", error);
     throw error;
   }
 };
@@ -741,20 +819,20 @@ export const register = async (userData) => {
 // ============================================
 export const login = async (credentials) => {
   try {
-    const response = await apiClient.post('/auth/login', {
+    const response = await apiClient.post("/auth/login", {
       email: credentials.email,
       password: credentials.password,
     });
-    
+
     const { token, user } = response.data.data;
-    
+
     // Guardar en localStorage
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(user));
+
     return { token, user };
   } catch (error) {
-    console.error('Error en login:', error);
+    console.error("Error en login:", error);
     throw error;
   }
 };
@@ -764,10 +842,10 @@ export const login = async (credentials) => {
 // ============================================
 export const getCurrentUser = async () => {
   try {
-    const response = await apiClient.get('/auth/me');
+    const response = await apiClient.get("/auth/me");
     return response.data.data;
   } catch (error) {
-    console.error('Error al obtener usuario:', error);
+    console.error("Error al obtener usuario:", error);
     throw error;
   }
 };
@@ -776,23 +854,23 @@ export const getCurrentUser = async () => {
 // LOGOUT
 // ============================================
 export const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  window.location.href = '/login';
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  window.location.href = "/login";
 };
 
 // ============================================
 // VERIFICAR SI ESTÁ AUTENTICADO
 // ============================================
 export const isAuthenticated = () => {
-  return !!localStorage.getItem('token');
+  return !!localStorage.getItem("token");
 };
 
 // ============================================
 // OBTENER USUARIO DEL LOCALSTORAGE
 // ============================================
 export const getStoredUser = () => {
-  const user = localStorage.getItem('user');
+  const user = localStorage.getItem("user");
   return user ? JSON.parse(user) : null;
 };
 ```
@@ -801,42 +879,42 @@ export const getStoredUser = () => {
 
 ```jsx
 // src/components/Login.jsx
-import { useState } from 'react';
-import { login } from '../services/authService';
-import { useNavigate } from 'react-router-dom';
+import { useState } from "react";
+import { login } from "../services/authService";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
-    
+
     try {
       const { user } = await login({ email, password });
-      console.log('✅ Login exitoso:', user);
-      navigate('/dashboard');
+      console.log("✅ Login exitoso:", user);
+      navigate("/dashboard");
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Email o contraseña incorrectos');
+        setError("Email o contraseña incorrectos");
       } else {
-        setError('Error al iniciar sesión. Intenta nuevamente.');
+        setError("Error al iniciar sesión. Intenta nuevamente.");
       }
     } finally {
       setLoading(false);
     }
   };
-  
+
   return (
     <div>
       <h2>Iniciar Sesión</h2>
-      {error && <div style={{ color: 'red' }}>{error}</div>}
-      
+      {error && <div style={{ color: "red" }}>{error}</div>}
+
       <form onSubmit={handleSubmit}>
         <input
           type="email"
@@ -845,7 +923,7 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)}
           required
         />
-        
+
         <input
           type="password"
           placeholder="Contraseña"
@@ -853,9 +931,9 @@ export default function Login() {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        
+
         <button type="submit" disabled={loading}>
-          {loading ? 'Iniciando...' : 'Iniciar Sesión'}
+          {loading ? "Iniciando..." : "Iniciar Sesión"}
         </button>
       </form>
     </div>
@@ -867,71 +945,71 @@ export default function Login() {
 
 ```jsx
 // src/components/Register.jsx
-import { useState } from 'react';
-import { register } from '../services/authService';
-import { useNavigate } from 'react-router-dom';
+import { useState } from "react";
+import { register } from "../services/authService";
+import { useNavigate } from "react-router-dom";
 
 export default function Register() {
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    nombre: '',
-    apellido: '',
-    telefono: '',
-    direccion: '',
+    email: "",
+    password: "",
+    confirmPassword: "",
+    nombre: "",
+    apellido: "",
+    telefono: "",
+    direccion: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
   };
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    
+    setError("");
+
     // Validar que las contraseñas coincidan
     if (formData.password !== formData.confirmPassword) {
-      setError('Las contraseñas no coinciden');
+      setError("Las contraseñas no coinciden");
       return;
     }
-    
+
     // Validar longitud de contraseña
     if (formData.password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres');
+      setError("La contraseña debe tener al menos 8 caracteres");
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       const { user } = await register(formData);
-      console.log('✅ Registro exitoso:', user);
-      navigate('/dashboard');
+      console.log("✅ Registro exitoso:", user);
+      navigate("/dashboard");
     } catch (err) {
       if (err.response?.status === 400) {
-        setError(err.response.data.error || 'Datos inválidos');
+        setError(err.response.data.error || "Datos inválidos");
       } else if (err.response?.status === 409) {
-        setError('Este email ya está registrado');
+        setError("Este email ya está registrado");
       } else {
-        setError('Error al registrarse. Intenta nuevamente.');
+        setError("Error al registrarse. Intenta nuevamente.");
       }
     } finally {
       setLoading(false);
     }
   };
-  
+
   return (
     <div>
       <h2>Crear Cuenta</h2>
-      {error && <div style={{ color: 'red' }}>{error}</div>}
-      
+      {error && <div style={{ color: "red" }}>{error}</div>}
+
       <form onSubmit={handleSubmit}>
         <input
           type="email"
@@ -941,7 +1019,7 @@ export default function Register() {
           onChange={handleChange}
           required
         />
-        
+
         <input
           type="text"
           name="nombre"
@@ -950,7 +1028,7 @@ export default function Register() {
           onChange={handleChange}
           required
         />
-        
+
         <input
           type="text"
           name="apellido"
@@ -959,7 +1037,7 @@ export default function Register() {
           onChange={handleChange}
           required
         />
-        
+
         <input
           type="tel"
           name="telefono"
@@ -967,7 +1045,7 @@ export default function Register() {
           value={formData.telefono}
           onChange={handleChange}
         />
-        
+
         <input
           type="text"
           name="direccion"
@@ -975,7 +1053,7 @@ export default function Register() {
           value={formData.direccion}
           onChange={handleChange}
         />
-        
+
         <input
           type="password"
           name="password"
@@ -984,7 +1062,7 @@ export default function Register() {
           onChange={handleChange}
           required
         />
-        
+
         <input
           type="password"
           name="confirmPassword"
@@ -993,9 +1071,9 @@ export default function Register() {
           onChange={handleChange}
           required
         />
-        
+
         <button type="submit" disabled={loading}>
-          {loading ? 'Creando cuenta...' : 'Registrarse'}
+          {loading ? "Creando cuenta..." : "Registrarse"}
         </button>
       </form>
     </div>
@@ -1011,8 +1089,9 @@ export default function Register() {
 
 ```javascript
 // src/services/proyectoService.js
-import apiClient from './api';
+import apiClient from "./api";
 
 // ============================================
 // LISTAR PROYECTOS
 // ============================================
+```

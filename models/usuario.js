@@ -86,7 +86,7 @@ const Usuario = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
-    // ❌ Se eliminó el campo 'sancion_expira'
+
   },
   {
     tableName: "usuario",
