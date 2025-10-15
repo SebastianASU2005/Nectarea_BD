@@ -5,7 +5,6 @@
 Esta guía asume que **NO sabes nada** sobre el backend de Nectárea. Vamos a explicar TODO desde cero.
 
 
-
 ---
 
 ## ❓ ¿Qué es esta API?
