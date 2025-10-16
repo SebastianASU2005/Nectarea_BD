@@ -1691,6 +1691,7 @@ Gestiona pagos mensuales con flujo de bifurcación de seguridad para usuarios co
 | `softDelete`              | Elimina lógicamente pago (Admin)    | Llama a `pagoService.softDelete(id)`                                                                                                                                | **200** OK<br>**404** Not Found                                         |
 
 ### Endpoints de Pagos
+
 ```
 GET    /api/pagos/mis_pagos [🔒]                     → findMyPayments
 POST   /api/pagos/pagar-mes/:id [🔒]                 → requestCheckout
@@ -1712,17 +1713,18 @@ DELETE /api/pagos/:id [🔒👑]                         → softDelete
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `verifySignature` | **CRÍTICA**: Verifica autenticidad de webhooks | Usa HMAC-SHA256 para validar firma criptográfica<br>Rechaza webhooks sin firma válida (protección contra suplantación) | N/A (Interna) |
-| `iniciarPagoPorModelo` | Inicia checkout genérico | Llama a `transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId)` | **200** OK<br>**400** Bad Request |
-| `createCheckoutGenerico` | Crea/Regenera transacción y checkout | Usa transacción de BD para atomicidad<br>Llama a `transaccionService.crearTransaccionConCheckout()` | **200** OK<br>**500** Internal Error |
-| `handleWebhook` | Procesa notificaciones de Mercado Pago | 1. Llama a `verifySignature()` (si falla → 401)<br>2. Procesa `merchant_order` o `payment`<br>3. Si pago aprobado: llama a `transaccionService.confirmarTransaccion()` con bloqueo `LOCK.UPDATE`<br>⚠️ **Siempre responde 200 a MP** (evita reintentos) | **200** OK<br>**401** Unauthorized |
-| `handleCheckoutRedirect` | Maneja redirección tras pago | Revisa `collection_status` de URL<br>Si cancelación/rechazo: llama a `transaccionService.cancelarTransaccionPorUsuario()`<br>Redirige al frontend según estado | **302** Redirect |
-| `getPaymentStatus` | Consulta estado de transacción | Verifica propiedad de transacción<br>Si `refresh=true` y estado en proceso: llama a `pagoMercadoService.refreshPaymentStatus()` | **200** OK<br>**404** Not Found |
-| `createCheckout` | Flujo de compatibilidad (inversiones) | Busca inversión, valida estado pendiente<br>Delega en `createCheckoutGenerico()` | **200** OK<br>**404** Not Found |
+| Función                  | Propósito                                      | Lógica Crítica                                                                                                                                                                                                                                          | Códigos HTTP                         |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `verifySignature`        | **CRÍTICA**: Verifica autenticidad de webhooks | Usa HMAC-SHA256 para validar firma criptográfica<br>Rechaza webhooks sin firma válida (protección contra suplantación)                                                                                                                                  | N/A (Interna)                        |
+| `iniciarPagoPorModelo`   | Inicia checkout genérico                       | Llama a `transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId)`                                                                                                                                                                      | **200** OK<br>**400** Bad Request    |
+| `createCheckoutGenerico` | Crea/Regenera transacción y checkout           | Usa transacción de BD para atomicidad<br>Llama a `transaccionService.crearTransaccionConCheckout()`                                                                                                                                                     | **200** OK<br>**500** Internal Error |
+| `handleWebhook`          | Procesa notificaciones de Mercado Pago         | 1. Llama a `verifySignature()` (si falla → 401)<br>2. Procesa `merchant_order` o `payment`<br>3. Si pago aprobado: llama a `transaccionService.confirmarTransaccion()` con bloqueo `LOCK.UPDATE`<br>⚠️ **Siempre responde 200 a MP** (evita reintentos) | **200** OK<br>**401** Unauthorized   |
+| `handleCheckoutRedirect` | Maneja redirección tras pago                   | Revisa `collection_status` de URL<br>Si cancelación/rechazo: llama a `transaccionService.cancelarTransaccionPorUsuario()`<br>Redirige al frontend según estado                                                                                          | **302** Redirect                     |
+| `getPaymentStatus`       | Consulta estado de transacción                 | Verifica propiedad de transacción<br>Si `refresh=true` y estado en proceso: llama a `pagoMercadoService.refreshPaymentStatus()`                                                                                                                         | **200** OK<br>**404** Not Found      |
+| `createCheckout`         | Flujo de compatibilidad (inversiones)          | Busca inversión, valida estado pendiente<br>Delega en `createCheckoutGenerico()`                                                                                                                                                                        | **200** OK<br>**404** Not Found      |
 
 ### Endpoints de Mercado Pago
+
 ```
 POST   /api/payment/checkout/:modelo/:modeloId [🔒]     → iniciarPagoPorModelo
 POST   /api/payment/checkout/generico [🔒]              → createCheckoutGenerico
@@ -1735,6 +1737,7 @@ POST   /webhook/:metodo [🌐]                            → handleWebhook
 > 🌐 = Ruta pública (accesible para la pasarela)
 
 ### Flujo de Webhook
+
 ```mermaid
 sequenceDiagram
     participant MP as Mercado Pago
@@ -1755,6 +1758,7 @@ sequenceDiagram
 ```
 
 ---
+
 ## 7.11. Proyectos (`proyecto.controller.js`)
 
 ### Descripción
@@ -2146,4 +2150,543 @@ Para cada endpoint que integres:
 
 ```
 
+## 8️⃣ Ejemplos Prácticos de Integración
+
+### 8.1. Ejemplo Completo: Registro e Inicio de Sesión
+
+#### Paso 1: Registro de Usuario
+
+```javascript
+// src/services/authService.js
+export const register = async (userData) => {
+  try {
+    const response = await apiClient.post("/auth/register", {
+      nombre: userData.nombre,
+      apellido: userData.apellido,
+      email: userData.email,
+      dni: userData.dni,
+      nombre_usuario: userData.username,
+      contraseña: userData.password,
+    });
+
+    return {
+      success: true,
+      message: "Registro exitoso. Revisa tu email para confirmar tu cuenta.",
+      data: response.data,
+    };
+  } catch (error) {
+    if (error.response?.status === 400) {
+      return {
+        success: false,
+        message: error.response.data.error || "El usuario ya existe",
+      };
+    }
+    throw error;
+  }
+};
 ```
+
+#### Paso 2: Login (con manejo de 2FA)
+
+```javascript
+export const login = async (credentials) => {
+  try {
+    const response = await apiClient.post("/auth/login", {
+      email: credentials.email,
+      contraseña: credentials.password,
+    });
+
+    if (response.status === 202) {
+      // Requiere 2FA
+      return {
+        requires2FA: true,
+        message: "Ingresa tu código de autenticación",
+      };
+    }
+
+    // Login exitoso sin 2FA
+    const { token, user } = response.data;
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(user));
+
+    return {
+      success: true,
+      user: user,
+    };
+  } catch (error) {
+    if (error.response?.status === 401) {
+      return {
+        success: false,
+        message: "Credenciales incorrectas",
+      };
+    }
+    if (error.response?.status === 403) {
+      return {
+        success: false,
+        message: "Cuenta inactiva o email no confirmado",
+      };
+    }
+    throw error;
+  }
+};
+
+export const verify2FA = async (code) => {
+  const response = await apiClient.post("/auth/2fa/verify", {
+    token: code,
+  });
+
+  const { token, user } = response.data;
+  localStorage.setItem("token", token);
+  localStorage.setItem("user", JSON.stringify(user));
+
+  return { success: true, user };
+};
+```
+
+### 8.2. Ejemplo Completo: Realizar una Inversión
+
+```javascript
+// src/services/inversionService.js
+export const crearInversion = async (proyectoId, monto) => {
+  try {
+    // Paso 1: Crear la inversión
+    const response = await apiClient.post("/inversion", {
+      id_proyecto: proyectoId,
+      monto_inversion: monto,
+    });
+
+    const inversionId = response.data.id;
+
+    // Paso 2: Iniciar el proceso de pago
+    return await iniciarPagoInversion(inversionId);
+  } catch (error) {
+    console.error("Error al crear inversión:", error);
+    throw error;
+  }
+};
+
+const iniciarPagoInversion = async (inversionId) => {
+  try {
+    const response = await apiClient.post(
+      `/inversion/iniciar-pago/${inversionId}`
+    );
+
+    if (response.status === 202) {
+      // Requiere 2FA
+      return {
+        requires2FA: true,
+        inversionId: inversionId,
+      };
+    }
+
+    // No requiere 2FA - redirigir directamente
+    window.location.href = response.data.redirectUrl;
+  } catch (error) {
+    if (error.response?.status === 403) {
+      throw new Error("No tienes permisos para esta inversión");
+    }
+    throw error;
+  }
+};
+
+export const confirmarInversionCon2FA = async (inversionId, codigo2FA) => {
+  try {
+    const response = await apiClient.post("/inversion/confirmar-2fa", {
+      id_inversion: inversionId,
+      codigo_2fa: codigo2FA,
+    });
+
+    // Redirigir a Mercado Pago
+    window.location.href = response.data.redirectUrl;
+  } catch (error) {
+    if (error.response?.status === 401) {
+      throw new Error("Código 2FA incorrecto");
+    }
+    throw error;
+  }
+};
+```
+
+### 8.3. Ejemplo Completo: Componente React de Inversión
+
+```jsx
+// src/components/InversionForm.jsx
+import { useState } from 'react';
+import { crearInversion, confirmarInversionCon2FA } from '../services/inversionService';
+
+export default function InversionForm({ proyecto }) {
+  const [monto, setMonto] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [inversionId, setInversionId] = useState(null);
+  const [codigo2FA, setCodigo2FA] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const result = await crearInversion(proyecto.id, parseFloat(monto));
+
+      if (result.requires2FA) {
+        setRequires2FA(true);
+        setInversionId(result.inversionId);
+      }
+      // Si no requiere 2FA, la función ya redirige automáticamente
+
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirm2FA = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await confirmarInversionCon2FA(inversionId, codigo2FA);
+      // La función redirige automáticamente
+    } catch (error) {
+      alert(error.message);
+      setLoading(false);
+    }
+  };
+
+  if (requires2FA) {
+    return (
+
+        🔐 Verificación 2FA Requerida
+
+          <input
+            type="text"
+            placeholder="Código de 6 dígitos"
+            value={codigo2FA}
+            onChange={(e) => setCodigo2FA(e.target.value)}
+            maxLength={6}
+            required
+          />
+
+            {loading ? 'Verificando...' : 'Confirmar'}
+
+
+
+    );
+  }
+
+  return (
+
+      Invertir en {proyecto.nombre_proyecto}
+      <input
+        type="number"
+        placeholder="Monto a invertir"
+        value={monto}
+        onChange={(e) => setMonto(e.target.value)}
+        min={proyecto.monto_minimo}
+        required
+      />
+
+        {loading ? 'Procesando...' : 'Invertir'}
+
+
+  );
+}
+```
+
+## 9️⃣ Guía de Manejo de Errores
+
+### 9.1. Códigos de Error Comunes
+
+| Código  | Significado           | Causa Común                                  | Acción Recomendada                 |
+| ------- | --------------------- | -------------------------------------------- | ---------------------------------- |
+| **400** | Bad Request           | Datos de entrada inválidos o faltantes       | Validar formulario antes de enviar |
+| **401** | Unauthorized          | Token JWT expirado o inválido                | Redirigir a login                  |
+| **403** | Forbidden             | Usuario sin permisos para la acción          | Mostrar mensaje de acceso denegado |
+| **404** | Not Found             | Recurso no existe o no pertenece al usuario  | Verificar ID y permisos            |
+| **409** | Conflict              | Estado inconsistente (ej: pago ya procesado) | Mostrar mensaje específico         |
+| **500** | Internal Server Error | Error en el servidor                         | Reintentar o contactar soporte     |
+
+### 9.2. Interceptor de Errores Mejorado
+
+```javascript
+// src/services/api.js
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const { response } = error;
+
+    if (!response) {
+      // Error de red
+      console.error("Error de conexión con el servidor");
+      return Promise.reject({
+        message: "No se pudo conectar con el servidor. Verifica tu conexión.",
+        type: "network",
+      });
+    }
+
+    const { status, data } = response;
+
+    switch (status) {
+      case 400:
+        return Promise.reject({
+          message: data.error || "Datos inválidos",
+          type: "validation",
+          details: data.details,
+        });
+
+      case 401:
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return Promise.reject({
+          message: "Sesión expirada. Por favor inicia sesión nuevamente.",
+          type: "auth",
+        });
+
+      case 403:
+        return Promise.reject({
+          message: data.error || "No tienes permisos para realizar esta acción",
+          type: "forbidden",
+        });
+
+      case 404:
+        return Promise.reject({
+          message: data.error || "Recurso no encontrado",
+          type: "not_found",
+        });
+
+      case 409:
+        return Promise.reject({
+          message: data.error || "Conflicto en el estado del recurso",
+          type: "conflict",
+        });
+
+      case 500:
+        return Promise.reject({
+          message: "Error interno del servidor. Intenta nuevamente más tarde.",
+          type: "server_error",
+        });
+
+      default:
+        return Promise.reject({
+          message: data.error || "Error desconocido",
+          type: "unknown",
+        });
+    }
+  }
+);
+```
+
+## 🧪 10. Testing de la API
+
+### 10.1. Colección de Postman
+
+Descarga la colección completa de Postman para probar todos los endpoints:
+
+📥 [Descargar Colección Postman](/postman/Nectarea_BD%20-%20Colección%20Completa.postman_collection.json)
+
+### 10.2. Variables de Entorno para Postman
+
+```json
+{
+  "base_url": "http://localhost:3000/api",
+  "token": "{{auth_token}}",
+  "user_id": "{{current_user_id}}"
+}
+```
+
+### 10.3. Ejemplos de Prueba
+
+#### Prueba 1: Registro y Login Completo
+
+```bash
+# 1. Registrar usuario
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nombre": "Juan",
+    "apellido": "Pérez",
+    "email": "juan@example.com",
+    "dni": "12345678",
+    "nombre_usuario": "juanperez",
+    "contraseña": "Password123!"
+  }'
+
+# 2. Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "juan@example.com",
+    "contraseña": "Password123!"
+  }'
+
+# 3. Obtener perfil (usando el token del login)
+curl -X GET http://localhost:3000/api/usuarios/me \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+#### Prueba 2: Flujo de Inversión
+
+```bash
+# 1. Listar proyectos activos
+curl -X GET http://localhost:3000/api/proyectos/activos \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# 2. Crear inversión
+curl -X POST http://localhost:3000/api/inversion \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id_proyecto": 1,
+    "monto_inversion": 5000
+  }'
+
+# 3. Iniciar pago
+curl -X POST http://localhost:3000/api/inversion/iniciar-pago/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+4. Sección de Troubleshooting (MUY ÚTIL)
+   markdown## 🔧 11. Solución de Problemas Comunes
+
+### 11.1. El backend no inicia
+
+**Síntoma:** Error al ejecutar `npm run dev`
+
+**Posibles causas:**
+
+1. PostgreSQL no está corriendo
+2. Variables de entorno incorrectas
+3. Puerto 3000 ocupado
+
+**Soluciones:**
+
+```bash
+# Verificar PostgreSQL
+sudo systemctl status postgresql  # Linux
+brew services list  # macOS
+
+# Verificar puerto ocupado
+lsof -i :3000  # macOS/Linux
+netstat -ano | findstr :3000  # Windows
+
+# Cambiar puerto en .env
+PORT=3001
+```
+
+### 11.2. Error: "Token inválido o expirado"
+
+**Causa:** El JWT ha expirado (duración: 1 hora por defecto)
+
+**Solución:**
+
+```javascript
+// Implementar refresh automático del token
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // Limpiar storage y redirigir
+      localStorage.clear();
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+### 11.3. Error: "No se pudo conectar con el servidor"
+
+**Causa:** Backend no accesible o CORS bloqueado
+
+**Verificar:**
+
+1. Backend está corriendo: `http://localhost:3000/api/health`
+2. URL correcta en `.env`: `VITE_API_URL=http://localhost:3000/api`
+3. Sin `/` al final de la URL
+
+### 11.4. Webhook de Mercado Pago no funciona en desarrollo
+
+**Causa:** Mercado Pago no puede acceder a `localhost`
+
+**Solución:** Usar un túnel temporal
+
+```bash
+# Instalar ngrok
+npm install -g ngrok
+
+# Exponer el puerto 3000
+ngrok http 3000
+
+# Copiar la URL https://xxxx.ngrok.io
+# Configurarla en Mercado Pago como webhook URL
+```
+
+### 11.5. Imágenes no se suben correctamente
+
+**Causa:** Multer no está configurado o la carpeta no existe
+
+**Verificar:**
+
+```bash
+# Crear carpeta de uploads si no existe
+mkdir -p uploads/contratos
+mkdir -p uploads/imagenes
+
+# Verificar permisos
+chmod 755 uploads
+```
+
+## ⚠️ 12. Límites y Restricciones de la API
+
+### 12.1. Rate Limiting
+
+| Endpoint                     | Límite       | Período       |
+| ---------------------------- | ------------ | ------------- |
+| `/auth/login`                | 5 intentos   | 15 minutos    |
+| `/auth/register`             | 3 registros  | 1 hora por IP |
+| Otros endpoints autenticados | 100 requests | 1 minuto      |
+
+### 12.2. Tamaños Máximos
+
+| Recurso             | Límite |
+| ------------------- | ------ |
+| Archivo de contrato | 10 MB  |
+| Imagen              | 5 MB   |
+| Request body JSON   | 1 MB   |
+
+### 12.3. Validaciones de Negocio
+
+#### Inversiones
+
+- Monto mínimo: Definido por proyecto
+- Un usuario solo puede invertir una vez por proyecto tipo "directo"
+
+#### Pujas
+
+- Solo un token de puja activo por proyecto
+- Monto de puja debe ser mayor al precio base del lote
+- 90 días para pagar después de ganar
+
+#### Suscripciones
+
+- Pago inicial obligatorio (mes 1)
+- Cancelación: genera registro para reembolso
+- No se puede reactivar una suscripción cancelada
+- El pago mensual esta asociado a la cuota mensual asociada al proyecto
+
+## 📖 13. Glosario de Términos
+
+| Término               | Definición                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| **Soft Delete**       | Eliminación lógica (marca como inactivo) sin borrar físicamente de la BD                 |
+| **JWT**               | JSON Web Token - Token de autenticación basado en estándar                               |
+| **2FA/TOTP**          | Autenticación de dos factores basada en tiempo (códigos de 6 dígitos)                    |
+| **Webhook**           | Notificación HTTP que envía Mercado Pago al backend cuando cambia el estado de un pago   |
+| **Excedente**         | Diferencia entre el monto de puja y el precio base del lote, usado para pre-pagar cuotas |
+| **Token de Puja**     | Permiso para pujar en un solo lote de un proyecto (se libera si pierde)                  |
+| **Saldo a Favor**     | Crédito acumulado que se aplica automáticamente a cuotas futuras                         |
+| **Transacción de BD** | Operación atómica que garantiza que todos los pasos se ejecuten o ninguno (rollback)     |
+| **HMAC-SHA256**       | Algoritmo criptográfico usado para verificar la autenticidad de webhooks                 |
+| **Middleware**        | Función que se ejecuta antes del controlador para validar autenticación, permisos, etc.  |
