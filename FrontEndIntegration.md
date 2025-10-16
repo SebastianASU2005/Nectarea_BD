@@ -1691,7 +1691,6 @@ Gestiona pagos mensuales con flujo de bifurcación de seguridad para usuarios co
 | `softDelete`              | Elimina lógicamente pago (Admin)    | Llama a `pagoService.softDelete(id)`                                                                                                                                | **200** OK<br>**404** Not Found                                         |
 
 ### Endpoints de Pagos
-
 ```
 GET    /api/pagos/mis_pagos [🔒]                     → findMyPayments
 POST   /api/pagos/pagar-mes/:id [🔒]                 → requestCheckout
@@ -1705,26 +1704,42 @@ DELETE /api/pagos/:id [🔒👑]                         → softDelete
 
 ---
 
-7.10. Mercado Pago (pagoMercado.controller.js)
-Descripción
-Controlador más crítico: gestiona comunicación segura con la pasarela de pago, implementando validaciones criptográficas.
-Funciones del Controlador
-FunciónPropósitoLógica CríticaCódigos HTTPverifySignatureCRÍTICA: Verifica autenticidad de webhooksUsa HMAC-SHA256 para validar firma criptográfica<br>Rechaza webhooks sin firma válida (protección contra suplantación)N/A (Interna)iniciarPagoPorModeloInicia checkout genéricoLlama a transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId)200 OK<br>400 Bad RequestcreateCheckoutGenericoCrea/Regenera transacción y checkoutUsa transacción de BD para atomicidad<br>Llama a transaccionService.crearTransaccionConCheckout()200 OK<br>500 Internal ErrorhandleWebhookProcesa notificaciones de Mercado Pago1. Llama a verifySignature() (si falla → 401)<br>2. Procesa merchant_order o payment<br>3. Si pago aprobado: llama a transaccionService.confirmarTransaccion() con bloqueo LOCK.UPDATE<br>⚠️ Siempre responde 200 a MP (evita reintentos)200 OK<br>401 UnauthorizedhandleCheckoutRedirectManeja redirección tras pagoRevisa collection_status de URL<br>Si cancelación/rechazo: llama a transaccionService.cancelarTransaccionPorUsuario()<br>Redirige al frontend según estado302 RedirectgetPaymentStatusConsulta estado de transacciónVerifica propiedad de transacción<br>Si refresh=true y estado en proceso: llama a pagoMercadoService.refreshPaymentStatus()200 OK<br>404 Not FoundcreateCheckoutFlujo de compatibilidad (inversiones)Busca inversión, valida estado pendiente<br>Delega en createCheckoutGenerico()200 OK<br>404 Not Found
-Endpoints de Mercado Pago
-POST /api/payment/checkout/:modelo/:modeloId [🔒] → iniciarPagoPorModelo
-POST /api/payment/checkout/generico [🔒] → createCheckoutGenerico
-POST /api/payment/checkout [🔒] → createCheckout
-GET /api/payment/status/:id_transaccion [🔒] → getPaymentStatus
-GET /api/payment/redirect [🌐] → handleCheckoutRedirect
-POST /webhook/:metodo [🌐] → handleWebhook
+## 7.10. Mercado Pago (`pagoMercado.controller.js`)
 
-🌐 = Ruta pública (accesible para la pasarela)
+### Descripción
 
-Flujo de Webhook
-mermaidsequenceDiagram
-participant MP as Mercado Pago
-participant B as Backend
-participant DB as Database
+**Controlador más crítico**: gestiona comunicación segura con la pasarela de pago, implementando validaciones criptográficas.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `verifySignature` | **CRÍTICA**: Verifica autenticidad de webhooks | Usa HMAC-SHA256 para validar firma criptográfica<br>Rechaza webhooks sin firma válida (protección contra suplantación) | N/A (Interna) |
+| `iniciarPagoPorModelo` | Inicia checkout genérico | Llama a `transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId)` | **200** OK<br>**400** Bad Request |
+| `createCheckoutGenerico` | Crea/Regenera transacción y checkout | Usa transacción de BD para atomicidad<br>Llama a `transaccionService.crearTransaccionConCheckout()` | **200** OK<br>**500** Internal Error |
+| `handleWebhook` | Procesa notificaciones de Mercado Pago | 1. Llama a `verifySignature()` (si falla → 401)<br>2. Procesa `merchant_order` o `payment`<br>3. Si pago aprobado: llama a `transaccionService.confirmarTransaccion()` con bloqueo `LOCK.UPDATE`<br>⚠️ **Siempre responde 200 a MP** (evita reintentos) | **200** OK<br>**401** Unauthorized |
+| `handleCheckoutRedirect` | Maneja redirección tras pago | Revisa `collection_status` de URL<br>Si cancelación/rechazo: llama a `transaccionService.cancelarTransaccionPorUsuario()`<br>Redirige al frontend según estado | **302** Redirect |
+| `getPaymentStatus` | Consulta estado de transacción | Verifica propiedad de transacción<br>Si `refresh=true` y estado en proceso: llama a `pagoMercadoService.refreshPaymentStatus()` | **200** OK<br>**404** Not Found |
+| `createCheckout` | Flujo de compatibilidad (inversiones) | Busca inversión, valida estado pendiente<br>Delega en `createCheckoutGenerico()` | **200** OK<br>**404** Not Found |
+
+### Endpoints de Mercado Pago
+```
+POST   /api/payment/checkout/:modelo/:modeloId [🔒]     → iniciarPagoPorModelo
+POST   /api/payment/checkout/generico [🔒]              → createCheckoutGenerico
+POST   /api/payment/checkout [🔒]                       → createCheckout
+GET    /api/payment/status/:id_transaccion [🔒]         → getPaymentStatus
+GET    /api/payment/redirect [🌐]                       → handleCheckoutRedirect
+POST   /webhook/:metodo [🌐]                            → handleWebhook
+```
+
+> 🌐 = Ruta pública (accesible para la pasarela)
+
+### Flujo de Webhook
+```mermaid
+sequenceDiagram
+    participant MP as Mercado Pago
+    participant B as Backend
+    participant DB as Database
 
     MP->>B: POST /webhook/mercadopago
     B->>B: verifySignature (HMAC-SHA256)
@@ -1737,10 +1752,9 @@ participant DB as Database
         DB-->>B: ✅ Actualizado
         B-->>MP: 200 OK
     end
-
 ```
----
 
+---
 ## 7.11. Proyectos (`proyecto.controller.js`)
 
 ### Descripción
