@@ -389,31 +389,19 @@ El sistema genera automáticamente:
 #### 1. **Resumen Financiero**
 
 ```
-┌─────────────────────────────────────────┐
-│  RESUMEN DEL MES                        │
-├─────────────────────────────────────────┤
-│  Total Recaudado:      $1,250,000       │
-│  Inversiones Directas:  $800,000        │
-│  Suscripciones:        $450,000         │
-│  Subastas:             $0               │
-├─────────────────────────────────────────┤
-│  Proyectos Activos:     12              │
-│  Proyectos Fondeados:   8               │
-│  Inversores Nuevos:     45              │
-└─────────────────────────────────────────┘
-2. Estado de Proyectos
+1. Estado de Proyectos
 
 Proyectos "En Espera" (buscando inversores)
 Proyectos "En Proceso" (ya fondeados, en construcción)
 Proyectos "Finalizados"
 
-3. Morosidad
+2. Morosidad
 
 Usuarios con pagos vencidos
 Monto total en morosidad
 Cuotas pendientes por cobrar
 
-4. Subastas
+3. Subastas
 
 Lotes activos
 Pujas ganadas pero no pagadas
