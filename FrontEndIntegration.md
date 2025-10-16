@@ -1,11 +1,12 @@
 # 🎨 Guía Completa de Integración Frontend
+
 ## Nectárea API - Plataforma de Crowdfunding
 
 <div align="center">
 
 **Documentación Técnica para Desarrolladores Frontend**
 
-*Versión 1.0 | Octubre 2025*
+_Versión 1.0 | Octubre 2025_
 
 </div>
 
@@ -57,21 +58,21 @@ Nectárea es una plataforma de **crowdfunding** (similar a Kickstarter) que perm
 
 ### Conocimientos Necesarios
 
-| ✅ **Requeridos** | ❌ **NO Necesarios** |
-|-------------------|----------------------|
-| JavaScript básico | Node.js/Express internamente |
-| HTTP (GET, POST, PUT, DELETE) | PostgreSQL a profundidad |
-| JSON | Webhooks internamente |
-| React/Vue/Angular | Arquitectura de backend |
+| ✅ **Requeridos**             | ❌ **NO Necesarios**         |
+| ----------------------------- | ---------------------------- |
+| JavaScript básico             | Node.js/Express internamente |
+| HTTP (GET, POST, PUT, DELETE) | PostgreSQL a profundidad     |
+| JSON                          | Webhooks internamente        |
+| React/Vue/Angular             | Arquitectura de backend      |
 
 ### Herramientas Requeridas
 
-| Herramienta | Versión | Propósito |
-|-------------|---------|-----------|
-| **Node.js** | v18+ | Runtime del backend |
-| **PostgreSQL** | v14+ | Base de datos |
-| **Git** | Latest | Control de versiones |
-| **Postman/Thunder Client** | Latest | Pruebas de API |
+| Herramienta                | Versión | Propósito            |
+| -------------------------- | ------- | -------------------- |
+| **Node.js**                | v18+    | Runtime del backend  |
+| **PostgreSQL**             | v14+    | Base de datos        |
+| **Git**                    | Latest  | Control de versiones |
+| **Postman/Thunder Client** | Latest  | Pruebas de API       |
 
 ---
 
@@ -88,7 +89,7 @@ cd Nectarea_BD
 npm install
 ```
 
-⏳ *Este proceso tomará unos minutos*
+⏳ _Este proceso tomará unos minutos_
 
 ---
 
@@ -338,7 +339,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
-    
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -483,16 +484,16 @@ Un **Modelo** es la representación en código de una **tabla** en la base de da
 
 ### Resumen de Modelos
 
-| Modelo | Tabla | Propósito |
-|--------|-------|-----------|
-| `Usuario` | `usuario` | Gestión de cuentas y autenticación |
-| `Proyecto` | `proyecto` | Proyectos de inversión |
-| `Transaccion` | `transaccion` | Registro de flujos de dinero |
-| `SuscripcionProyecto` | `suscripcion_proyecto` | Vínculo usuario-proyecto |
-| `Puja` | `puja` | Ofertas en subastas |
-| `Lote` | `lote` | Activos subastados |
-| `Pago` | `pago` | Cuotas mensuales |
-| `PagoMercado` | `pagos_mercado` | Pagos de pasarela |
+| Modelo                | Tabla                  | Propósito                          |
+| --------------------- | ---------------------- | ---------------------------------- |
+| `Usuario`             | `usuario`              | Gestión de cuentas y autenticación |
+| `Proyecto`            | `proyecto`             | Proyectos de inversión             |
+| `Transaccion`         | `transaccion`          | Registro de flujos de dinero       |
+| `SuscripcionProyecto` | `suscripcion_proyecto` | Vínculo usuario-proyecto           |
+| `Puja`                | `puja`                 | Ofertas en subastas                |
+| `Lote`                | `lote`                 | Activos subastados                 |
+| `Pago`                | `pago`                 | Cuotas mensuales                   |
+| `PagoMercado`         | `pagos_mercado`        | Pagos de pasarela                  |
 
 ---
 
@@ -500,20 +501,20 @@ Un **Modelo** es la representación en código de una **tabla** en la base de da
 
 **Propósito:** Gestión de cuentas de usuario y autenticación.
 
-| Atributo | Tipo | Descripción |
-|----------|------|-------------|
-| `id` | `INTEGER` | 🔑 Clave primaria |
-| `nombre` | `STRING(100)` | Nombre del usuario |
-| `apellido` | `STRING(100)` | Apellido del usuario |
-| `email` | `STRING(255)` | ✉️ Email (único) |
-| `dni` | `STRING(20)` | 🆔 DNI (único) |
-| `nombre_usuario` | `STRING(50)` | 👤 Username (único) |
-| `contraseña_hash` | `STRING(255)` | 🔒 Contraseña hasheada |
-| `rol` | `ENUM` | 👑 `"admin"` o `"cliente"` |
-| `activo` | `BOOLEAN` | ✅ Cuenta activa |
-| `confirmado_email` | `BOOLEAN` | ✉️ Email verificado |
-| `is_2fa_enabled` | `BOOLEAN` | 🔐 2FA activo |
-| `twofa_secret` | `STRING(255)` | 🔑 Clave 2FA |
+| Atributo           | Tipo          | Descripción                |
+| ------------------ | ------------- | -------------------------- |
+| `id`               | `INTEGER`     | 🔑 Clave primaria          |
+| `nombre`           | `STRING(100)` | Nombre del usuario         |
+| `apellido`         | `STRING(100)` | Apellido del usuario       |
+| `email`            | `STRING(255)` | ✉️ Email (único)           |
+| `dni`              | `STRING(20)`  | 🆔 DNI (único)             |
+| `nombre_usuario`   | `STRING(50)`  | 👤 Username (único)        |
+| `contraseña_hash`  | `STRING(255)` | 🔒 Contraseña hasheada     |
+| `rol`              | `ENUM`        | 👑 `"admin"` o `"cliente"` |
+| `activo`           | `BOOLEAN`     | ✅ Cuenta activa           |
+| `confirmado_email` | `BOOLEAN`     | ✉️ Email verificado        |
+| `is_2fa_enabled`   | `BOOLEAN`     | 🔐 2FA activo              |
+| `twofa_secret`     | `STRING(255)` | 🔑 Clave 2FA               |
 
 ---
 
@@ -521,20 +522,21 @@ Un **Modelo** es la representación en código de una **tabla** en la base de da
 
 **Propósito:** Almacena los detalles de cada oportunidad de inversión.
 
-| Atributo | Tipo | Descripción |
-|----------|------|-------------|
-| `id` | `INTEGER` | 🔑 Clave primaria |
-| `nombre_proyecto` | `STRING(255)` | 📋 Nombre del proyecto |
-| `descripcion` | `TEXT` | 📝 Descripción detallada |
-| `tipo_inversion` | `ENUM` | 💰 `"directo"` o `"mensual"` |
-| `monto_inversion` | `DECIMAL(18,2)` | 💵 Monto objetivo |
-| `estado_proyecto` | `ENUM` | 🚦 Estado actual |
-| `suscripciones_actuales` | `INTEGER` | 👥 Contador de inversores |
-| `fecha_inicio` | `DATEONLY` | 📅 Fecha de inicio |
-| `fecha_cierre` | `DATEONLY` | 📅 Fecha de cierre |
-| `pack_de_lotes` | `BOOLEAN` | 📦 Gestiona subastas |
+| Atributo                 | Tipo            | Descripción                  |
+| ------------------------ | --------------- | ---------------------------- |
+| `id`                     | `INTEGER`       | 🔑 Clave primaria            |
+| `nombre_proyecto`        | `STRING(255)`   | 📋 Nombre del proyecto       |
+| `descripcion`            | `TEXT`          | 📝 Descripción detallada     |
+| `tipo_inversion`         | `ENUM`          | 💰 `"directo"` o `"mensual"` |
+| `monto_inversion`        | `DECIMAL(18,2)` | 💵 Monto objetivo            |
+| `estado_proyecto`        | `ENUM`          | 🚦 Estado actual             |
+| `suscripciones_actuales` | `INTEGER`       | 👥 Contador de inversores    |
+| `fecha_inicio`           | `DATEONLY`      | 📅 Fecha de inicio           |
+| `fecha_cierre`           | `DATEONLY`      | 📅 Fecha de cierre           |
+| `pack_de_lotes`          | `BOOLEAN`       | 📦 Gestiona subastas         |
 
 **Estados Posibles:**
+
 - 🟡 `"En Espera"` - Esperando fondeo
 - 🟢 `"En proceso"` - Fondeado y activo
 - 🔵 `"Finalizado"` - Completado
@@ -545,15 +547,16 @@ Un **Modelo** es la representación en código de una **tabla** en la base de da
 
 **Propósito:** Registro central de todos los flujos de dinero.
 
-| Atributo | Tipo | Descripción |
-|----------|------|-------------|
-| `id` | `INTEGER` | 🔑 Clave primaria |
-| `id_usuario` | `INTEGER` | 👤 Usuario que transacciona |
-| `monto` | `DECIMAL(15,2)` | 💰 Monto de la transacción |
-| `tipo_transaccion` | `STRING(50)` | 📊 Tipo de operación |
-| `estado_transaccion` | `ENUM` | 🚦 Estado del pago |
+| Atributo             | Tipo            | Descripción                 |
+| -------------------- | --------------- | --------------------------- |
+| `id`                 | `INTEGER`       | 🔑 Clave primaria           |
+| `id_usuario`         | `INTEGER`       | 👤 Usuario que transacciona |
+| `monto`              | `DECIMAL(15,2)` | 💰 Monto de la transacción  |
+| `tipo_transaccion`   | `STRING(50)`    | 📊 Tipo de operación        |
+| `estado_transaccion` | `ENUM`          | 🚦 Estado del pago          |
 
 **Estados Posibles:**
+
 - 🟡 `"pendiente"` - Esperando confirmación
 - 🟢 `"pagado"` - Pago exitoso
 - 🔴 `"fallido"` - Pago rechazado
@@ -565,16 +568,17 @@ Un **Modelo** es la representación en código de una **tabla** en la base de da
 
 **Propósito:** Registro de ofertas en subastas de lotes.
 
-| Atributo | Tipo | Descripción |
-|----------|------|-------------|
-| `id` | `INTEGER` | 🔑 Clave primaria |
-| `id_lote` | `INTEGER` | 📦 Lote subastado |
-| `id_usuario` | `INTEGER` | 👤 Usuario que puja |
-| `monto_puja` | `DECIMAL(15,2)` | 💰 Monto ofertado |
-| `estado_puja` | `ENUM` | 🚦 Estado de la puja |
-| `fecha_vencimiento_pago` | `DATE` | ⏰ Límite de pago |
+| Atributo                 | Tipo            | Descripción          |
+| ------------------------ | --------------- | -------------------- |
+| `id`                     | `INTEGER`       | 🔑 Clave primaria    |
+| `id_lote`                | `INTEGER`       | 📦 Lote subastado    |
+| `id_usuario`             | `INTEGER`       | 👤 Usuario que puja  |
+| `monto_puja`             | `DECIMAL(15,2)` | 💰 Monto ofertado    |
+| `estado_puja`            | `ENUM`          | 🚦 Estado de la puja |
+| `fecha_vencimiento_pago` | `DATE`          | ⏰ Límite de pago    |
 
 **Estados Posibles:**
+
 - 🟢 `"activa"` - Puja en curso
 - 🟡 `"ganadora_pendiente"` - Ganó, esperando pago
 - 🔴 `"perdedora"` - No ganó la subasta
@@ -607,10 +611,10 @@ Las **reglas de negocio** son restricciones y validaciones que el backend implem
 
 #### Métodos Principales
 
-| Método | Propósito | Regla Crítica |
-|--------|-----------|---------------|
-| `hashPassword` | Hashea contraseñas | 🚫 **NUNCA** almacenar contraseñas en texto plano |
-| `comparePassword` | Verifica contraseñas | Usado en login para validar credenciales |
+| Método            | Propósito            | Regla Crítica                                     |
+| ----------------- | -------------------- | ------------------------------------------------- |
+| `hashPassword`    | Hashea contraseñas   | 🚫 **NUNCA** almacenar contraseñas en texto plano |
+| `comparePassword` | Verifica contraseñas | Usado en login para validar credenciales          |
 
 **Ejemplo de uso:**
 
@@ -638,12 +642,12 @@ const esValido = await authService.comparePassword(
 
 #### Métodos Principales
 
-| Método | Propósito | Regla Crítica |
-|--------|-----------|---------------|
-| `generateSecret` | Genera código QR | Incluye email del usuario |
-| `verifyToken` | Valida código 2FA | Ventana de ±30 segundos |
-| `enable2FA` | Activa 2FA | Solo después de validar token |
-| `disable2FA` | Desactiva 2FA | Requiere contraseña + código 2FA |
+| Método           | Propósito         | Regla Crítica                    |
+| ---------------- | ----------------- | -------------------------------- |
+| `generateSecret` | Genera código QR  | Incluye email del usuario        |
+| `verifyToken`    | Valida código 2FA | Ventana de ±30 segundos          |
+| `enable2FA`      | Activa 2FA        | Solo después de validar token    |
+| `disable2FA`     | Desactiva 2FA     | Requiere contraseña + código 2FA |
 
 #### Flujo de Activación 2FA
 
@@ -665,11 +669,11 @@ E -->|Inválido| C
 
 #### Métodos Principales
 
-| Método | Propósito | Regla Crítica |
-|--------|-----------|---------------|
-| `create` | Registra contrato | Requiere `hash_archivo_original` |
-| `findAndVerifyById` | Verifica integridad | Compara hash almacenado vs actual |
-| `registerSignature` | Vincula firma | Asocia inversión con contrato firmado |
+| Método              | Propósito           | Regla Crítica                         |
+| ------------------- | ------------------- | ------------------------------------- |
+| `create`            | Registra contrato   | Requiere `hash_archivo_original`      |
+| `findAndVerifyById` | Verifica integridad | Compara hash almacenado vs actual     |
+| `registerSignature` | Vincula firma       | Asocia inversión con contrato firmado |
 
 #### Verificación de Integridad
 
@@ -714,11 +718,11 @@ if (hashActual !== contrato.hash_archivo_original) {
 
 #### Métodos Principales
 
-| Método | Cuándo se Envía | Propósito |
-|--------|----------------|-----------|
-| `sendConfirmationEmail` | Al registrarse | Activar cuenta |
-| `notificarGanadorPuja` | Al ganar subasta | Informar victoria y plazo |
-| `notificarImpago` | Después de 90 días | Informar pérdida del lote |
+| Método                  | Cuándo se Envía    | Propósito                 |
+| ----------------------- | ------------------ | ------------------------- |
+| `sendConfirmationEmail` | Al registrarse     | Activar cuenta            |
+| `notificarGanadorPuja`  | Al ganar subasta   | Informar victoria y plazo |
+| `notificarImpago`       | Después de 90 días | Informar pérdida del lote |
 
 ---
 
@@ -779,10 +783,10 @@ B-->>MP: 200 OK
 
 #### Tipos de Tokens
 
-| Tipo | Duración | Contenido | Uso |
-|------|----------|-----------|-----|
-| **Sesión** | 1 hora | `id`, `nombre_usuario`, `rol` | Operaciones diarias |
-| **2FA** | 5 minutos | Solo `id` | Verificación de segundo factor |
+| Tipo       | Duración  | Contenido                     | Uso                            |
+| ---------- | --------- | ----------------------------- | ------------------------------ |
+| **Sesión** | 1 hora    | `id`, `nombre_usuario`, `rol` | Operaciones diarias            |
+| **2FA**    | 5 minutos | Solo `id`                     | Verificación de segundo factor |
 
 **Ejemplo de payload:**
 
@@ -806,12 +810,12 @@ B-->>MP: 200 OK
 
 #### Métodos Críticos
 
-| Método | Propósito | Lógica de Negocio |
-|--------|-----------|-------------------|
-| `endAuction` | Finaliza subasta | Asigna ganador, plazo de 90 días |
-| `procesarImpagoLote` | Maneja impagos | Después de 90 días, reasigna al siguiente |
-| `asignarSiguientePuja` | Reasignación | Ofrece al 2º postor |
-| `prepararLoteParaReingreso` | Limpia lote | Después de 3 intentos fallidos |
+| Método                      | Propósito        | Lógica de Negocio                         |
+| --------------------------- | ---------------- | ----------------------------------------- |
+| `endAuction`                | Finaliza subasta | Asigna ganador, plazo de 90 días          |
+| `procesarImpagoLote`        | Maneja impagos   | Después de 90 días, reasigna al siguiente |
+| `asignarSiguientePuja`      | Reasignación     | Ofrece al 2º postor                       |
+| `prepararLoteParaReingreso` | Limpia lote      | Después de 3 intentos fallidos            |
 
 #### Flujo de Subasta
 
@@ -823,7 +827,7 @@ B-->>MP: 200 OK
 3a. ✅ Paga → procesarPujaGanadora
    ↓
    Aplica excedente, libera tokens
-   
+
 3b. ❌ No paga → procesarImpagoLote
    ↓
    Reasigna a P2 (90 días)
@@ -905,18 +909,18 @@ B-->>MP: 200 OK
 
 #### Validaciones por Tipo
 
-| Tipo | Moneda | Lotes | Requisito |
-|------|--------|-------|-----------|
-| **directo** | USD | ✅ true | `monto_inversion` definido |
-| **mensual** | ARS | ❌ false | `obj_suscripciones` > 0 |
+| Tipo        | Moneda | Lotes    | Requisito                  |
+| ----------- | ------ | -------- | -------------------------- |
+| **directo** | USD    | ✅ true  | `monto_inversion` definido |
+| **mensual** | ARS    | ❌ false | `obj_suscripciones` > 0    |
 
 ```javascript
 // Validación de unicidad de lotes
 const lotesAsignados = await Lote.findAll({
   where: {
     id: lotesIds,
-    idProyecto: { [Op.ne]: null } // Ya están asignados
-  }
+    idProyecto: { [Op.ne]: null }, // Ya están asignados
+  },
 });
 
 if (lotesAsignados.length > 0) {
@@ -931,6 +935,7 @@ if (lotesAsignados.length > 0) {
 **Propósito:** Gestión de ofertas y sistema de tokens.
 
 #### Sistema de Tokens
+
 ```
 Usuario suscrito → 1 token disponible
    ↓
@@ -946,6 +951,7 @@ Puede pujar en otro proyecto
 #### Método Clave: `procesarPujaGanadora`
 
 **Jerarquía de Aplicación del Excedente:**
+
 ```
 Monto de Puja - Precio Base = EXCEDENTE
    ↓
@@ -959,6 +965,7 @@ Monto de Puja - Precio Base = EXCEDENTE
 ```
 
 **Ejemplo:**
+
 ```javascript
 // Usuario puja $10,000 por un lote de precio base $5,000
 const excedente = 10000 - 5000; // $5,000
@@ -977,11 +984,12 @@ const excedente = 10000 - 5000; // $5,000
 **Propósito:** Dashboard financiero del usuario.
 
 #### Cálculo de Morosidad
+
 ```javascript
 // Meses transcurridos desde la suscripción
 const mesesTranscurridos = moment().diff(
   moment(suscripcion.createdAt),
-  'months'
+  "months"
 );
 
 // Cuotas que deberían estar pagadas
@@ -991,8 +999,8 @@ const cuotasEsperadas = mesesTranscurridos;
 const cuotasPagadas = await Pago.count({
   where: {
     id_suscripcion: suscripcionId,
-    estado_pago: ['pagado', 'cubierto_por_puja']
-  }
+    estado_pago: ["pagado", "cubierto_por_puja"],
+  },
 });
 
 // Morosidad
@@ -1006,6 +1014,7 @@ const cuotasVencidas = Math.max(0, cuotasEsperadas - cuotasPagadas);
 **Propósito:** Gestión del ciclo de vida de las suscripciones.
 
 #### Flujo de Fondeo del Proyecto
+
 ```mermaid
 graph TD
 A[Usuario paga 1ª cuota] --> B[Crear SuscripcionProyecto]
@@ -1018,12 +1027,13 @@ G --> H[Proyecto fondeado ✅]
 ```
 
 **Código clave:**
+
 ```javascript
 // Verificar si se alcanzó el objetivo
 if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
   proyecto.estado_proyecto = "En proceso";
   proyecto.objetivo_notificado = true;
-  
+
   // Notificar a todos
   const usuarios = await Usuario.findAll({ where: { activo: true } });
   for (const usuario of usuarios) {
@@ -1042,6 +1052,7 @@ if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
 **Propósito:** Cancelación de suscripciones con registro para reembolso.
 
 #### Flujo de Cancelación
+
 ```mermaid
 sequenceDiagram
 participant U as Usuario
@@ -1063,6 +1074,7 @@ S-->>U: Suscripción cancelada
 ```
 
 **Datos guardados para reembolso:**
+
 ```javascript
 {
   id_suscripcion_original: 123,
@@ -1085,6 +1097,7 @@ S-->>U: Suscripción cancelada
 #### Método Crítico: `confirmarTransaccion`
 
 **Switch de Lógica de Negocio:**
+
 ```javascript
 switch (transaccion.tipo_transaccion) {
   case "pago_suscripcion_inicial":
@@ -1116,10 +1129,11 @@ switch (transaccion.tipo_transaccion) {
 
 #### Gestión de Saldo (Billetera)
 
-| Operación | Efecto en Saldo |
-|-----------|-----------------|
-| **Pago exitoso** | `-monto` (sale dinero) |
-| **Reembolso** | `+monto` (entra dinero) |
+| Operación        | Efecto en Saldo         |
+| ---------------- | ----------------------- |
+| **Pago exitoso** | `-monto` (sale dinero)  |
+| **Reembolso**    | `+monto` (entra dinero) |
+
 ```javascript
 // Confirmar pago
 await resumenCuentaService.actualizarSaldoGeneral(
@@ -1142,23 +1156,24 @@ await resumenCuentaService.actualizarSaldoGeneral(
 
 #### Tokens de Seguridad
 
-| Tipo | Vigencia | Uso |
-|------|----------|-----|
-| `confirmacion_token` | 24 horas | Activar cuenta |
-| `reset_password_token` | 1 hora | Recuperar contraseña |
+| Tipo                   | Vigencia | Uso                  |
+| ---------------------- | -------- | -------------------- |
+| `confirmacion_token`   | 24 horas | Activar cuenta       |
+| `reset_password_token` | 1 hora   | Recuperar contraseña |
 
 #### Método: `cleanUnconfirmedAccounts`
 
 **Limpieza automática (Cron Job):**
+
 ```javascript
 // Elimina cuentas no confirmadas después de 7 días
 const cuentasEliminadas = await Usuario.destroy({
   where: {
     confirmado_email: false,
     createdAt: {
-      [Op.lt]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    }
-  }
+      [Op.lt]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    },
+  },
 });
 ```
 
@@ -1169,6 +1184,7 @@ const cuentasEliminadas = await Usuario.destroy({
 ## 📚 Flujos Completos de Negocio
 
 ### 🎯 Flujo 1: Inversión Directa
+
 ```mermaid
 sequenceDiagram
 participant U as Usuario
@@ -1201,6 +1217,7 @@ Note over B,DB: El proyecto se marca como<br/>Finalizado porque era<br/>tipo "di
 ---
 
 ### 💳 Flujo 2: Suscripción Mensual (Primera Cuota)
+
 ```mermaid
 sequenceDiagram
 participant U as Usuario
@@ -1237,6 +1254,7 @@ B-->>MP: 200 OK
 ---
 
 ### 🏆 Flujo 3: Subasta de Lote
+
 ```mermaid
 graph TD
 A[Lote activo] --> B[Usuario 1 puja $5,000]
@@ -1264,6 +1282,7 @@ S --> M
 ---
 
 ### 💰 Flujo 4: Aplicación de Excedente de Puja
+
 ```javascript
 /**
  * Ejemplo: Usuario gana con puja de $10,000
@@ -1279,7 +1298,7 @@ S --> M
 const pagosPendientes = [
   { id: 1, monto: 1000 },
   { id: 2, monto: 1000 },
-  { id: 3, monto: 1000 }
+  { id: 3, monto: 1000 },
 ];
 
 let excedente = 6000;
@@ -1287,7 +1306,7 @@ let excedente = 6000;
 // Marcar como "cubierto_por_puja"
 for (const pago of pagosPendientes) {
   if (excedente >= pago.monto) {
-    await pago.update({ estado_pago: 'cubierto_por_puja' });
+    await pago.update({ estado_pago: "cubierto_por_puja" });
     excedente -= pago.monto; // $6,000 → $5,000 → $4,000 → $3,000
   }
 }
@@ -1295,13 +1314,13 @@ for (const pago of pagosPendientes) {
 // Paso 2: Pre-pagar meses futuros
 const cuotaMensual = 1000;
 while (excedente >= cuotaMensual && suscripcion.meses_a_pagar > 0) {
-  await suscripcion.decrement('meses_a_pagar');
+  await suscripcion.decrement("meses_a_pagar");
   excedente -= cuotaMensual; // $3,000 → $2,000 → $1,000 → $0
 }
 
 // Paso 3: Saldo a favor
 if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
-  await suscripcion.increment('saldo_a_favor', { by: excedente });
+  await suscripcion.increment("saldo_a_favor", { by: excedente });
 }
 
 // Paso 4: Excedente de visualización
@@ -1319,6 +1338,7 @@ if (suscripcion.meses_a_pagar === 0 && excedente > 0) {
 ---
 
 ### 📅 Flujo 5: Generación Automática de Cuotas (Cron Job)
+
 ```javascript
 /**
  * Se ejecuta el día 1 de cada mes a las 00:00
@@ -1408,16 +1428,17 @@ Centraliza la gestión de contratos y firmas, aplicando reglas estrictas de auto
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `upload` | Sube plantilla de contrato | 1. **Solo Admin** (`req.user.role === 'admin'`)<br>2. Calcula `hash_archivo_original` del archivo<br>3. Si falla registro, elimina archivo físico | **201** Created<br>**403** Forbidden<br>**400** Bad Request |
-| `sign` | Registra contrato firmado | 1. Verifica que usuario sea dueño de `id_inversion` o `id_suscripcion`<br>2. Calcula `hash_documento_firmado`<br>3. Llama a `contratoService.registerSignature()`<br>4. Limpia archivo si falla | **200** OK<br>**403** Forbidden<br>**404** Not Found |
-| `findMyContracts` | Lista contratos del usuario | Llama a `contratoService.findByUserId(userId)` | **200** OK |
-| `findById` | Obtiene detalles de contrato | 1. Verifica integridad (`integrity_compromised`)<br>2. Autoriza si: es Admin, es Firmante, o tiene Inversión/Suscripción<br>3. Elimina datos sensibles antes de enviar | **200** OK<br>**409** Conflict<br>**403** Forbidden |
-| `download` | Descarga segura del archivo | Aplica mismas validaciones que `findById` + `res.download()` | **200** OK<br>**409** Conflict<br>**403** Forbidden |
-| `softDelete` | Marca contrato como inactivo | Llama a `contratoService.softDelete(id)` | **200** OK<br>**404** Not Found |
+| Función           | Propósito                    | Lógica Crítica                                                                                                                                                                                  | Códigos HTTP                                                |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `upload`          | Sube plantilla de contrato   | 1. **Solo Admin** (`req.user.role === 'admin'`)<br>2. Calcula `hash_archivo_original` del archivo<br>3. Si falla registro, elimina archivo físico                                               | **201** Created<br>**403** Forbidden<br>**400** Bad Request |
+| `sign`            | Registra contrato firmado    | 1. Verifica que usuario sea dueño de `id_inversion` o `id_suscripcion`<br>2. Calcula `hash_documento_firmado`<br>3. Llama a `contratoService.registerSignature()`<br>4. Limpia archivo si falla | **200** OK<br>**403** Forbidden<br>**404** Not Found        |
+| `findMyContracts` | Lista contratos del usuario  | Llama a `contratoService.findByUserId(userId)`                                                                                                                                                  | **200** OK                                                  |
+| `findById`        | Obtiene detalles de contrato | 1. Verifica integridad (`integrity_compromised`)<br>2. Autoriza si: es Admin, es Firmante, o tiene Inversión/Suscripción<br>3. Elimina datos sensibles antes de enviar                          | **200** OK<br>**409** Conflict<br>**403** Forbidden         |
+| `download`        | Descarga segura del archivo  | Aplica mismas validaciones que `findById` + `res.download()`                                                                                                                                    | **200** OK<br>**409** Conflict<br>**403** Forbidden         |
+| `softDelete`      | Marca contrato como inactivo | Llama a `contratoService.softDelete(id)`                                                                                                                                                        | **200** OK<br>**404** Not Found                             |
 
 ### Endpoints de Contratos
+
 ```
 POST   /api/contratos/upload [🔒👑]                     → upload
 POST   /api/contratos/firmar [🔒]                       → sign
@@ -1449,15 +1470,16 @@ Gestiona la creación y consulta de cuotas asociadas a proyectos. **Creación y 
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `create` | Registra nueva cuota | 1. Valida existencia de `id_proyecto`<br>2. Obtiene datos del proyecto con `proyectoService.findById()`<br>3. Llama a `cuotaMensualService.createAndSetProjectAmount()` (crea cuota + ajusta monto proyecto) | **201** Created<br>**400** Bad Request<br>**404** Not Found |
-| `findByProjectId` | Lista cuotas de un proyecto | Llama a `cuotaMensualService.findByProjectId(id_proyecto)` | **200** OK |
-| `findLastByProjectId` | Obtiene cuota más reciente | Llama a `cuotaMensualService.findLastByProjectId(id_proyecto)` | **200** OK<br>**404** Not Found |
-| `update` | Modifica cuota existente | Llama a `cuotaMensualService.update(id, data)` | **200** OK<br>**404** Not Found |
-| `softDelete` | Elimina lógicamente una cuota | Llama a `cuotaMensualService.softDelete(id)` | **200** OK<br>**404** Not Found |
+| Función               | Propósito                     | Lógica Crítica                                                                                                                                                                                               | Códigos HTTP                                                |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `create`              | Registra nueva cuota          | 1. Valida existencia de `id_proyecto`<br>2. Obtiene datos del proyecto con `proyectoService.findById()`<br>3. Llama a `cuotaMensualService.createAndSetProjectAmount()` (crea cuota + ajusta monto proyecto) | **201** Created<br>**400** Bad Request<br>**404** Not Found |
+| `findByProjectId`     | Lista cuotas de un proyecto   | Llama a `cuotaMensualService.findByProjectId(id_proyecto)`                                                                                                                                                   | **200** OK                                                  |
+| `findLastByProjectId` | Obtiene cuota más reciente    | Llama a `cuotaMensualService.findLastByProjectId(id_proyecto)`                                                                                                                                               | **200** OK<br>**404** Not Found                             |
+| `update`              | Modifica cuota existente      | Llama a `cuotaMensualService.update(id, data)`                                                                                                                                                               | **200** OK<br>**404** Not Found                             |
+| `softDelete`          | Elimina lógicamente una cuota | Llama a `cuotaMensualService.softDelete(id)`                                                                                                                                                                 | **200** OK<br>**404** Not Found                             |
 
 ### Endpoints de Cuotas
+
 ```
 POST   /api/cuotas/ [🔒👑]                    → create
 GET    /api/cuotas/:id_proyecto [🔒]          → findByProjectId
@@ -1476,19 +1498,20 @@ Administra subida, consulta y eliminación lógica de imágenes asociadas a Proy
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `create` | Sube imagen y registra en BD | 1. Verifica que `req.file` exista (Multer)<br>2. Valida asociación a `id_proyecto` o `id_lote`<br>3. Usa `req.file.path` como URL para `imagenService.create()` | **201** Created<br>**400** Bad Request |
-| `getImagesByProjectId` | Lista imágenes activas de proyecto | Llama a `imagenService.findByProjectIdActivo(id_proyecto)` | **200** OK |
-| `getImagesByLoteId` | Lista imágenes activas de lote | Llama a `imagenService.findByLoteIdActivo(id_lote)` | **200** OK |
-| `findByIdActivo` | Obtiene imagen activa por ID | Llama a `imagenService.findByIdActivo(id)` (ruta para usuarios) | **200** OK<br>**404** Not Found |
-| `findById` | Obtiene imagen por ID (incl. inactivas) | Llama a `imagenService.findById(id)` (solo Admin) | **200** OK<br>**404** Not Found |
-| `findAllActivo` | Lista todas las imágenes activas | Llama a `imagenService.findAllActivo()` | **200** OK |
-| `findAll` | Lista todas las imágenes (incl. inactivas) | Llama a `imagenService.findAll()` (solo Admin) | **200** OK |
-| `update` | Actualiza metadatos de imagen | Llama a `imagenService.update(id, data)` (no maneja nuevo archivo) | **200** OK<br>**404** Not Found |
-| `softDelete` | Marca imagen como eliminada | Llama a `imagenService.softDelete(id)` (`activo: false`) | **200** OK<br>**404** Not Found |
+| Función                | Propósito                                  | Lógica Crítica                                                                                                                                                  | Códigos HTTP                           |
+| ---------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `create`               | Sube imagen y registra en BD               | 1. Verifica que `req.file` exista (Multer)<br>2. Valida asociación a `id_proyecto` o `id_lote`<br>3. Usa `req.file.path` como URL para `imagenService.create()` | **201** Created<br>**400** Bad Request |
+| `getImagesByProjectId` | Lista imágenes activas de proyecto         | Llama a `imagenService.findByProjectIdActivo(id_proyecto)`                                                                                                      | **200** OK                             |
+| `getImagesByLoteId`    | Lista imágenes activas de lote             | Llama a `imagenService.findByLoteIdActivo(id_lote)`                                                                                                             | **200** OK                             |
+| `findByIdActivo`       | Obtiene imagen activa por ID               | Llama a `imagenService.findByIdActivo(id)` (ruta para usuarios)                                                                                                 | **200** OK<br>**404** Not Found        |
+| `findById`             | Obtiene imagen por ID (incl. inactivas)    | Llama a `imagenService.findById(id)` (solo Admin)                                                                                                               | **200** OK<br>**404** Not Found        |
+| `findAllActivo`        | Lista todas las imágenes activas           | Llama a `imagenService.findAllActivo()`                                                                                                                         | **200** OK                             |
+| `findAll`              | Lista todas las imágenes (incl. inactivas) | Llama a `imagenService.findAll()` (solo Admin)                                                                                                                  | **200** OK                             |
+| `update`               | Actualiza metadatos de imagen              | Llama a `imagenService.update(id, data)` (no maneja nuevo archivo)                                                                                              | **200** OK<br>**404** Not Found        |
+| `softDelete`           | Marca imagen como eliminada                | Llama a `imagenService.softDelete(id)` (`activo: false`)                                                                                                        | **200** OK<br>**404** Not Found        |
 
 ### Endpoints de Imágenes
+
 ```
 POST   /api/imagenes/ [🔒👑 + Multer]            → create
 GET    /api/imagenes/proyecto/:idProyecto [🔒]   → getImagesByProjectId
@@ -1513,18 +1536,19 @@ Maneja el ciclo de vida de inversiones, implementando **control de seguridad 2FA
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `create` | Registra inversión pendiente | Llama a `inversionService.crearInversion(data)`. Solo registra intención | **201** Created<br>**400** Bad Request |
-| `requestCheckoutInversion` | Inicia proceso de pago (Paso 1) | 1. Verifica que inversión exista, pertenezca al usuario y esté pendiente<br>2. **Si 2FA activo**: devuelve 202 (requiere código)<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK (redirect)<br>**202** Accepted (2FA)<br>**403** Forbidden |
-| `confirmarInversionCon2FA` | Ejecuta transacción tras 2FA (Paso 2) | 1. Llama a `auth2faService.verifyToken()` con `codigo_2fa`<br>2. Si válido: llama a `TransaccionService.iniciarTransaccionYCheckout()`<br>3. Devuelve `redirectUrl` | **200** OK<br>**401** Unauthorized<br>**403** Forbidden |
-| `findMyInversions` | Lista inversiones del usuario | Llama a `inversionService.findByUserId(userId)` | **200** OK |
-| `findMyInversionById` | Obtiene inversión específica del usuario | Llama a `inversionService.findByIdAndUserId(id, userId)` | **200** OK<br>**404** Not Found |
-| `findAll` | Lista todas las inversiones (Admin) | Llama a `inversionService.findAll()` | **200** OK |
-| `softDeleteMyInversion` | Elimina inversión propia (si pendiente) | Llama a `inversionService.softDeleteByIdAndUserId(id, userId)` | **204** No Content<br>**404** Not Found |
-| `softDelete` | Elimina inversión (Admin) | Llama a `inversionService.softDelete(id)` | **204** No Content<br>**404** Not Found |
+| Función                    | Propósito                                | Lógica Crítica                                                                                                                                                                                 | Códigos HTTP                                                         |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `create`                   | Registra inversión pendiente             | Llama a `inversionService.crearInversion(data)`. Solo registra intención                                                                                                                       | **201** Created<br>**400** Bad Request                               |
+| `requestCheckoutInversion` | Inicia proceso de pago (Paso 1)          | 1. Verifica que inversión exista, pertenezca al usuario y esté pendiente<br>2. **Si 2FA activo**: devuelve 202 (requiere código)<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK (redirect)<br>**202** Accepted (2FA)<br>**403** Forbidden |
+| `confirmarInversionCon2FA` | Ejecuta transacción tras 2FA (Paso 2)    | 1. Llama a `auth2faService.verifyToken()` con `codigo_2fa`<br>2. Si válido: llama a `TransaccionService.iniciarTransaccionYCheckout()`<br>3. Devuelve `redirectUrl`                            | **200** OK<br>**401** Unauthorized<br>**403** Forbidden              |
+| `findMyInversions`         | Lista inversiones del usuario            | Llama a `inversionService.findByUserId(userId)`                                                                                                                                                | **200** OK                                                           |
+| `findMyInversionById`      | Obtiene inversión específica del usuario | Llama a `inversionService.findByIdAndUserId(id, userId)`                                                                                                                                       | **200** OK<br>**404** Not Found                                      |
+| `findAll`                  | Lista todas las inversiones (Admin)      | Llama a `inversionService.findAll()`                                                                                                                                                           | **200** OK                                                           |
+| `softDeleteMyInversion`    | Elimina inversión propia (si pendiente)  | Llama a `inversionService.softDeleteByIdAndUserId(id, userId)`                                                                                                                                 | **204** No Content<br>**404** Not Found                              |
+| `softDelete`               | Elimina inversión (Admin)                | Llama a `inversionService.softDelete(id)`                                                                                                                                                      | **204** No Content<br>**404** Not Found                              |
 
 ### Endpoints de Inversiones
+
 ```
 POST   /api/inversion/ [🔒]                              → create
 POST   /api/inversion/iniciar-pago/:idInversion [🔒]     → requestCheckoutInversion
@@ -1567,19 +1591,20 @@ Gestiona el ciclo completo de lotes de inversión y el proceso de subasta asocia
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `create` | Crea nuevo lote | Llama a `loteService.create(data)` | **201** Created<br>**400** Bad Request |
-| `findAllActivo` | Lista lotes disponibles (activos) | Llama a `loteService.findAllActivo()` | **200** OK |
-| `findByIdActivo` | Obtiene lote específico (solo activo) | Llama a `loteService.findByIdActivo(id)` | **200** OK<br>**404** Not Found |
-| `findAll` | Lista todos los lotes (incl. inactivos) | Llama a `loteService.findAll()` (solo Admin) | **200** OK |
-| `findById` | Obtiene lote por ID (incl. inactivos) | Llama a `loteService.findById(id)` (solo Admin) | **200** OK<br>**404** Not Found |
-| `update` | Actualiza datos del lote | Llama a `loteService.update(id, data)` | **200** OK<br>**404** Not Found |
-| `softDelete` | Elimina lógicamente un lote | Llama a `loteService.softDelete(id)` | **200** OK<br>**404** Not Found |
-| `startAuction` | Inicia proceso de subasta | 1. Actualiza `estado_subasta` a 'activa'<br>2. Obtiene usuarios suscritos con `SuscripcionProyectoService`<br>3. Envía notificación a todos los suscriptores vía `mensajeService.crear()` | **200** OK<br>**404** Not Found |
-| `endAuction` | Finaliza subasta y determina ganador | Llama a `loteService.endAuction(id)` (lógica compleja de asignación)<br>Si hay ganador, devuelve transacción creada | **200** OK<br>**400** Bad Request |
+| Función          | Propósito                               | Lógica Crítica                                                                                                                                                                            | Códigos HTTP                           |
+| ---------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `create`         | Crea nuevo lote                         | Llama a `loteService.create(data)`                                                                                                                                                        | **201** Created<br>**400** Bad Request |
+| `findAllActivo`  | Lista lotes disponibles (activos)       | Llama a `loteService.findAllActivo()`                                                                                                                                                     | **200** OK                             |
+| `findByIdActivo` | Obtiene lote específico (solo activo)   | Llama a `loteService.findByIdActivo(id)`                                                                                                                                                  | **200** OK<br>**404** Not Found        |
+| `findAll`        | Lista todos los lotes (incl. inactivos) | Llama a `loteService.findAll()` (solo Admin)                                                                                                                                              | **200** OK                             |
+| `findById`       | Obtiene lote por ID (incl. inactivos)   | Llama a `loteService.findById(id)` (solo Admin)                                                                                                                                           | **200** OK<br>**404** Not Found        |
+| `update`         | Actualiza datos del lote                | Llama a `loteService.update(id, data)`                                                                                                                                                    | **200** OK<br>**404** Not Found        |
+| `softDelete`     | Elimina lógicamente un lote             | Llama a `loteService.softDelete(id)`                                                                                                                                                      | **200** OK<br>**404** Not Found        |
+| `startAuction`   | Inicia proceso de subasta               | 1. Actualiza `estado_subasta` a 'activa'<br>2. Obtiene usuarios suscritos con `SuscripcionProyectoService`<br>3. Envía notificación a todos los suscriptores vía `mensajeService.crear()` | **200** OK<br>**404** Not Found        |
+| `endAuction`     | Finaliza subasta y determina ganador    | Llama a `loteService.endAuction(id)` (lógica compleja de asignación)<br>Si hay ganador, devuelve transacción creada                                                                       | **200** OK<br>**400** Bad Request      |
 
 ### Endpoints de Lotes
+
 ```
 POST   /api/lotes/ [🔒👑]                     → create
 GET    /api/lotes/activos [🔒]                → findAllActivo
@@ -1593,6 +1618,7 @@ DELETE /api/lotes/:id [🔒👑]                  → softDelete
 ```
 
 ### Flujo de Subasta
+
 ```
 1. Admin inicia subasta → startAuction
    ↓
@@ -1618,15 +1644,16 @@ Sistema de mensajería interna privada entre usuarios. **Todas las operaciones r
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `obtenerMisMensajes` | Lista mensajes recibidos y enviados | Llama a `mensajeService.obtenerPorUsuario(userId)` | **200** OK |
-| `enviarMensaje` | Envía mensaje a otro usuario | Obtiene `id_remitente` de `req.user.id`<br>Llama a `mensajeService.crear()` | **201** Created<br>**400** Bad Request |
-| `obtenerConteoNoLeidos` | Cuenta mensajes no leídos | Llama a `mensajeService.contarNoLeidos(userId)`<br>Devuelve `{ conteo: N }` | **200** OK |
-| `obtenerConversacion` | Historial con usuario específico | Llama a `mensajeService.obtenerConversacion(userId, id_receptor)` | **200** OK |
-| `marcarComoLeido` | Marca mensaje como leído | Llama a `mensajeService.marcarComoLeido(id, userId)`<br>⚠️ Valida que el mensaje pertenezca al usuario | **200** OK<br>**404** Not Found |
+| Función                 | Propósito                           | Lógica Crítica                                                                                         | Códigos HTTP                           |
+| ----------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| `obtenerMisMensajes`    | Lista mensajes recibidos y enviados | Llama a `mensajeService.obtenerPorUsuario(userId)`                                                     | **200** OK                             |
+| `enviarMensaje`         | Envía mensaje a otro usuario        | Obtiene `id_remitente` de `req.user.id`<br>Llama a `mensajeService.crear()`                            | **201** Created<br>**400** Bad Request |
+| `obtenerConteoNoLeidos` | Cuenta mensajes no leídos           | Llama a `mensajeService.contarNoLeidos(userId)`<br>Devuelve `{ conteo: N }`                            | **200** OK                             |
+| `obtenerConversacion`   | Historial con usuario específico    | Llama a `mensajeService.obtenerConversacion(userId, id_receptor)`                                      | **200** OK                             |
+| `marcarComoLeido`       | Marca mensaje como leído            | Llama a `mensajeService.marcarComoLeido(id, userId)`<br>⚠️ Valida que el mensaje pertenezca al usuario | **200** OK<br>**404** Not Found        |
 
 ### Endpoints de Mensajería
+
 ```
 GET    /api/mensajes/ [🔒]                    → obtenerMisMensajes
 POST   /api/mensajes/ [🔒]                    → enviarMensaje
@@ -1652,18 +1679,19 @@ Gestiona pagos mensuales con flujo de bifurcación de seguridad para usuarios co
 
 ### Funciones del Controlador
 
-| Función | Propósito | Lógica Crítica | Códigos HTTP |
-|---------|-----------|----------------|--------------|
-| `requestCheckout` | Inicia proceso de pago (Paso 1) | 1. Llama a `pagoService.getValidPaymentDetails(pagoId, userId)`<br>2. **Si 2FA activo**: devuelve 202<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK<br>**202** Accepted<br>**403** Forbidden<br>**409** Conflict |
-| `confirmarPagoYContinuar` | Continúa checkout tras 2FA (Paso 2) | 1. Verifica código con `auth2faService.verifyToken()`<br>2. Si correcto: genera checkout con `transaccionService.iniciarTransaccionYCheckout()` | **200** OK<br>**401** Unauthorized<br>**403** Forbidden |
-| `findMyPayments` | Lista pagos del usuario | Llama a `pagoService.findByUserId(userId)` | **200** OK |
-| `triggerManualPayment` | Genera pago manual (Admin) | Llama a `pagoService.generarPagoMensualConDescuento(id_suscripcion)` | **201** Created<br>**400** Bad Request |
-| `findAll` | Lista todos los pagos (Admin) | Llama a `pagoService.findAll()` | **200** OK |
-| `findById` | Obtiene pago por ID (Admin) | Llama a `pagoService.findById(id)` | **200** OK<br>**404** Not Found |
-| `update` | Actualiza pago (Admin) | Llama a `pagoService.update(id, data)` | **200** OK<br>**404** Not Found |
-| `softDelete` | Elimina lógicamente pago (Admin) | Llama a `pagoService.softDelete(id)` | **200** OK<br>**404** Not Found |
+| Función                   | Propósito                           | Lógica Crítica                                                                                                                                                      | Códigos HTTP                                                            |
+| ------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `requestCheckout`         | Inicia proceso de pago (Paso 1)     | 1. Llama a `pagoService.getValidPaymentDetails(pagoId, userId)`<br>2. **Si 2FA activo**: devuelve 202<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK<br>**202** Accepted<br>**403** Forbidden<br>**409** Conflict |
+| `confirmarPagoYContinuar` | Continúa checkout tras 2FA (Paso 2) | 1. Verifica código con `auth2faService.verifyToken()`<br>2. Si correcto: genera checkout con `transaccionService.iniciarTransaccionYCheckout()`                     | **200** OK<br>**401** Unauthorized<br>**403** Forbidden                 |
+| `findMyPayments`          | Lista pagos del usuario             | Llama a `pagoService.findByUserId(userId)`                                                                                                                          | **200** OK                                                              |
+| `triggerManualPayment`    | Genera pago manual (Admin)          | Llama a `pagoService.generarPagoMensualConDescuento(id_suscripcion)`                                                                                                | **201** Created<br>**400** Bad Request                                  |
+| `findAll`                 | Lista todos los pagos (Admin)       | Llama a `pagoService.findAll()`                                                                                                                                     | **200** OK                                                              |
+| `findById`                | Obtiene pago por ID (Admin)         | Llama a `pagoService.findById(id)`                                                                                                                                  | **200** OK<br>**404** Not Found                                         |
+| `update`                  | Actualiza pago (Admin)              | Llama a `pagoService.update(id, data)`                                                                                                                              | **200** OK<br>**404** Not Found                                         |
+| `softDelete`              | Elimina lógicamente pago (Admin)    | Llama a `pagoService.softDelete(id)`                                                                                                                                | **200** OK<br>**404** Not Found                                         |
 
 ### Endpoints de Pagos
+
 ```
 GET    /api/pagos/mis_pagos [🔒]                     → findMyPayments
 POST   /api/pagos/pagar-mes/:id [🔒]                 → requestCheckout
@@ -1673,9 +1701,435 @@ POST   /api/pagos/trigger-manual-payment [🔒👑]      → triggerManualPaymen
 GET    /api/pagos/:id [🔒👑]                         → findById
 PUT    /api/pagos/:id [🔒👑]                         → update
 DELETE /api/pagos/:id [🔒👑]                         → softDelete
+```
 
+---
 
+7.10. Mercado Pago (pagoMercado.controller.js)
+Descripción
+Controlador más crítico: gestiona comunicación segura con la pasarela de pago, implementando validaciones criptográficas.
+Funciones del Controlador
+FunciónPropósitoLógica CríticaCódigos HTTPverifySignatureCRÍTICA: Verifica autenticidad de webhooksUsa HMAC-SHA256 para validar firma criptográfica<br>Rechaza webhooks sin firma válida (protección contra suplantación)N/A (Interna)iniciarPagoPorModeloInicia checkout genéricoLlama a transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId)200 OK<br>400 Bad RequestcreateCheckoutGenericoCrea/Regenera transacción y checkoutUsa transacción de BD para atomicidad<br>Llama a transaccionService.crearTransaccionConCheckout()200 OK<br>500 Internal ErrorhandleWebhookProcesa notificaciones de Mercado Pago1. Llama a verifySignature() (si falla → 401)<br>2. Procesa merchant_order o payment<br>3. Si pago aprobado: llama a transaccionService.confirmarTransaccion() con bloqueo LOCK.UPDATE<br>⚠️ Siempre responde 200 a MP (evita reintentos)200 OK<br>401 UnauthorizedhandleCheckoutRedirectManeja redirección tras pagoRevisa collection_status de URL<br>Si cancelación/rechazo: llama a transaccionService.cancelarTransaccionPorUsuario()<br>Redirige al frontend según estado302 RedirectgetPaymentStatusConsulta estado de transacciónVerifica propiedad de transacción<br>Si refresh=true y estado en proceso: llama a pagoMercadoService.refreshPaymentStatus()200 OK<br>404 Not FoundcreateCheckoutFlujo de compatibilidad (inversiones)Busca inversión, valida estado pendiente<br>Delega en createCheckoutGenerico()200 OK<br>404 Not Found
+Endpoints de Mercado Pago
+POST /api/payment/checkout/:modelo/:modeloId [🔒] → iniciarPagoPorModelo
+POST /api/payment/checkout/generico [🔒] → createCheckoutGenerico
+POST /api/payment/checkout [🔒] → createCheckout
+GET /api/payment/status/:id_transaccion [🔒] → getPaymentStatus
+GET /api/payment/redirect [🌐] → handleCheckoutRedirect
+POST /webhook/:metodo [🌐] → handleWebhook
 
+🌐 = Ruta pública (accesible para la pasarela)
 
+Flujo de Webhook
+mermaidsequenceDiagram
+participant MP as Mercado Pago
+participant B as Backend
+participant DB as Database
 
+    MP->>B: POST /webhook/mercadopago
+    B->>B: verifySignature (HMAC-SHA256)
+    alt Firma inválida
+        B-->>MP: 401 Unauthorized
+    else Firma válida
+        B->>MP: GET /payments/{id}
+        MP-->>B: Detalles del pago
+        B->>DB: confirmarTransaccion (con LOCK.UPDATE)
+        DB-->>B: ✅ Actualizado
+        B-->>MP: 200 OK
+    end
 
+```
+---
+
+## 7.11. Proyectos (`proyecto.controller.js`)
+
+### Descripción
+
+Maneja creación y mantenimiento de proyectos, incluyendo vinculación de lotes y notificaciones a usuarios.
+
+### Funciones del Controlador
+
+| Función          | Propósito                         | Lógica Crítica                                                                                                 | Códigos HTTP                           |
+| ---------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `findAllActivo`  | Lista proyectos activos           | Llama a `proyectoService.findAllActivo()`                                                                      | **200** OK                             |
+| `findByIdActivo` | Obtiene proyecto activo por ID    | Llama a `proyectoService.findByIdActivo(id)`                                                                   | **200** OK<br>**404** Not Found        |
+| `findMyProjects` | Proyectos donde usuario invirtió  | Combina `suscripcionProyectoService.findByUserId()` e `inversionService.findByUserId()`                        | **200** OK                             |
+| `create`         | Crea nuevo proyecto               | **Transacción de BD:**<br>1. Crea proyecto<br>2. Asocia `lotesIds`<br>3. Notifica a todos los usuarios activos | **201** Created<br>**400** Bad Request |
+| `update`         | Actualiza proyecto existente      | **Transacción de BD:**<br>1. Actualiza proyecto<br>2. Reasigna lotes con `loteService.updateLotesProyecto()`   | **200** OK<br>**404** Not Found        |
+| `softDelete`     | Elimina lógicamente proyecto      | Llama a `proyectoService.softDelete(id)`                                                                       | **200** OK<br>**404** Not Found        |
+| `findAll`        | Lista todos los proyectos (Admin) | Llama a `proyectoService.findAll()`                                                                            | **200** OK                             |
+| `findById`       | Obtiene proyecto por ID (Admin)   | Llama a `proyectoService.findById(id)`                                                                         | **200** OK<br>**404** Not Found        |
+| `endAuction`     | Finaliza subasta de lote          | Llama a `loteService.endAuction(id)`                                                                           | **200** OK<br>**400** Bad Request      |
+
+### Endpoints de Proyectos
+
+```
+
+GET /api/proyectos/activos [🔒] → findAllActivo
+POST /api/proyectos/ [🔒👑] → create
+GET /api/proyectos/ [🔒👑] → findAll
+GET /api/proyectos/:id/activo [🔒] → findByIdActivo
+GET /api/proyectos/:id [🔒👑] → findById
+PUT /api/proyectos/:id [🔒👑] → update
+DELETE /api/proyectos/:id [🔒👑] → softDelete
+
+```
+
+---
+
+## 7.12. Pujas (`puja.controller.js`)
+
+### Descripción
+
+Administra pujas en subastas con flujo de pago que incluye verificación 2FA para ganadores.
+
+### Funciones del Controlador
+
+| Función               | Propósito                                 | Lógica Crítica                                                                                                        | Códigos HTTP                                                            |
+| --------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `create`              | Crea nueva puja                           | Llama a `pujaService.create()` con `req.user.id`                                                                      | **201** Created<br>**400** Bad Request                                  |
+| `requestCheckout`     | Inicia pago de puja ganadora (Paso 1)     | **Bifurcación 2FA:**<br>- Si 2FA activo → 202<br>- Si NO → genera checkout con `pujaService.requestCheckoutForPuja()` | **200** OK<br>**202** Accepted<br>**403** Forbidden<br>**409** Conflict |
+| `confirmarPujaCon2FA` | Verifica 2FA y continúa checkout (Paso 2) | 1. Llama a `auth2faService.verifyToken()`<br>2. Si válido: genera checkout con `pujaService.requestCheckoutForPuja()` | **200** OK<br>**401** Unauthorized<br>**403** Forbidden                 |
+| `manageAuctionEnd`    | Gestión final de subasta (Admin)          | Llama a `pujaService.gestionarTokensAlFinalizar(id_lote)`                                                             | **200** OK<br>**400** Bad Request                                       |
+| `findMyPujas`         | Lista pujas del usuario                   | Llama a `pujaService.findByUserId(userId)`                                                                            | **200** OK                                                              |
+| `findAllActivo`       | Lista pujas en subastas activas           | Llama a `pujaService.findAllActivo()`                                                                                 | **200** OK                                                              |
+| `findAll`             | Lista todas las pujas (Admin)             | Llama a `pujaService.findAll()`                                                                                       | **200** OK                                                              |
+| `findMyPujaById`      | Obtiene puja específica del usuario       | Llama a `pujaService.findByIdAndUserId(id, userId)`                                                                   | **200** OK<br>**404** Not Found                                         |
+| `softDeleteMyPuja`    | Elimina puja del usuario                  | Llama a `pujaService.softDeleteByIdAndUserId(id, userId)`                                                             | **204** No Content<br>**404** Not Found                                 |
+
+### Endpoints de Pujas
+
+```
+
+POST /api/pujas/ [🔒] → create
+GET /api/pujas/activas [🔒] → findAllActivo
+GET /api/pujas/mis_pujas [🔒] → findMyPujas
+GET /api/pujas/mis_pujas/:id [🔒] → findMyPujaById
+DELETE /api/pujas/mis_pujas/:id [🔒] → softDeleteMyPuja
+POST /api/pujas/iniciar-pago/:id [🔒] → requestCheckout
+POST /api/pujas/confirmar-2fa [🔒] → confirmarPujaCon2FA
+GET /api/pujas/ [🔒👑] → findAll
+POST /api/pujas/gestionar_finalizacion [🔒👑] → manageAuctionEnd
+GET /api/pujas/:id [🔒👑] → findById
+PUT /api/pujas/:id [🔒👑] → update
+DELETE /api/pujas/:id [🔒👑] → softDelete
+
+```
+
+---
+
+## 7.13. Redirección (`redireccion.controller.js`)
+
+### Descripción
+
+Procesa redirecciones de retorno desde la pasarela de pago tras interacción del usuario.
+
+### Funciones del Controlador
+
+| Función         | Propósito                             | Lógica Crítica                                                                                                    | Códigos HTTP     |
+| --------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `handleFailure` | Procesa retorno por fallo/cancelación | Llama a `transaccionService.cancelarTransaccionPorUsuario(id)`<br>Redirige a `/payment-result/:id?status=failure` | **302** Redirect |
+| `handleSuccess` | Procesa retorno por éxito             | ⚠️ Estado final se actualiza por webhook (asíncrono)<br>Redirige a `/payment-result/:id?status=success`           | **302** Redirect |
+| `handlePending` | Procesa retorno por estado pendiente  | Redirige a `/payment-result/:id?status=pending`                                                                   | **302** Redirect |
+
+### Endpoints de Redirección
+
+```
+
+GET /pago/exito/:id [🌐] → handleSuccess
+GET /pago/fallo/:id [🌐] → handleFailure
+GET /pago/pendiente/:id [🌐] → handlePending
+
+```
+
+> 🌐 = Rutas públicas (accesibles para la pasarela)
+
+---
+
+## 7.14. Resumen de Cuenta (`resumen_cuenta.controller.js`)
+
+### Descripción
+
+Genera resúmenes detallados de inversión/suscripción con cálculos basados en valores dinámicos (precio del cemento).
+
+### Funciones del Controlador
+
+| Función                  | Propósito                           | Lógica Crítica                                                                                                                                | Códigos HTTP                                                   |
+| ------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `create`                 | Crea nuevo resumen de cuenta        | **Crítico:** Depende de `cuotaMensualService.createAndSetProjectAmount()` para calcular valores basados en cemento, porcentajes de plan e IVA | **201** Created<br>**404** Not Found<br>**500** Internal Error |
+| `findMyAccountSummaries` | Lista resúmenes del usuario         | Llama a `resumenCuentaService.getAccountSummariesByUserId(userId)`                                                                            | **200** OK                                                     |
+| `findAll`                | Lista todos los resúmenes (Admin)   | Llama a `resumenCuentaService.findAll()`                                                                                                      | **200** OK                                                     |
+| `getAccountSummaryById`  | Obtiene resumen específico          | **Control de acceso:**<br>- Admin: acceso total<br>- Usuario: solo si es propietario                                                          | **200** OK<br>**404** Not Found                                |
+| `update`                 | Actualiza resumen (Admin)           | Llama a `resumenCuentaService.update()`                                                                                                       | **200** OK<br>**404** Not Found                                |
+| `softDelete`             | Elimina lógicamente resumen (Admin) | Llama a `resumenCuentaService.softDelete()`                                                                                                   | **200** OK<br>**404** Not Found                                |
+
+### Endpoints de Resumen de Cuenta
+
+```
+
+GET /api/resumen_cuenta/mis_resumenes [🔒] → findMyAccountSummaries
+GET /api/resumen_cuenta/ [🔒👑] → findAll
+GET /api/resumen_cuenta/:id [🔒] → getAccountSummaryById
+PUT /api/resumen_cuenta/:id [🔒👑] → update
+DELETE /api/resumen_cuenta/:id [🔒👑] → softDelete
+
+```
+
+---
+
+## 7.15. Suscripción Proyecto (`suscripcion_proyecto.controller.js`)
+
+### Descripción
+
+Gestiona suscripciones a proyectos con pago inicial validado por 2FA.
+
+### Funciones del Controlador
+
+| Función                      | Propósito                                  | Lógica Crítica                                                                                                                                                         | Códigos HTTP                                                               |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `iniciarSuscripcion`         | Inicia transacción de pago (Paso 1)        | **Transacción de BD con 2FA:**<br>1. Verifica proyecto válido<br>2. Si 2FA activo: crea Transacción y Pago pendientes → 202<br>3. Si NO 2FA: genera URL checkout → 200 | **200** OK<br>**202** Accepted<br>**400** Bad Request<br>**404** Not Found |
+| `confirmarSuscripcionCon2FA` | Verifica 2FA para pago pendiente (Paso 2)  | 1. Llama a `auth2faService.verifyToken()`<br>2. Si exitoso: llama a `TransaccionService.generarCheckoutParaTransaccionExistente()`                                     | **200** OK<br>**401** Unauthorized<br>**403** Forbidden                    |
+| `confirmarSuscripcion`       | Webhook: confirma pago exitoso             | Llama a `suscripcionProyectoService.confirmarSuscripcion(transaccionId)`<br>Crea registro de suscripción y Resumen de Cuenta                                           | **200** OK<br>**400** Bad Request                                          |
+| `findMySubscriptions`        | Lista suscripciones activas del usuario    | Llama a `suscripcionProyectoService.findByUserId(userId)`                                                                                                              | **200** OK                                                                 |
+| `findMySubscriptionById`     | Obtiene suscripción específica del usuario | Llama a `suscripcionProyectoService.findByIdAndUserId(id, userId)`                                                                                                     | **200** OK<br>**404** Not Found                                            |
+| `softDeleteMySubscription`   | Cancela suscripción del usuario            | Verifica propiedad antes de llamar a `suscripcionProyectoService.softDelete()`                                                                                         | **200** OK<br>**404** Not Found                                            |
+| `findAll`                    | Lista todas las suscripciones (Admin)      | Llama a `suscripcionProyectoService.findAll()`                                                                                                                         | **200** OK                                                                 |
+| `findById`                   | Obtiene suscripción por ID (Admin)         | Llama a `suscripcionProyectoService.findById(id)`                                                                                                                      | **200** OK<br>**404** Not Found                                            |
+
+### Endpoints de Suscripción Proyecto
+
+```
+
+POST /api/suscripciones/iniciar-pago [🔒] → iniciarSuscripcion
+POST /api/suscripciones/confirmar-2fa [🔒] → confirmarSuscripcionCon2FA
+GET /api/suscripciones/activas [🔒] → findAllActivo
+GET /api/suscripciones/mis_suscripciones [🔒] → findMySubscriptions
+GET /api/suscripciones/mis_suscripciones/:id [🔒] → findMySubscriptionById
+DELETE /api/suscripciones/mis_suscripciones/:id [🔒] → softDeleteMySubscription
+POST /api/suscripciones/confirmar-pago [🌐] → confirmarSuscripcion
+GET /api/suscripciones/ [🔒👑] → findAll
+GET /api/suscripciones/:id [🔒👑] → findById
+DELETE /api/suscripciones/:id [🔒👑] → softDelete
+
+```
+
+---
+
+## 7.16. Suscripciones (`suscripcion.controller.js`)
+
+### Descripción
+
+Gestión genérica de suscripciones. **Única función:** permitir cancelación de suscripción propia.
+
+### Funciones del Controlador
+
+| Función  | Propósito                           | Lógica Crítica                                                                                                                                           | Códigos HTTP                                           |
+| -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `cancel` | Permite cancelar suscripción propia | **Control de acceso estricto:**<br>Verifica que `id_usuario` de la suscripción coincida con `req.user.id`<br>Llama a `suscripcionService.softDelete(id)` | **200** OK<br>**403** Forbidden<br>**400** Bad Request |
+
+### Endpoints de Suscripciones
+
+```
+
+PUT /api/suscripciones/:id/cancelar [🔒] → cancel
+
+```
+
+---
+
+## 7.17. Transacciones (`transaccion.controller.js`)
+
+### Descripción
+
+Gestión y consulta de transacciones. La función `confirmarTransaccion` garantiza atomicidad con transacciones de BD.
+
+### Funciones del Controlador
+
+| Función                 | Propósito                                     | Lógica Crítica                                                                                                                                               | Códigos HTTP                           |
+| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| `create`                | Crea nueva transacción                        | Llama a `transaccionService.create()`<br>⚠️ Transacciones se crean principalmente en flujos mayores                                                          | **201** Created<br>**400** Bad Request |
+| `confirmarTransaccion`  | **CRÍTICO:** Confirma transacción como pagada | Envuelve en transacción Sequelize (`t`)<br>Si falla alguna actualización subsiguiente: `t.rollback()`<br>Llama a `transaccionService.confirmarTransaccion()` | **200** OK<br>**400** Bad Request      |
+| `findMyTransactions`    | Lista transacciones del usuario               | Llama a `transaccionService.findByUserId(userId)`                                                                                                            | **200** OK                             |
+| `findMyTransactionById` | Obtiene transacción específica del usuario    | Llama a `transaccionService.findByIdAndUserId(id, userId)`                                                                                                   | **200** OK<br>**404** Not Found        |
+| `findAll`               | Lista todas las transacciones (Admin)         | Llama a `transaccionService.findAll()`                                                                                                                       | **200** OK                             |
+| `findById`              | Obtiene transacción por ID (Admin)            | Llama a `transaccionService.findById(id)`                                                                                                                    | **200** OK<br>**404** Not Found        |
+| `update`                | Actualiza transacción (Admin)                 | Llama a `transaccionService.update(id, data)`                                                                                                                | **200** OK<br>**404** Not Found        |
+| `softDelete`            | Elimina lógicamente transacción (Admin)       | Llama a `transaccionService.softDelete(id)`                                                                                                                  | **200** OK<br>**404** Not Found        |
+
+### Endpoints de Transacciones
+
+```
+
+GET /api/transacciones/ [🔒👑] → findAll
+PUT /api/transacciones/:id/confirmar [🔒👑] → confirmarTransaccion
+GET /api/transacciones/mis_transacciones [🔒] → findMyTransactions
+GET /api/transacciones/mis_transacciones/:id [🔒] → findMyTransactionById
+PUT /api/transacciones/mis_transacciones/:id [🔒] → updateMyTransaction
+GET /api/transacciones/:id [🔒👑] → findById
+PUT /api/transacciones/:id [🔒👑] → update
+DELETE /api/transacciones/:id [🔒👑] → softDelete
+
+```
+
+---
+
+## 7.18. Usuarios (`usuario.controller.js`)
+
+### Descripción
+
+Gestión central de usuarios, incluyendo registro, perfil propio (`/me`) y CRUD completo para Admin.
+
+### Funciones del Controlador
+
+| Función         | Propósito                                | Lógica Crítica                                                                                                                           | Códigos HTTP                            |
+| --------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `create`        | Registra nuevo usuario                   | Llama a `usuarioService.create()`<br>El servicio hashea contraseña y genera token de confirmación<br>Oculta datos sensibles en respuesta | **201** Created<br>**400** Bad Request  |
+| `confirmEmail`  | Activa cuenta mediante token             | Llama a `usuarioService.confirmEmail(token)`<br>Actualiza `email_confirmado: true`                                                       | **200** OK<br>**400** Bad Request       |
+| `findMe`        | Obtiene perfil del usuario autenticado   | Usa `req.user.id` para buscar perfil                                                                                                     | **200** OK<br>**404** Not Found         |
+| `updateMe`      | Actualiza perfil del usuario autenticado | Usa `req.user.id` para actualizar                                                                                                        | **200** OK<br>**400** Bad Request       |
+| `softDeleteMe`  | Desactiva cuenta propia                  | Llama a `usuarioService.softDelete(req.user.id)`                                                                                         | **204** No Content                      |
+| `findAll`       | Lista todos los usuarios (Admin)         | Llama a `usuarioService.findAll()`                                                                                                       | **200** OK                              |
+| `findAllActivo` | Lista usuarios activos (Admin)           | Llama a `usuarioService.findAllActivo()`                                                                                                 | **200** OK                              |
+| `findById`      | Obtiene usuario por ID (Admin)           | Llama a `usuarioService.findById(id)`                                                                                                    | **200** OK<br>**404** Not Found         |
+| `update`        | Actualiza usuario por ID (Admin)         | Llama a `usuarioService.update(id, data)`                                                                                                | **200** OK<br>**404** Not Found         |
+| `softDelete`    | Elimina lógicamente usuario (Admin)      | Llama a `usuarioService.softDelete(id)`                                                                                                  | **204** No Content<br>**404** Not Found |
+
+### Endpoints de Usuarios
+
+```
+
+POST /api/usuarios/ [🌐] → create
+GET /api/usuarios/confirmar/:token [🌐] → confirmEmail
+GET /api/usuarios/me [🔒] → findMe
+PUT /api/usuarios/me [🔒] → updateMe
+DELETE /api/usuarios/me [🔒] → softDeleteMe
+GET /api/usuarios/ [🔒👑] → findAll
+GET /api/usuarios/activos [🔒👑] → findAllActivo
+GET /api/usuarios/:id [🔒👑] → findById
+PUT /api/usuarios/:id [🔒👑] → update
+DELETE /api/usuarios/:id [🔒👑] → softDelete
+
+⚠️ Orden crítico: Rutas estáticas (/confirmar, /me, /activos) antes que /:id
+
+📊 Resumen de Middlewares
+Símbolos Utilizados
+SímboloSignificado🔒authenticate - Requiere JWT válido👑authorizeAdmin - Requiere rol admin🌐Ruta pública (sin middleware)
+Middleware: authenticate
+javascript// Valida el JWT del header Authorization
+const token = req.headers.authorization?.split(' ')[1];
+const decoded = jwt.verify(token, process.env.JWT_SECRET);
+req.user = decoded; // { id, nombre_usuario, rol }
+Middleware: authorizeAdmin
+javascript// Verifica que el usuario tenga rol admin
+if (req.user.rol !== 'admin') {
+return res.status(403).json({ error: 'Acceso denegado' });
+}
+
+🔐 Patrones de Seguridad
+
+1. Flujo de Checkout con 2FA
+   Presente en: inversion, pago, puja, suscripcion_proyecto
+   javascript// Paso 1: Verificar si requiere 2FA
+   if (user.is_2fa_enabled) {
+   // Crear transacción pendiente
+   // Devolver 202 Accepted
+   return res.status(202).json({
+   requires2FA: true,
+   message: "Se requiere código 2FA"
+   });
+   }
+
+// Si NO tiene 2FA: continuar con checkout
+const { redirectUrl } = await generarCheckout();
+return res.status(200).json({ redirectUrl });
+javascript// Paso 2: Confirmar con código 2FA
+const isValid = await auth2faService.verifyToken(
+codigo_2fa,
+user.twofa_secret
+);
+
+if (!isValid) {
+return res.status(401).json({ error: "Código 2FA inválido" });
+}
+
+// Generar checkout después de validación exitosa
+const { redirectUrl } = await generarCheckout();
+return res.status(200).json({ redirectUrl }); 2. Verificación de Propiedad
+Presente en: inversion, pago, puja, suscripcion, transaccion
+javascript// Verificar que el recurso pertenezca al usuario
+const recurso = await Service.findByIdAndUserId(id, req.user.id);
+
+if (!recurso) {
+return res.status(404).json({
+error: "No encontrado o no tienes permisos"
+});
+} 3. Soft Delete
+Presente en: todos los controladores
+javascript// No elimina físicamente, solo marca como inactivo
+await Service.softDelete(id);
+// Actualiza: activo = false en la BD
+
+// Consultas posteriores filtran por activo
+const recursos = await Service.findAllActivo();
+// WHERE activo = true
+
+🎯 Mejores Prácticas Frontend
+
+1. Manejo de Códigos HTTP
+   javascripttry {
+   const response = await apiClient.post('/api/inversion/iniciar-pago/5');
+
+if (response.status === 202) {
+// Requiere 2FA
+const codigo = await mostrarModal2FA();
+await apiClient.post('/api/inversion/confirmar-2fa', {
+id_inversion: 5,
+codigo_2fa: codigo
+});
+} else if (response.status === 200) {
+// Redirigir directamente
+window.location.href = response.data.redirectUrl;
+}
+} catch (error) {
+if (error.response?.status === 403) {
+// No autorizado
+mostrarError("No tienes permisos");
+} else if (error.response?.status === 401) {
+// Token expirado
+redirectToLogin();
+}
+} 2. Rutas Dinámicas vs Estáticas
+javascript// ❌ INCORRECTO: Orden de rutas
+router.get('/api/usuarios/:id', findById); // Atrapa todo
+router.get('/api/usuarios/me', findMe); // Nunca se ejecuta
+
+// ✅ CORRECTO: Rutas estáticas primero
+router.get('/api/usuarios/me', findMe);
+router.get('/api/usuarios/activos', findAllActivo);
+router.get('/api/usuarios/:id', findById); 3. Validación de Respuestas
+javascript// Siempre validar la estructura de la respuesta
+const { data } = await apiClient.get('/api/pagos/mis_pagos');
+
+if (Array.isArray(data)) {
+setPagos(data);
+} else {
+console.error('Formato inesperado de respuesta');
+}
+
+✅ Checklist de Integración
+Para cada endpoint que integres:
+
+¿Requiere autenticación? → Incluir token JWT
+¿Requiere rol Admin? → Verificar permisos en UI
+¿Maneja 2FA? → Implementar flujo de 2 pasos
+¿Devuelve 202? → Mostrar modal para código 2FA
+¿Devuelve 401? → Redirigir a login
+¿Devuelve 403? → Mostrar mensaje de "Sin permisos"
+¿Devuelve 404? → Mostrar "No encontrado"
+¿Es redirección (302)? → Seguir automáticamente
+¿Sube archivos? → Usar FormData + multipart/form-data
+¿Consulta pública? → No enviar token
+
+```
+
+```
