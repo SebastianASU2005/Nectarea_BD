@@ -926,4 +926,756 @@ if (lotesAsignados.length > 0) {
 
 ---
 
-###
+### 🎯 14. Servicio de Pujas (pujaService)
+
+**Propósito:** Gestión de ofertas y sistema de tokens.
+
+#### Sistema de Tokens
+```
+Usuario suscrito → 1 token disponible
+   ↓
+Primera puja en Lote A → Consume el token
+   ↓
+No puede pujar en Lote B (mismo proyecto)
+   ↓
+Pierde la subasta → Token liberado
+   ↓
+Puede pujar en otro proyecto
+```
+
+#### Método Clave: `procesarPujaGanadora`
+
+**Jerarquía de Aplicación del Excedente:**
+```
+Monto de Puja - Precio Base = EXCEDENTE
+   ↓
+1️⃣ Cubrir Pagos Pendientes
+   ↓
+2️⃣ Pre-pagar Meses Futuros
+   ↓
+3️⃣ Saldo a Favor (próximas cuotas)
+   ↓
+4️⃣ Excedente de Visualización
+```
+
+**Ejemplo:**
+```javascript
+// Usuario puja $10,000 por un lote de precio base $5,000
+const excedente = 10000 - 5000; // $5,000
+
+// Tiene 2 cuotas pendientes de $1,000 cada una
+// Resultado:
+// - Cuota 1: Cubierta ($1,000)
+// - Cuota 2: Cubierta ($1,000)
+// - Excedente restante: $3,000 → saldo_a_favor
+```
+
+---
+
+### 📊 15. Servicio de Resumen de Cuenta (resumenCuentaService)
+
+**Propósito:** Dashboard financiero del usuario.
+
+#### Cálculo de Morosidad
+```javascript
+// Meses transcurridos desde la suscripción
+const mesesTranscurridos = moment().diff(
+  moment(suscripcion.createdAt),
+  'months'
+);
+
+// Cuotas que deberían estar pagadas
+const cuotasEsperadas = mesesTranscurridos;
+
+// Cuotas realmente pagadas
+const cuotasPagadas = await Pago.count({
+  where: {
+    id_suscripcion: suscripcionId,
+    estado_pago: ['pagado', 'cubierto_por_puja']
+  }
+});
+
+// Morosidad
+const cuotasVencidas = Math.max(0, cuotasEsperadas - cuotasPagadas);
+```
+
+---
+
+### 🔄 16. Servicio de Suscripciones (suscripcionProyectoService)
+
+**Propósito:** Gestión del ciclo de vida de las suscripciones.
+
+#### Flujo de Fondeo del Proyecto
+```mermaid
+graph TD
+A[Usuario paga 1ª cuota] --> B[Crear SuscripcionProyecto]
+B --> C[Incrementar suscripciones_actuales]
+C --> D{¿Alcanzó objetivo?}
+D -->|No| E[Esperar más inversores]
+D -->|Sí| F[estado_proyecto = 'En proceso']
+F --> G[Notificar a TODOS los usuarios]
+G --> H[Proyecto fondeado ✅]
+```
+
+**Código clave:**
+```javascript
+// Verificar si se alcanzó el objetivo
+if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
+  proyecto.estado_proyecto = "En proceso";
+  proyecto.objetivo_notificado = true;
+  
+  // Notificar a todos
+  const usuarios = await Usuario.findAll({ where: { activo: true } });
+  for (const usuario of usuarios) {
+    await mensajeService.enviarMensajeSistema(
+      usuario.id,
+      `¡El proyecto "${proyecto.nombre_proyecto}" ha sido fondeado!`
+    );
+  }
+}
+```
+
+---
+
+### ❌ 17. Servicio de Bajas (suscripcionService)
+
+**Propósito:** Cancelación de suscripciones con registro para reembolso.
+
+#### Flujo de Cancelación
+```mermaid
+sequenceDiagram
+participant U as Usuario
+participant S as suscripcionService
+participant DB as Database
+participant R as SuscripcionCancelada
+
+U->>S: softDelete(suscripcionId)
+S->>DB: Buscar suscripción
+DB-->>S: Suscripción encontrada
+S->>DB: activo = false
+S->>DB: Decrementar suscriptores_actuales
+S->>DB: Buscar pagos realizados
+DB-->>S: Lista de pagos
+S->>S: Calcular montoTotalPagado
+S->>R: Crear registro de cancelación
+R-->>S: ✅ Registro creado
+S-->>U: Suscripción cancelada
+```
+
+**Datos guardados para reembolso:**
+```javascript
+{
+  id_suscripcion_original: 123,
+  id_usuario: 45,
+  id_proyecto: 10,
+  meses_pagados: 8,
+  monto_pagado_total: 24000.00,
+  fecha_cancelacion: "2025-10-15"
+}
+```
+
+> 💡 **Uso:** El equipo administrativo usa esta tabla para procesar reembolsos.
+
+---
+
+### 💸 18. Servicio de Transacciones (transaccionService)
+
+**Propósito:** Motor central de pagos y confirmaciones.
+
+#### Método Crítico: `confirmarTransaccion`
+
+**Switch de Lógica de Negocio:**
+```javascript
+switch (transaccion.tipo_transaccion) {
+  case "pago_suscripcion_inicial":
+    // 1. Crear SuscripcionProyecto
+    // 2. Vincular Pago
+    // 3. Decrementar meses_a_pagar
+    // 4. Crear ResumenCuenta
+    // 5. Actualizar resumen
+    break;
+
+  case "mensual":
+    // 1. Marcar Pago como pagado
+    // 2. Decrementar meses_a_pagar
+    // 3. Actualizar ResumenCuenta
+    break;
+
+  case "directo":
+    // 1. Confirmar Inversión
+    // 2. Finalizar Proyecto (si es tipo directo)
+    break;
+
+  case "Puja":
+    // 1. Aplicar excedente (procesarPujaGanadora)
+    // 2. Liberar tokens de perdedores
+    // 3. Marcar puja como pagada
+    break;
+}
+```
+
+#### Gestión de Saldo (Billetera)
+
+| Operación | Efecto en Saldo |
+|-----------|-----------------|
+| **Pago exitoso** | `-monto` (sale dinero) |
+| **Reembolso** | `+monto` (entra dinero) |
+```javascript
+// Confirmar pago
+await resumenCuentaService.actualizarSaldoGeneral(
+  userId,
+  -transaccion.monto // Resta
+);
+
+// Revertir pago
+await resumenCuentaService.actualizarSaldoGeneral(
+  userId,
+  transaccion.monto // Suma
+);
+```
+
+---
+
+### 👤 19. Servicio de Usuarios (usuarioService)
+
+**Propósito:** Gestión de cuentas y seguridad.
+
+#### Tokens de Seguridad
+
+| Tipo | Vigencia | Uso |
+|------|----------|-----|
+| `confirmacion_token` | 24 horas | Activar cuenta |
+| `reset_password_token` | 1 hora | Recuperar contraseña |
+
+#### Método: `cleanUnconfirmedAccounts`
+
+**Limpieza automática (Cron Job):**
+```javascript
+// Elimina cuentas no confirmadas después de 7 días
+const cuentasEliminadas = await Usuario.destroy({
+  where: {
+    confirmado_email: false,
+    createdAt: {
+      [Op.lt]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    }
+  }
+});
+```
+
+> 🧹 **Beneficio:** Mantiene la base de datos limpia de registros abandonados.
+
+---
+
+## 📚 Flujos Completos de Negocio
+
+### 🎯 Flujo 1: Inversión Directa
+```mermaid
+sequenceDiagram
+participant U as Usuario
+participant F as Frontend
+participant B as Backend
+participant MP as Mercado Pago
+participant DB as Database
+
+U->>F: Selecciona proyecto tipo "directo"
+F->>B: POST /api/inversiones {monto, proyectoId}
+B->>DB: Validar proyecto (estado, tipo)
+DB-->>B: ✅ Proyecto válido
+B->>DB: Crear Inversion (estado: "pendiente")
+B->>DB: Crear Transaccion (tipo: "directo")
+B->>MP: createPaymentSession
+MP-->>B: {checkoutUrl, preferenceId}
+B->>DB: Crear/Actualizar PagoMercado
+DB-->>B: ✅
+B-->>F: {checkoutUrl}
+F->>U: Redirigir a Mercado Pago
+U->>MP: Completar pago
+MP->>B: Webhook (approved)
+B->>DB: confirmarTransaccion
+B->>DB: Actualizar Inversion (estado: "pagado")
+B->>DB: Actualizar Proyecto (estado: "Finalizado")
+B-->>MP: 200 OK
+Note over B,DB: El proyecto se marca como<br/>Finalizado porque era<br/>tipo "directo"
+```
+
+---
+
+### 💳 Flujo 2: Suscripción Mensual (Primera Cuota)
+```mermaid
+sequenceDiagram
+participant U as Usuario
+participant F as Frontend
+participant B as Backend
+participant MP as Mercado Pago
+participant DB as Database
+
+U->>F: Suscribirse a proyecto tipo "mensual"
+F->>B: POST /api/suscripciones
+B->>DB: Validar proyecto
+B->>DB: Crear Pago Mes 1 (estado: "pendiente")
+B->>DB: Crear Transaccion (tipo: "pago_suscripcion_inicial")
+B->>MP: createPaymentSession
+MP-->>B: {checkoutUrl}
+B-->>F: {checkoutUrl}
+F->>U: Redirigir a Mercado Pago
+U->>MP: Pagar primera cuota
+MP->>B: Webhook (approved)
+B->>DB: confirmarTransaccion
+B->>DB: Crear SuscripcionProyecto
+B->>DB: meses_a_pagar = plazo_inversion - 1
+B->>DB: Incrementar suscripciones_actuales
+B->>DB: ¿Alcanzó obj_suscripciones?
+alt Objetivo alcanzado
+    B->>DB: estado_proyecto = "En proceso"
+    B->>DB: Notificar a todos los usuarios
+end
+B->>DB: Crear ResumenCuenta
+B->>DB: Actualizar ResumenCuenta
+B-->>MP: 200 OK
+```
+
+---
+
+### 🏆 Flujo 3: Subasta de Lote
+```mermaid
+graph TD
+A[Lote activo] --> B[Usuario 1 puja $5,000]
+B --> C[Usuario 2 puja $6,000]
+C --> D[Usuario 3 puja $7,500]
+D --> E[Admin finaliza subasta]
+E --> F[endAuction]
+F --> G[Usuario 3 = Ganador]
+G --> H[Plazo: 90 días para pagar]
+H --> I{¿Pagó?}
+I -->|Sí| J[procesarPujaGanadora]
+J --> K[Aplicar excedente]
+K --> L[Liberar tokens U1 y U2]
+L --> M[FIN ✅]
+I -->|No| N[procesarImpagoLote]
+N --> O[Intentos++]
+O --> P{¿Intentos <= 3?}
+P -->|Sí| Q[Reasignar a Usuario 2]
+Q --> H
+P -->|No| R[prepararLoteParaReingreso]
+R --> S[Limpiar y reiniciar]
+S --> M
+```
+
+---
+
+### 💰 Flujo 4: Aplicación de Excedente de Puja
+```javascript
+/**
+ * Ejemplo: Usuario gana con puja de $10,000
+ * Precio base del lote: $4,000
+ * Excedente: $6,000
+ */
+
+// Estado de la suscripción:
+// - 3 cuotas pendientes de $1,000 c/u
+// - meses_a_pagar: 12
+
+// Paso 1: Cubrir pagos pendientes
+const pagosPendientes = [
+  { id: 1, monto: 1000 },
+  { id: 2, monto: 1000 },
+  { id: 3, monto: 1000 }
+];
+
+let excedente = 6000;
+
+// Marcar como "cubierto_por_puja"
+for (const pago of pagosPendientes) {
+  if (excedente >= pago.monto) {
+    await pago.update({ estado_pago: 'cubierto_por_puja' });
+    excedente -= pago.monto; // $6,000 → $5,000 → $4,000 → $3,000
+  }
+}
+
+// Paso 2: Pre-pagar meses futuros
+const cuotaMensual = 1000;
+while (excedente >= cuotaMensual && suscripcion.meses_a_pagar > 0) {
+  await suscripcion.decrement('meses_a_pagar');
+  excedente -= cuotaMensual; // $3,000 → $2,000 → $1,000 → $0
+}
+
+// Paso 3: Saldo a favor
+if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
+  await suscripcion.increment('saldo_a_favor', { by: excedente });
+}
+
+// Paso 4: Excedente de visualización
+if (suscripcion.meses_a_pagar === 0 && excedente > 0) {
+  await lote.update({ excedente_visualizacion: excedente });
+}
+
+// Resultado:
+// - 3 cuotas cubiertas
+// - 3 meses pre-pagados (12 → 9)
+// - meses_a_pagar: 9
+// - saldo_a_favor: $0
+```
+
+---
+
+### 📅 Flujo 5: Generación Automática de Cuotas (Cron Job)
+```javascript
+/**
+ * Se ejecuta el día 1 de cada mes a las 00:00
+ */
+
+// Buscar suscripciones activas con meses pendientes
+const suscripciones = await SuscripcionProyecto.findAll({
+  where: {
+    activo: true,
+    meses_a_pagar: { [Op.gt]: 0 }
+  },
+  include: [{ model: Proyecto }]
+});
+
+for (const suscripcion of suscripciones) {
+  // Generar el pago del próximo mes
+  await pagoService.generarPagoMensualConDescuento(suscripcion.id);
+}
+
+/**
+ * generarPagoMensualConDescuento hace:
+ * 1. Buscar el último pago para determinar el mes
+ * 2. Aplicar saldo_a_favor si existe
+ * 3. Crear el Pago con fecha_vencimiento = día 10
+ * 4. Si saldo cubre todo: estado = "cubierto_por_puja"
+ * 5. Si no: estado = "pendiente"
+ */
+
+📋 Documentación de Controladores y Rutas API
+📑 Índice de Controladores
+#ControladorPropósitoSección1auth.controller.jsAutenticación y seguridad de accesoVer2auth2fa.controller.jsConfiguración de autenticación de dos factoresVer3contrato.controller.jsGestión de contratos y seguridad documentalVer4cuota_mensual.controller.jsGestión de cuotas mensualesVer5imagen.controller.jsGestión de archivos multimediaVer6inversion.controller.jsInversiones y checkout seguroVer7lote.controller.jsLotes y subastasVer8mensaje.controller.jsSistema de mensajería internaVer9pago.controller.jsGestión de pagos y checkout con 2FAVer10pagoMercado.controller.jsIntegración con Mercado PagoVer11proyecto.controller.jsGestión de proyectosVer12puja.controller.jsSistema de pujas y subastasVer13redireccion.controller.jsRedirección post-pagoVer14resumen_cuenta.controller.jsResúmenes de cuentaVer15suscripcion_proyecto.controller.jsSuscripciones a proyectosVer16suscripcion.controller.jsGestión de suscripciones genéricasVer17transaccion.controller.jsTransacciones y flujo de pagoVer18usuario.controller.jsGestión de usuariosVer
+
+7️⃣ Controladores y Rutas
+¿Qué es un Controlador?
+Los controladores son la capa de orquestación entre las peticiones HTTP del frontend y la lógica de negocio (servicios). Actúan como intermediarios que:
+
+✅ Validan los datos de entrada
+✅ Llaman a los servicios correspondientes
+✅ Formatean las respuestas HTTP
+✅ Manejan errores de forma consistente
+
+
+7.1. Autenticación (auth.controller.js)
+Descripción
+Maneja el flujo más crítico de la API: autenticación, gestión de contraseñas, tokens JWT, estados de cuenta y Autenticación de Doble Factor (2FA).
+Funciones del Controlador
+FunciónPropósitoLógica CríticaCódigos HTTPregisterRegistra un nuevo usuario1. Hashea la contraseña con authService.hashPassword()<br>2. Persiste el usuario con usuarioService.create()<br>3. Genera y envía token de confirmación por email201 Created<br>400 Bad RequestloginInicia sesión1. Verifica credenciales con authService.comparePassword()<br>2. Bloquea si cuenta está inactiva o sin confirmar (403)<br>3. Si 2FA activo: emite twoFaToken temporal (5 min) → 202<br>4. Si NO 2FA: emite JWT de sesión → 200200 OK<br>202 Accepted (2FA)<br>401 Unauthorized<br>403 Forbiddenverify2FACompleta login tras 2FA1. Valida twoFaToken temporal<br>2. Verifica código TOTP con auth2faService.verifyToken()<br>3. Emite JWT de sesión final200 OK<br>401 UnauthorizedforgotPasswordRecuperación de contraseñaLlama a usuarioService.generatePasswordResetToken() y envía email.<br>⚠️ Siempre devuelve 200 (evita enumeración de emails)200 OKresetPasswordAplica nueva contraseña1. Verifica validez y expiración del token<br>2. Hashea nueva contraseña<br>3. Actualiza BD y limpia tokens200 OK<br>400 Bad RequestconfirmarEmailActiva la cuentaLlama a usuarioService.confirmEmail() para cambiar confirmado_email a true200 OK<br>400 Bad RequestlogoutCierra sesiónConfirma cierre al cliente.<br>⚠️ El frontend debe eliminar el JWT200 OK
+Endpoints de Autenticación
+POST   /api/auth/register                    → authController.register
+POST   /api/auth/login                       → authController.login
+POST   /api/auth/2fa/verify                  → authController.verify2FA
+POST   /api/auth/forgot-password             → authController.forgotPassword
+POST   /api/auth/reset-password/:token       → authController.resetPassword
+POST   /api/auth/reenviar_confirmacion       → authController.resendConfirmation
+GET    /api/auth/confirmar_email/:token      → authController.confirmarEmail
+POST   /api/auth/logout [🔒]                 → authController.logout
+POST   /api/auth/2fa/generate-secret [🔒]    → auth2faController.generate2FASecret
+POST   /api/auth/2fa/enable [🔒]             → auth2faController.verifyAndEnable2FA
+POST   /api/auth/2fa/disable [🔒]            → auth2faController.disable2FA
+
+🔒 = Requiere authenticate middleware (JWT válido)
+
+
+7.2. Configuración 2FA (auth2fa.controller.js)
+Descripción
+Gestiona la activación, desactivación y verificación de Autenticación de Dos Factores (TOTP). Todas las operaciones requieren JWT válido.
+Funciones del Controlador
+FunciónPropósitoLógica CríticaCódigos HTTPgenerate2FASecretGenera QR para setup inicial1. Valida que 2FA NO esté habilitado ya<br>2. Llama a auth2faService.generateSecret() con email del usuario<br>3. Almacena secret temporalmente en twofa_secret (BD)200 OK (devuelve otpauthUrl y secret)<br>400 Bad RequestverifyAndEnable2FAActiva 2FA permanentemente1. Valida que el secret exista en BD<br>2. Verifica código TOTP con auth2faService.verifyToken()<br>3. Llama a auth2faService.enable2FA() para setear is_2fa_enabled = true200 OK<br>401 Unauthorized<br>400 Bad Requestdisable2FADesactiva 2FA1. Requiere contraseña + código TOTP actual<br>2. auth2faService.disable2FA() compara contraseña y verifica TOTP<br>3. Si ambos correctos: is_2fa_enabled = false y limpia twofa_secret200 OK<br>400 Bad Request
+Flujo de Activación 2FA
+mermaidgraph LR
+    A[Usuario solicita 2FA] --> B[generate2FASecret]
+    B --> C[Mostrar QR al usuario]
+    C --> D[Usuario escanea con app]
+    D --> E[Usuario ingresa código de prueba]
+    E --> F[verifyAndEnable2FA]
+    F -->|Código válido| G[2FA activado ✅]
+    F -->|Código inválido| E
+```
+
+---
+
+## 7.3. Contratos (`contrato.controller.js`)
+
+### Descripción
+
+Centraliza la gestión de contratos y firmas, aplicando reglas estrictas de autorización y garantizando integridad mediante hashes criptográficos.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `upload` | Sube plantilla de contrato | 1. **Solo Admin** (`req.user.role === 'admin'`)<br>2. Calcula `hash_archivo_original` del archivo<br>3. Si falla registro, elimina archivo físico | **201** Created<br>**403** Forbidden<br>**400** Bad Request |
+| `sign` | Registra contrato firmado | 1. Verifica que usuario sea dueño de `id_inversion` o `id_suscripcion`<br>2. Calcula `hash_documento_firmado`<br>3. Llama a `contratoService.registerSignature()`<br>4. Limpia archivo si falla | **200** OK<br>**403** Forbidden<br>**404** Not Found |
+| `findMyContracts` | Lista contratos del usuario | Llama a `contratoService.findByUserId(userId)` | **200** OK |
+| `findById` | Obtiene detalles de contrato | 1. Verifica integridad (`integrity_compromised`)<br>2. Autoriza si: es Admin, es Firmante, o tiene Inversión/Suscripción<br>3. Elimina datos sensibles antes de enviar | **200** OK<br>**409** Conflict<br>**403** Forbidden |
+| `download` | Descarga segura del archivo | Aplica mismas validaciones que `findById` + `res.download()` | **200** OK<br>**409** Conflict<br>**403** Forbidden |
+| `softDelete` | Marca contrato como inactivo | Llama a `contratoService.softDelete(id)` | **200** OK<br>**404** Not Found |
+
+### Endpoints de Contratos
+```
+POST   /api/contratos/upload [🔒👑]                     → upload
+POST   /api/contratos/firmar [🔒]                       → sign
+GET    /api/contratos/ [🔒👑]                           → findAll
+GET    /api/contratos/mis_contratos [🔒]                → findMyContracts
+GET    /api/contratos/descargar/:id [🔒]                → download
+GET    /api/contratos/:id [🔒]                          → findById
+DELETE /api/contratos/:id [🔒👑]                        → softDelete
+
+👑 = Requiere rol admin (además de autenticación)
+
+Verificación de Integridad
+javascript// El sistema compara hashes automáticamente
+const hashActual = await generateFileHash(contrato.url_archivo);
+
+if (hashActual !== contrato.hash_archivo_original) {
+  // ⚠️ ARCHIVO MODIFICADO - Integridad comprometida
+  contrato.integrity_compromised = true;
+}
+```
+
+---
+
+## 7.4. Cuotas Mensuales (`cuota_mensual.controller.js`)
+
+### Descripción
+
+Gestiona la creación y consulta de cuotas asociadas a proyectos. **Creación y modificación restringidas a Admin**.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `create` | Registra nueva cuota | 1. Valida existencia de `id_proyecto`<br>2. Obtiene datos del proyecto con `proyectoService.findById()`<br>3. Llama a `cuotaMensualService.createAndSetProjectAmount()` (crea cuota + ajusta monto proyecto) | **201** Created<br>**400** Bad Request<br>**404** Not Found |
+| `findByProjectId` | Lista cuotas de un proyecto | Llama a `cuotaMensualService.findByProjectId(id_proyecto)` | **200** OK |
+| `findLastByProjectId` | Obtiene cuota más reciente | Llama a `cuotaMensualService.findLastByProjectId(id_proyecto)` | **200** OK<br>**404** Not Found |
+| `update` | Modifica cuota existente | Llama a `cuotaMensualService.update(id, data)` | **200** OK<br>**404** Not Found |
+| `softDelete` | Elimina lógicamente una cuota | Llama a `cuotaMensualService.softDelete(id)` | **200** OK<br>**404** Not Found |
+
+### Endpoints de Cuotas
+```
+POST   /api/cuotas/ [🔒👑]                    → create
+GET    /api/cuotas/:id_proyecto [🔒]          → findByProjectId
+GET    /api/cuotas/:id_proyecto/last [🔒]     → findLastByProjectId
+PUT    /api/cuotas/:id [🔒👑]                 → update
+DELETE /api/cuotas/:id [🔒👑]                 → softDelete
+```
+
+---
+
+## 7.5. Imágenes (`imagen.controller.js`)
+
+### Descripción
+
+Administra subida, consulta y eliminación lógica de imágenes asociadas a Proyectos y Lotes. Utiliza **Multer** para manejo de archivos.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `create` | Sube imagen y registra en BD | 1. Verifica que `req.file` exista (Multer)<br>2. Valida asociación a `id_proyecto` o `id_lote`<br>3. Usa `req.file.path` como URL para `imagenService.create()` | **201** Created<br>**400** Bad Request |
+| `getImagesByProjectId` | Lista imágenes activas de proyecto | Llama a `imagenService.findByProjectIdActivo(id_proyecto)` | **200** OK |
+| `getImagesByLoteId` | Lista imágenes activas de lote | Llama a `imagenService.findByLoteIdActivo(id_lote)` | **200** OK |
+| `findByIdActivo` | Obtiene imagen activa por ID | Llama a `imagenService.findByIdActivo(id)` (ruta para usuarios) | **200** OK<br>**404** Not Found |
+| `findById` | Obtiene imagen por ID (incl. inactivas) | Llama a `imagenService.findById(id)` (solo Admin) | **200** OK<br>**404** Not Found |
+| `findAllActivo` | Lista todas las imágenes activas | Llama a `imagenService.findAllActivo()` | **200** OK |
+| `findAll` | Lista todas las imágenes (incl. inactivas) | Llama a `imagenService.findAll()` (solo Admin) | **200** OK |
+| `update` | Actualiza metadatos de imagen | Llama a `imagenService.update(id, data)` (no maneja nuevo archivo) | **200** OK<br>**404** Not Found |
+| `softDelete` | Marca imagen como eliminada | Llama a `imagenService.softDelete(id)` (`activo: false`) | **200** OK<br>**404** Not Found |
+
+### Endpoints de Imágenes
+```
+POST   /api/imagenes/ [🔒👑 + Multer]            → create
+GET    /api/imagenes/proyecto/:idProyecto [🔒]   → getImagesByProjectId
+GET    /api/imagenes/lote/:idLote [🔒]           → getImagesByLoteId
+GET    /api/imagenes/activas [🔒]                → findAllActivo
+GET    /api/imagenes/ [🔒👑]                     → findAll
+GET    /api/imagenes/admin/:id [🔒👑]            → findById
+GET    /api/imagenes/:id [🔒]                    → findByIdActivo
+PUT    /api/imagenes/:id [🔒👑]                  → update
+DELETE /api/imagenes/:id [🔒👑]                  → softDelete
+```
+
+> ⚠️ **Orden de rutas crítico**: rutas con prefijos (`/proyecto/`, `/lote/`, `/admin/`) antes que `/:id`
+
+---
+
+## 7.6. Inversiones (`inversion.controller.js`)
+
+### Descripción
+
+Maneja el ciclo de vida de inversiones, implementando **control de seguridad 2FA** antes de la redirección a la pasarela de pago.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `create` | Registra inversión pendiente | Llama a `inversionService.crearInversion(data)`. Solo registra intención | **201** Created<br>**400** Bad Request |
+| `requestCheckoutInversion` | Inicia proceso de pago (Paso 1) | 1. Verifica que inversión exista, pertenezca al usuario y esté pendiente<br>2. **Si 2FA activo**: devuelve 202 (requiere código)<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK (redirect)<br>**202** Accepted (2FA)<br>**403** Forbidden |
+| `confirmarInversionCon2FA` | Ejecuta transacción tras 2FA (Paso 2) | 1. Llama a `auth2faService.verifyToken()` con `codigo_2fa`<br>2. Si válido: llama a `TransaccionService.iniciarTransaccionYCheckout()`<br>3. Devuelve `redirectUrl` | **200** OK<br>**401** Unauthorized<br>**403** Forbidden |
+| `findMyInversions` | Lista inversiones del usuario | Llama a `inversionService.findByUserId(userId)` | **200** OK |
+| `findMyInversionById` | Obtiene inversión específica del usuario | Llama a `inversionService.findByIdAndUserId(id, userId)` | **200** OK<br>**404** Not Found |
+| `findAll` | Lista todas las inversiones (Admin) | Llama a `inversionService.findAll()` | **200** OK |
+| `softDeleteMyInversion` | Elimina inversión propia (si pendiente) | Llama a `inversionService.softDeleteByIdAndUserId(id, userId)` | **204** No Content<br>**404** Not Found |
+| `softDelete` | Elimina inversión (Admin) | Llama a `inversionService.softDelete(id)` | **204** No Content<br>**404** Not Found |
+
+### Endpoints de Inversiones
+```
+POST   /api/inversion/ [🔒]                              → create
+POST   /api/inversion/iniciar-pago/:idInversion [🔒]     → requestCheckoutInversion
+POST   /api/inversion/confirmar-2fa [🔒]                 → confirmarInversionCon2FA
+GET    /api/inversion/mis_inversiones [🔒]               → findMyInversions
+GET    /api/inversion/ [🔒👑]                            → findAll
+GET    /api/inversion/activas [🔒👑]                     → findAllActivo
+GET    /api/inversion/:id [🔒]                           → findById
+PUT    /api/inversion/:id [🔒👑]                         → update
+DELETE /api/inversion/:id [🔒👑]                         → softDelete
+Flujo de Checkout con 2FA
+mermaidsequenceDiagram
+    participant U as Usuario
+    participant F as Frontend
+    participant B as Backend
+    participant MP as Mercado Pago
+
+    U->>F: Clic en "Invertir"
+    F->>B: POST /api/inversion/iniciar-pago/:id
+    alt Usuario con 2FA activo
+        B-->>F: 202 Accepted {requires2FA: true}
+        F->>U: Solicitar código 2FA
+        U->>F: Ingresa código
+        F->>B: POST /api/inversion/confirmar-2fa
+        B->>B: Verificar código
+        B-->>F: 200 OK {redirectUrl}
+    else Usuario sin 2FA
+        B-->>F: 200 OK {redirectUrl}
+    end
+    F->>MP: Redirigir a checkout
+```
+
+---
+
+## 7.7. Lotes y Subastas (`lote.controller.js`)
+
+### Descripción
+
+Gestiona el ciclo completo de lotes de inversión y el proceso de subasta asociado.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `create` | Crea nuevo lote | Llama a `loteService.create(data)` | **201** Created<br>**400** Bad Request |
+| `findAllActivo` | Lista lotes disponibles (activos) | Llama a `loteService.findAllActivo()` | **200** OK |
+| `findByIdActivo` | Obtiene lote específico (solo activo) | Llama a `loteService.findByIdActivo(id)` | **200** OK<br>**404** Not Found |
+| `findAll` | Lista todos los lotes (incl. inactivos) | Llama a `loteService.findAll()` (solo Admin) | **200** OK |
+| `findById` | Obtiene lote por ID (incl. inactivos) | Llama a `loteService.findById(id)` (solo Admin) | **200** OK<br>**404** Not Found |
+| `update` | Actualiza datos del lote | Llama a `loteService.update(id, data)` | **200** OK<br>**404** Not Found |
+| `softDelete` | Elimina lógicamente un lote | Llama a `loteService.softDelete(id)` | **200** OK<br>**404** Not Found |
+| `startAuction` | Inicia proceso de subasta | 1. Actualiza `estado_subasta` a 'activa'<br>2. Obtiene usuarios suscritos con `SuscripcionProyectoService`<br>3. Envía notificación a todos los suscriptores vía `mensajeService.crear()` | **200** OK<br>**404** Not Found |
+| `endAuction` | Finaliza subasta y determina ganador | Llama a `loteService.endAuction(id)` (lógica compleja de asignación)<br>Si hay ganador, devuelve transacción creada | **200** OK<br>**400** Bad Request |
+
+### Endpoints de Lotes
+```
+POST   /api/lotes/ [🔒👑]                     → create
+GET    /api/lotes/activos [🔒]                → findAllActivo
+GET    /api/lotes/ [🔒👑]                     → findAll
+POST   /api/lotes/:id/start_auction [🔒👑]    → startAuction
+PUT    /api/lotes/:id/end [🔒👑]              → endAuction
+GET    /api/lotes/:id/activo [🔒]             → findByIdActivo
+GET    /api/lotes/:id [🔒👑]                  → findById
+PUT    /api/lotes/:id [🔒👑]                  → update
+DELETE /api/lotes/:id [🔒👑]                  → softDelete
+```
+
+### Flujo de Subasta
+```
+1. Admin inicia subasta → startAuction
+   ↓
+2. Usuarios realizan pujas (estado: 'activa')
+   ↓
+3. Admin finaliza subasta → endAuction
+   ↓
+4. Sistema determina ganador (puja más alta)
+   ↓
+5. Ganador recibe notificación + 90 días para pagar
+   ↓
+6a. ✅ Paga → procesarPujaGanadora (aplica excedente)
+6b. ❌ No paga → procesarImpagoLote (reasigna a 2º postor)
+```
+
+---
+
+## 7.8. Mensajería (`mensaje.controller.js`)
+
+### Descripción
+
+Sistema de mensajería interna privada entre usuarios. **Todas las operaciones requieren autenticación**.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `obtenerMisMensajes` | Lista mensajes recibidos y enviados | Llama a `mensajeService.obtenerPorUsuario(userId)` | **200** OK |
+| `enviarMensaje` | Envía mensaje a otro usuario | Obtiene `id_remitente` de `req.user.id`<br>Llama a `mensajeService.crear()` | **201** Created<br>**400** Bad Request |
+| `obtenerConteoNoLeidos` | Cuenta mensajes no leídos | Llama a `mensajeService.contarNoLeidos(userId)`<br>Devuelve `{ conteo: N }` | **200** OK |
+| `obtenerConversacion` | Historial con usuario específico | Llama a `mensajeService.obtenerConversacion(userId, id_receptor)` | **200** OK |
+| `marcarComoLeido` | Marca mensaje como leído | Llama a `mensajeService.marcarComoLeido(id, userId)`<br>⚠️ Valida que el mensaje pertenezca al usuario | **200** OK<br>**404** Not Found |
+
+### Endpoints de Mensajería
+```
+GET    /api/mensajes/ [🔒]                    → obtenerMisMensajes
+POST   /api/mensajes/ [🔒]                    → enviarMensaje
+GET    /api/mensajes/no_leidos [🔒]           → obtenerConteoNoLeidos
+PUT    /api/mensajes/leido/:id [🔒]           → marcarComoLeido
+GET    /api/mensajes/:id_receptor [🔒]        → obtenerConversacion
+Usuario del Sistema
+javascript// Mensajes automáticos del sistema (ID = 1)
+await mensajeService.enviarMensajeSistema(
+  userId,
+  "¡Felicidades! Has ganado el Lote #10."
+);
+// El remitente será siempre el ID 1 (Sistema)
+```
+
+---
+
+## 7.9. Pagos (`pago.controller.js`)
+
+### Descripción
+
+Gestiona pagos mensuales con flujo de bifurcación de seguridad para usuarios con 2FA activo.
+
+### Funciones del Controlador
+
+| Función | Propósito | Lógica Crítica | Códigos HTTP |
+|---------|-----------|----------------|--------------|
+| `requestCheckout` | Inicia proceso de pago (Paso 1) | 1. Llama a `pagoService.getValidPaymentDetails(pagoId, userId)`<br>2. **Si 2FA activo**: devuelve 202<br>3. **Si NO 2FA**: genera checkout y devuelve `redirectUrl` | **200** OK<br>**202** Accepted<br>**403** Forbidden<br>**409** Conflict |
+| `confirmarPagoYContinuar` | Continúa checkout tras 2FA (Paso 2) | 1. Verifica código con `auth2faService.verifyToken()`<br>2. Si correcto: genera checkout con `transaccionService.iniciarTransaccionYCheckout()` | **200** OK<br>**401** Unauthorized<br>**403** Forbidden |
+| `findMyPayments` | Lista pagos del usuario | Llama a `pagoService.findByUserId(userId)` | **200** OK |
+| `triggerManualPayment` | Genera pago manual (Admin) | Llama a `pagoService.generarPagoMensualConDescuento(id_suscripcion)` | **201** Created<br>**400** Bad Request |
+| `findAll` | Lista todos los pagos (Admin) | Llama a `pagoService.findAll()` | **200** OK |
+| `findById` | Obtiene pago por ID (Admin) | Llama a `pagoService.findById(id)` | **200** OK<br>**404** Not Found |
+| `update` | Actualiza pago (Admin) | Llama a `pagoService.update(id, data)` | **200** OK<br>**404** Not Found |
+| `softDelete` | Elimina lógicamente pago (Admin) | Llama a `pagoService.softDelete(id)` | **200** OK<br>**404** Not Found |
+
+### Endpoints de Pagos
+```
+GET    /api/pagos/mis_pagos [🔒]                     → findMyPayments
+POST   /api/pagos/pagar-mes/:id [🔒]                 → requestCheckout
+POST   /api/pagos/confirmar-pago-2fa [🔒]            → confirmarPagoYContinuar
+GET    /api/pagos/ [🔒👑]                            → findAll
+POST   /api/pagos/trigger-manual-payment [🔒👑]      → triggerManualPayment
+GET    /api/pagos/:id [🔒👑]                         → findById
+PUT    /api/pagos/:id [🔒👑]                         → update
+DELETE /api/pagos/:id [🔒👑]                         → softDelete
+
+
+
+
+
+
