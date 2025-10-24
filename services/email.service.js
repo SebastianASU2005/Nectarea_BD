@@ -97,20 +97,20 @@ const emailService = {
    * @param {string} token - Token de confirmación.
    */ async sendConfirmationEmail(user, token) {
     // ⚠️ La URL base DEBE ser la del frontend que procesa la confirmación.
-    const confirmationLink = `http://localhost:3000/api/auth/confirmar_email/${token}`;
+    const confirmationLink = `${process.env.FRONTEND_URL}/api/auth/confirmar_email/${token}`;
     const subject = "¡Bienvenido! Confirma tu Cuenta de Usuario";
 
     const html = `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd;">
-                <h2>Hola ${user.nombre},</h2>
-                <p>Gracias por registrarte. Por favor, haz clic para confirmar tu correo y activar tu cuenta:</p>
-                <a href="${confirmationLink}" style="display: inline-block; padding: 10px 20px; margin: 15px 0; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">
-                    Confirmar mi Correo Electrónico
-                </a>
-                <p>Este enlace expirará pronto. Si no puedes hacer clic, copia y pega esta URL:</p>
-                <small>${confirmationLink}</small>
-            </div>
-        `;
+            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd;">
+                <h2>Hola ${user.nombre},</h2>
+                <p>Gracias por registrarte. Por favor, haz clic para confirmar tu correo y activar tu cuenta:</p>
+                <a href="${confirmationLink}" style="display: inline-block; padding: 10px 20px; margin: 15px 0; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">
+                    Confirmar mi Correo Electrónico
+                </a>
+                <p>Este enlace expirará pronto. Si no puedes hacer clic, copia y pega esta URL:</p>
+                <small>${confirmationLink}</small>
+            </div>
+        `;
 
     await this.sendEmail(
       user.email,
@@ -376,19 +376,20 @@ const emailService = {
    * @param {string} token - Token de restablecimiento.
    */ async sendPasswordResetEmail(user, token) {
     // ⚠️ La URL base DEBE ser la del frontend que procesa el token de reset.
-    const resetLink = `http://localhost:3000/restablecer_contrasena?token=${token}`;
+    // MODIFICADO: Uso de process.env.FRONTEND_URL
+    const resetLink = `${process.env.FRONTEND_URL}/restablecer_contrasena?token=${token}`;
     const subject = "Solicitud de Restablecimiento de Contraseña";
 
     const html = `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ffc107; border-left: 5px solid #ffc107;">
-                <h2 style="color: #ffc107;">Hola ${user.nombre},</h2>
-                <p>Recibimos una solicitud para restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
-                <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; margin: 15px 0; background-color: #ffc107; color: black; text-decoration: none; border-radius: 5px;">
-                    Restablecer Contraseña
-                </a>
-                <p>Si no solicitaste esto, puedes ignorar este correo. El enlace expira en 1 hora.</p>
-            </div>
-        `;
+            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ffc107; border-left: 5px solid #ffc107;">
+                <h2 style="color: #ffc107;">Hola ${user.nombre},</h2>
+                <p>Recibimos una solicitud para restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
+                <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; margin: 15px 0; background-color: #ffc107; color: black; text-decoration: none; border-radius: 5px;">
+                    Restablecer Contraseña
+                </a>
+                <p>Si no solicitaste esto, puedes ignorar este correo. El enlace expira en 1 hora.</p>
+            </div>
+        `;
 
     await this.sendEmail(
       user.email,
