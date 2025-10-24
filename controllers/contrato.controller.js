@@ -1,25 +1,40 @@
 // Importaciones requeridas
 const contratoService = require("../services/contrato.service");
 const Inversion = require("../models/inversion"); // Usado para verificación de autorización
-const Suscripcion = require("../models/suscripcion_proyecto");
+const Suscripcion = require("../models/suscripcion_proyecto"); // Usado para verificación de autorización
 const fs = require("fs").promises; // Necesario para limpiar archivos (fs.unlink)
 const path = require("path"); // Necesario para gestionar rutas de archivos
 
 // --- IMPORTACIÓN DE LA FUNCIÓN CENTRALIZADA ---
+// Asume que generateFileHash lee el archivo físico y devuelve un hash SHA256 o similar
 const { generateFileHash } = require("../utils/generateFileHash");
 
+/**
+ * Controlador de Express para gestionar el ciclo de vida de los Contratos.
+ * Incluye subida de plantillas, firma digital con verificación de integridad y descarga segura.
+ */
 const contratoController = {
-  // Controlador para subir un archivo PDF y crear el registro en la BD (CONTRATO BASE / PLANTILLA)
+  // ===================================================================
+  // 📄 GESTIÓN DE LA PLANTILLA/CONTRATO BASE (Admin)
+  // ===================================================================
+
+  /**
+   * @async
+   * @function upload
+   * @description Sube un archivo PDF (plantilla de contrato) y crea el registro en la BD.
+   * Restringido solo para administradores. Calcula el hash del archivo original.
+   * @param {object} req - Objeto de solicitud de Express (con `req.file` de Multer y `id_proyecto` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async upload(req, res) {
+    // La subida del archivo ya ocurrió si llegamos aquí (gracias al middleware de Multer)
     try {
       // 1. Verificación de rol para subir plantillas
       if (!req.user || req.user.role !== "admin") {
-        return res
-          .status(403)
-          .json({
-            error:
-              "Acceso denegado. Solo administradores pueden subir contratos base.",
-          });
+        return res.status(403).json({
+          error:
+            "Acceso denegado. Solo administradores pueden subir contratos base.",
+        });
       }
 
       if (!req.file) {
@@ -31,21 +46,20 @@ const contratoController = {
       const { id_proyecto } = req.body;
       const url_archivo = `/uploads/${req.file.filename}`;
 
-      // CORRECCIÓN CLAVE: Usamos la RUTA FÍSICA (req.file.path) para el cálculo del hash,
-      // ya que 'generateFileHash' opera sobre el archivo real en disco.
+      // CORRECCIÓN CLAVE: Usamos la RUTA FÍSICA (req.file.path) para el cálculo del hash
       const hash_archivo_original = await generateFileHash(req.file.path);
 
       const fileData = {
         nombre_archivo: req.file.originalname,
         url_archivo: url_archivo, // URL pública de la plantilla
         id_proyecto: id_proyecto,
-        hash_archivo_original: hash_archivo_original, // Hash del archivo en disco
+        hash_archivo_original: hash_archivo_original, // Hash de seguridad
       };
 
       const nuevoContrato = await contratoService.create(fileData);
       res.status(201).json(nuevoContrato);
     } catch (error) {
-      // Si el registro falla, eliminamos el archivo subido para evitar basura
+      // Si el registro falla, eliminamos el archivo subido para evitar basura en el servidor
       if (req.file)
         await fs
           .unlink(req.file.path)
@@ -56,6 +70,18 @@ const contratoController = {
     }
   },
 
+  // ===================================================================
+  // ✍️ PROCESO DE FIRMA DIGITAL
+  // ===================================================================
+
+  /**
+   * @async
+   * @function sign
+   * @description Registra la firma de un usuario en un contrato base.
+   * Incluye autorización rigurosa y cálculo de hash del documento firmado.
+   * @param {object} req - Objeto de solicitud de Express (con `req.file` del documento firmado y metadatos en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async sign(req, res) {
     try {
       // --- 1. VERIFICACIÓN DEL ARCHIVO SUBIDO POR MULTER ---
@@ -66,13 +92,11 @@ const contratoController = {
       }
 
       // --- 2. OBTENER METADATA DEL BODY ---
-
       const { id_contrato_base, firma_digital, id_inversion, id_suscripcion } =
-        req.body; // Estos son los únicos datos que el FE nos envía además del archivo
+        req.body;
 
       if (!id_contrato_base || !firma_digital) {
-        // Si faltan datos críticos, limpiamos el archivo subido por Multer
-        await fs.unlink(req.file.path).catch(() => {});
+        await fs.unlink(req.file.path).catch(() => {}); // Limpiamos el archivo subido si faltan datos
         return res.status(400).json({
           error:
             "Faltan datos esenciales de la firma (ID del contrato base o firma_digital).",
@@ -87,8 +111,8 @@ const contratoController = {
         return res.status(404).json({ error: "Contrato base no encontrado" });
       }
 
-      // --- 3. LÓGICA DE AUTORIZACIÓN REFORZADA (Mantenemos la lógica de verificación) ---
-
+      // --- 3. LÓGICA DE AUTORIZACIÓN REFORZADA ---
+      // Solo puede firmar si existe una Inversión Paga o Suscripción Activa a su nombre
       let autorizacionValida = false;
       let tipoAutorizacion = null;
       let idAutorizacion = null;
@@ -101,7 +125,7 @@ const contratoController = {
             id: id_inversion,
             id_usuario: id_usuario_firmante,
             activo: true,
-            estado: "pagado",
+            estado: "pagado", // Requisito de estado: debe estar pagado
           },
         });
         if (inversion) {
@@ -115,7 +139,7 @@ const contratoController = {
             id: id_suscripcion,
             id_usuario: id_usuario_firmante,
             activo: true,
-            estado: "activa",
+            estado: "activa", // Requisito de estado: debe estar activa
           },
         });
         if (suscripcion) {
@@ -129,23 +153,21 @@ const contratoController = {
           ? "Firma rechazada. Debe especificar la inversión o suscripción de autorización."
           : `Acceso denegado. La ${tipoAutorizacion} asociada (ID: ${idAutorizacion}) no cumple los requisitos de estado.`;
         return res.status(403).json({ error: msg });
-      } // --- FIN LÓGICA DE AUTORIZACIÓN --- //
+      }
+      // --- FIN LÓGICA DE AUTORIZACIÓN ---
 
       // --- 4. GENERAR DATOS DE SEGURIDAD EN EL BACKEND ---
-      // CORRECCIÓN CLAVE: Usamos la RUTA FÍSICA (req.file.path) para calcular el hash del documento firmado.
+      // Calculamos el hash del archivo subido *firmado*
       const url_archivo_firmado = `/uploads/${req.file.filename}`;
-      const hash_documento_firmado = await generateFileHash(
-        req.file.path
-      );
+      const hash_documento_firmado = await generateFileHash(req.file.path);
       const nombre_archivo_firmado = req.file.originalname;
 
       // 5. DATOS FINALES DE LA FIRMA A REGISTRAR
-
       const signatureData = {
         nombre_archivo: nombre_archivo_firmado,
-        url_archivo: url_archivo_firmado, // URL generada por el Backend
-        hash_archivo_original: hash_documento_firmado, // Hash generado por el Backend
-        firma_digital: firma_digital, // La prueba criptográfica (proporcionada por el FE)
+        url_archivo: url_archivo_firmado,
+        hash_archivo_original: hash_documento_firmado, // Hash del documento firmado
+        firma_digital: firma_digital, // La prueba criptográfica del cliente
         id_usuario_firmante: id_usuario_firmante,
         estado_firma: "FIRMADO",
         fecha_firma: new Date(),
@@ -153,8 +175,7 @@ const contratoController = {
         id_suscripcion_asociada: id_suscripcion || null,
       };
 
-      // 6. REGISTRAR LA FIRMA (Actualizar el contrato base)
-
+      // 6. REGISTRAR LA FIRMA (Actualizar el contrato base, que se convierte en el contrato firmado)
       const contratoActualizado = await contratoService.registerSignature(
         id_contrato_base,
         signatureData
@@ -162,7 +183,8 @@ const contratoController = {
 
       res.status(200).json(contratoActualizado);
     } catch (error) {
-      console.error("Error al firmar contrato:", error.message); // Si hay un error en cualquier punto, limpiamos el archivo subido por Multer
+      console.error("Error al firmar contrato:", error.message);
+      // Limpiamos el archivo subido si hay un error en el proceso de firma o registro
       if (req.file)
         await fs
           .unlink(req.file.path)
@@ -176,7 +198,17 @@ const contratoController = {
     }
   },
 
-  // Controlador para obtener los contratos del usuario autenticado
+  // ===================================================================
+  // 🔍 CONSULTAS CON AUTORIZACIÓN Y VERIFICACIÓN DE INTEGRIDAD
+  // ===================================================================
+
+  /**
+   * @async
+   * @function findMyContracts
+   * @description Obtiene todos los contratos donde el usuario autenticado es el firmante.
+   * @param {object} req - Objeto de solicitud de Express (con `req.user.id`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async findMyContracts(req, res) {
     try {
       const userId = req.user.id;
@@ -187,27 +219,32 @@ const contratoController = {
     }
   },
 
-  // Controlador para obtener un contrato por su ID (con AUTORIZACIÓN y VERIFICACIÓN DE INTEGRIDAD)
+  /**
+   * @async
+   * @function findById
+   * @description Obtiene un contrato por ID. Incluye verificación de integridad del archivo
+   * y verificación de permisos de lectura (firmante, inversionista/suscriptor, admin).
+   * @param {object} req - Objeto de solicitud de Express (con `id` en `params` y `req.user.id`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async findById(req, res) {
     try {
       const { id } = req.params;
       const userId = req.user.id;
 
-      // Asumimos que el servicio ya calcula el hash actual y establece integridad_comprometida
+      // El servicio debe encargarse de calcular el hash y verificar integridad
       const contrato = await contratoService.findById(id);
 
       if (!contrato) {
         return res.status(404).json({ error: "Contrato no encontrado." });
       }
 
-      // 1. Verificación de Integridad
+      // 1. Verificación de Integridad (asumiendo que el servicio ya adjuntó `integrity_compromised`)
       if (contrato.dataValues.integrity_compromised) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "El archivo ha sido alterado y su integridad está comprometida.",
-          });
+        return res.status(409).json({
+          error:
+            "El archivo ha sido alterado y su integridad está comprometida.",
+        });
       }
 
       // 2. VERIFICACIÓN DE AUTORIZACIÓN DE LECTURA
@@ -225,39 +262,41 @@ const contratoController = {
         },
       });
 
-      // Es el firmante (si aplica) o tiene relación activa con el proyecto
       const esFirmante = contrato.id_usuario_firmante === userId;
       const isAdmin = req.user && req.user.role === "admin";
 
-      // Si no es firmante, ni administrador, ni tiene inversión/suscripción, denegamos.
       if (!esFirmante && !tieneInversion && !tieneSuscripcion && !isAdmin) {
         return res.status(403).json({
           error: "Acceso denegado. No tienes permiso para ver este contrato.",
         });
       }
 
-      // 3. PREPARACIÓN DE LA RESPUESTA (VISIBILIDAD Y SEGURIDAD)
-
+      // 3. PREPARACIÓN DE LA RESPUESTA
       const contratoData = contrato.get({ plain: true });
-      // Ocultamos datos sensibles de seguridad del backend antes de enviarlos al cliente
+      // Ocultamos datos sensibles de seguridad antes de enviarlos al cliente
       delete contratoData.firma_digital;
       delete contratoData.hash_archivo_original;
-      delete contratoData.integrity_compromised; // Ya lo validamos
+      delete contratoData.integrity_compromised; // Ya validado
 
       res.status(200).json(contratoData);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
+
   /**
+   * @async
    * @function download
-   * @description Controla la descarga segura del archivo de contrato asociado al ID, previa verificación de permisos e integridad.
-   */ async download(req, res) {
+   * @description Controla la descarga segura del archivo de contrato, previa verificación de permisos e integridad.
+   * @param {object} req - Objeto de solicitud de Express (con `id` en `params` y `req.user.id`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async download(req, res) {
     const { id } = req.params;
     const userId = req.user.id;
 
     try {
-      // Usa findById que también verifica la integridad del archivo (asumiendo que el servicio lo hace)
+      // Usa findById que también verifica la integridad del archivo
       const contrato = await contratoService.findById(id);
 
       if (!contrato || !contrato.url_archivo) {
@@ -268,31 +307,22 @@ const contratoController = {
 
       // 1. Verificación de Integridad
       if (contrato.dataValues.integrity_compromised) {
-        return res
-          .status(409)
-          .json({
-            error:
-              "El archivo ha sido alterado y su integridad está comprometida. No se permite la descarga.",
-          });
+        return res.status(409).json({
+          error:
+            "El archivo ha sido alterado y su integridad está comprometida. No se permite la descarga.",
+        });
       }
 
-      // 2. VERIFICACIÓN DE AUTORIZACIÓN DE DESCARGA
+      // 2. VERIFICACIÓN DE AUTORIZACIÓN DE DESCARGA (misma lógica que findById)
       const inversion = await Inversion.findOne({
-        where: {
-          id_usuario: userId,
-          id_proyecto: contrato.id_proyecto,
-        },
+        where: { id_usuario: userId, id_proyecto: contrato.id_proyecto },
+      });
+      const suscripcion = await Suscripcion.findOne({
+        where: { id_usuario: userId, id_proyecto: contrato.id_proyecto },
       });
 
-      const suscripcion = await Suscripcion.findOne({
-        where: {
-          id_usuario: userId,
-          id_proyecto: contrato.id_proyecto,
-        },
-      }); // Criterios de autorización: Es el firmante, O tiene inversión/suscripción, O es administrador.
-
       const esFirmante = contrato.id_usuario_firmante === userId;
-      const isAdmin = req.user && req.user.role === "admin"; // Asumiendo que el rol está en req.user
+      const isAdmin = req.user && req.user.role === "admin";
 
       if (!esFirmante && !inversion && !suscripcion && !isAdmin) {
         return res.status(403).json({
@@ -302,13 +332,11 @@ const contratoController = {
       }
 
       // 3. CONSTRUCCIÓN DE LA RUTA FÍSICA
-
       const fileName = path.basename(contrato.url_archivo);
       // Asume que 'uploads' está en el directorio raíz de la aplicación (process.cwd())
       const fullPath = path.join(process.cwd(), "uploads", fileName);
 
       // 4. ENVÍO SEGURO DEL ARCHIVO USANDO res.download()
-
       res.download(fullPath, contrato.nombre_archivo, (err) => {
         if (err) {
           console.error("Error al enviar el archivo de descarga:", err);
@@ -322,8 +350,17 @@ const contratoController = {
       console.error("Error en el controlador de descarga:", error);
       res.status(500).json({ error: "Error interno del servidor." });
     }
-  }, 
-  // Controlador para obtener todos los contratos (Admin)
+  },
+
+  // ===================================================================
+  // ⚙️ GESTIÓN ADMINISTRATIVA (Admin)
+  // ===================================================================
+
+  /**
+   * @async
+   * @function findAll
+   * @description Obtiene todos los contratos (solo para administradores).
+   */
   async findAll(req, res) {
     try {
       const contratos = await contratoService.findAll();
@@ -331,8 +368,13 @@ const contratoController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }, 
-  // Controlador para obtener todos los contratos activos
+  },
+
+  /**
+   * @async
+   * @function findAllActivo
+   * @description Obtiene todos los contratos activos (para administradores o consultas generales).
+   */
   async findAllActivo(req, res) {
     try {
       const contratos = await contratoService.findAllActivo();
@@ -340,8 +382,15 @@ const contratoController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }, 
-  // Controlador para eliminar un contrato
+  },
+
+  /**
+   * @async
+   * @function softDelete
+   * @description Elimina lógicamente un contrato.
+   * @param {object} req - Objeto de solicitud de Express (con `id` en `params`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async softDelete(req, res) {
     try {
       const contratoEliminado = await contratoService.softDelete(req.params.id);

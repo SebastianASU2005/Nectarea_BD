@@ -13,24 +13,32 @@ const UsuarioService = require("../services/usuario.service");
 const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
 
+/**
+ * Controlador para gestionar el proceso de suscripción a un proyecto,
+ * incluyendo la creación de pagos, transacciones y la implementación del punto de control 2FA.
+ */
 const suscripcionProyectoController = {
   /**
-   * Inicia el proceso de suscripción, creando el pago y la transacción iniciales en estado pendiente.
-   * 🚦 MODIFICADO: Aplica el punto de control 2FA.
+   * @async
+   * @function iniciarSuscripcion
+   * @description Inicia el proceso de suscripción, creando pagos y transacciones pendientes.
+   * Si el 2FA está activo, detiene el flujo y solicita el código 2FA.
+   * @param {object} req - Objeto de solicitud de Express (contiene `req.user.id` y `id_proyecto` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
    */
   async iniciarSuscripcion(req, res) {
+    // Iniciar transacción de DB para garantizar la atomicidad de los registros iniciales
     const t = await sequelize.transaction();
     try {
       const { id_proyecto } = req.body;
       const id_usuario = req.user && req.user.id;
 
+      // 1. Validaciones básicas
       if (!id_usuario) {
         await t.rollback();
-        return res
-          .status(401)
-          .json({
-            error: "Usuario no autenticado. Inicia sesión para continuar.",
-          });
+        return res.status(401).json({
+          error: "Usuario no autenticado. Inicia sesión para continuar.",
+        });
       }
 
       if (!id_proyecto) {
@@ -40,6 +48,7 @@ const suscripcionProyectoController = {
           .json({ error: "El ID del proyecto es requerido." });
       }
 
+      // 2. Obtener datos cruciales
       const [proyecto, user] = await Promise.all([
         Proyecto.findByPk(id_proyecto, { transaction: t }),
         UsuarioService.findById(id_usuario, { transaction: t }),
@@ -52,20 +61,25 @@ const suscripcionProyectoController = {
 
       if (proyecto.estado_proyecto === "Finalizado") {
         await t.rollback();
-        return res
-          .status(400)
-          .json({
-            error:
-              "No se puede suscribir a un proyecto que ya ha sido finalizado.",
-          });
+        return res.status(400).json({
+          error:
+            "No se puede suscribir a un proyecto que ya ha sido finalizado.",
+        });
+      }
+
+      // 🛑 NUEVA VALIDACIÓN CLAVE: Bloquear si el límite ya fue alcanzado. 🛑
+      if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
+        await t.rollback();
+        return res.status(400).json({
+          error: `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores. No se puede iniciar el pago.`,
+        });
       }
 
       const monto = parseFloat(proyecto.monto_inversion);
 
-      // 🛑 PUNTO DE CONTROL DE SEGURIDAD 2FA (Modificación) 🛑
-      // Si el 2FA está activo, creamos los registros pero detenemos la generación de la URL de pago.
+      // 🛑 PUNTO DE CONTROL DE SEGURIDAD 2FA 🛑
       if (user && user.is_2fa_enabled) {
-        // 1. Crear Pago y Transacción Pendientes
+        // Creamos los registros de pago y transacción en PENDIENTE
         const pagoPendiente = await PagoService.create(
           {
             id_suscripcion: null,
@@ -86,14 +100,14 @@ const suscripcionProyectoController = {
             id_usuario,
             id_proyecto,
             id_pago_mensual: pagoPendiente.id,
-            estado_transaccion: "pendiente",
+            estado_transaccion: "pendiente", // El pago está pendiente del 2FA
           },
           { transaction: t }
         );
 
         await t.commit(); // Confirmamos los registros pendientes
 
-        // Devolvemos 202 para indicarle al frontend que necesita el 2FA
+        // Devolvemos 202 (Accepted) para indicar al frontend la necesidad de 2FA
         return res.status(202).json({
           message:
             "Suscripción iniciada, se requiere verificación 2FA para generar el checkout.",
@@ -104,7 +118,7 @@ const suscripcionProyectoController = {
       }
 
       // ---------------------------------------------------------------------------------------
-      // FLUJO NORMAL (Si 2FA no está activo) - Procede directamente a la pasarela
+      // FLUJO NORMAL (2FA NO activo) - Procede directamente a la pasarela
       // ---------------------------------------------------------------------------------------
 
       // 1. Crear Pago y Transacción Pendientes
@@ -131,8 +145,9 @@ const suscripcionProyectoController = {
           estado_transaccion: "pendiente",
         },
         { transaction: t }
-      ); // 2. Generar la URL de redirección
+      );
 
+      // 2. Generar la URL de redirección llamando al servicio de Transacciones
       const { redirectUrl } =
         await TransaccionService.generarCheckoutParaTransaccionExistente(
           transaccionPendiente,
@@ -140,7 +155,7 @@ const suscripcionProyectoController = {
           { transaction: t }
         );
 
-      await t.commit();
+      await t.commit(); // Confirmamos todos los registros
 
       res.status(200).json({
         message: "Transacción creada. Redireccionando a la pasarela de pago.",
@@ -156,14 +171,17 @@ const suscripcionProyectoController = {
   },
 
   /**
-   * 🚀 NUEVO: Verifica el código 2FA para una suscripción/pago pendiente
-   * y, si es correcto, genera la URL de redirección a la pasarela.
+   * @async
+   * @function confirmarSuscripcionCon2FA
+   * @description Verifica el código 2FA para una transacción pendiente y, si es correcto,
+   * genera la URL de checkout de la pasarela de pago.
+   * @param {object} req - Contiene `transaccionId` y `codigo_2fa` en `body`.
+   * @param {object} res - Objeto de respuesta de Express.
    */
   async confirmarSuscripcionCon2FA(req, res) {
     const t = await sequelize.transaction();
     try {
       const userId = req.user.id;
-      // Esperamos el ID de la transacción y el código 2FA
       const { transaccionId, codigo_2fa } = req.body;
 
       // 1. Validar Transacción y Usuario
@@ -179,11 +197,9 @@ const suscripcionProyectoController = {
         transaccionPendiente.estado_transaccion !== "pendiente"
       ) {
         await t.rollback();
-        return res
-          .status(403)
-          .json({
-            error: "Transacción no válida, no pendiente o no te pertenece.",
-          });
+        return res.status(403).json({
+          error: "Transacción no válida, no pendiente o no te pertenece.",
+        });
       }
 
       // 2. VERIFICACIÓN CRÍTICA DEL 2FA
@@ -207,6 +223,7 @@ const suscripcionProyectoController = {
       }
 
       // 3. EJECUTAR LA LÓGICA DE PASARELA (Solo si el 2FA es correcto)
+      // Reutiliza la transacción existente para generar la URL de pago
       const { redirectUrl } =
         await TransaccionService.generarCheckoutParaTransaccionExistente(
           transaccionPendiente,
@@ -228,8 +245,13 @@ const suscripcionProyectoController = {
   },
 
   /**
-   * Endpoint del webhook para confirmar un pago procesado por la pasarela de pago.
-   */ async confirmarSuscripcion(req, res) {
+   * @async
+   * @function confirmarSuscripcion
+   * @description Procesa la confirmación final de la suscripción (ejecutado después de un pago exitoso).
+   * @param {object} req - Objeto de solicitud de Express (contiene `transaccionId`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async confirmarSuscripcion(req, res) {
     try {
       const { transaccionId } = req.body;
 
@@ -239,6 +261,7 @@ const suscripcionProyectoController = {
           .json({ error: "El ID de la transacción es requerido." });
       }
 
+      // El servicio maneja toda la lógica de validación, creación de Suscripción e Inversión.
       await suscripcionProyectoService.confirmarSuscripcion(transaccionId);
 
       res
@@ -248,7 +271,15 @@ const suscripcionProyectoController = {
       console.error("Error al confirmar la suscripción:", error);
       res.status(500).json({ error: error.message });
     }
-  }, // ... (El resto de las funciones del controlador: findMySubscriptions, findAll, etc. se mantienen igual) ...
+  },
+
+  // --- Funciones CRUD de Lectura y Eliminación Lógica ---
+
+  /**
+   * @async
+   * @function findMySubscriptions
+   * @description Obtiene todas las suscripciones del usuario autenticado.
+   */
   async findMySubscriptions(req, res) {
     try {
       const userId = req.user.id;
@@ -260,6 +291,12 @@ const suscripcionProyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function findAll
+   * @description Obtiene todas las suscripciones (para administradores).
+   */
   async findAll(req, res) {
     try {
       const suscripciones = await suscripcionProyectoService.findAll();
@@ -268,6 +305,12 @@ const suscripcionProyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function findAllActivo
+   * @description Obtiene todas las suscripciones activas (para administradores o reportes).
+   */
   async findAllActivo(req, res) {
     try {
       const suscripciones = await suscripcionProyectoService.findAllActivo();
@@ -276,6 +319,12 @@ const suscripcionProyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function findById
+   * @description Obtiene una suscripción por ID (para administradores).
+   */
   async findById(req, res) {
     try {
       const suscripcion = await suscripcionProyectoService.findById(
@@ -289,6 +338,12 @@ const suscripcionProyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function findMySubscriptionById
+   * @description Obtiene una suscripción por ID, verificando que pertenezca al usuario autenticado.
+   */
   async findMySubscriptionById(req, res) {
     try {
       const { id } = req.params;
@@ -307,10 +362,18 @@ const suscripcionProyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function softDeleteMySubscription
+   * @description Realiza el "soft delete" (cancelación) de la propia suscripción del usuario.
+   */
   async softDeleteMySubscription(req, res) {
     try {
       const { id } = req.params;
       const userId = req.user.id;
+
+      // 1. Verificar la propiedad antes de eliminar
       const suscripcion = await suscripcionProyectoService.findByIdAndUserId(
         id,
         userId
@@ -320,9 +383,12 @@ const suscripcionProyectoController = {
           .status(404)
           .json({ error: "Suscripción no encontrada o no te pertenece." });
       }
+
+      // 2. Ejecutar el soft delete
       const suscripcionCancelada = await suscripcionProyectoService.softDelete(
         id
       );
+
       res.status(200).json({
         message: "Suscripción cancelada correctamente.",
         suscripcion: suscripcionCancelada,
@@ -331,6 +397,12 @@ const suscripcionProyectoController = {
       res.status(400).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function softDelete
+   * @description Realiza el "soft delete" (cancelación) de una suscripción por ID (para administradores).
+   */
   async softDelete(req, res) {
     try {
       const suscripcionEliminada = await suscripcionProyectoService.softDelete(
@@ -340,6 +412,38 @@ const suscripcionProyectoController = {
         return res.status(404).json({ error: "Suscripción no encontrada" });
       }
       res.status(200).json({ message: "Suscripción eliminada correctamente." });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
+   * @function findActiveByProjectId
+   * @description Obtiene solo las suscripciones ACTIVAS de un proyecto (Para administradores).
+   */
+  async findActiveByProjectId(req, res) {
+    try {
+      const { id_proyecto } = req.params;
+      const suscripciones =
+        await suscripcionProyectoService.findActiveByProjectId(id_proyecto);
+      res.status(200).json(suscripciones);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  /**
+   * @async
+   * @function findAllByProjectId
+   * @description Obtiene TODAS las suscripciones (activas e inactivas) de un proyecto (Para administradores).
+   */
+  async findAllByProjectId(req, res) {
+    try {
+      const { id_proyecto } = req.params;
+      const suscripciones = await suscripcionProyectoService.findAllByProjectId(
+        id_proyecto
+      );
+      res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

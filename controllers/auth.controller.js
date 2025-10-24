@@ -5,13 +5,27 @@ const usuarioService = require("../services/usuario.service");
 const authService = require("../services/auth.service");
 const emailService = require("../services/email.service");
 const jwtService = require("../services/jwt.service");
-const auth2faService = require("../services/auth2fa.service"); // 🚀 NUEVA IMPORTACIÓN PARA 2FA
+const auth2faService = require("../services/auth2fa.service"); // 🚀 Importación para las funciones de 2FA
 
+/**
+ * Controlador principal para todas las operaciones de Autenticación de Usuario:
+ * Registro, Inicio de Sesión (con 2FA), Confirmación de Email, y Restablecimiento de Contraseña.
+ */
 const authController = {
-  // Función para registrar un nuevo usuario
+  // ===================================================================
+  // 📝 REGISTRO Y CONFIRMACIÓN
+  // ===================================================================
+
+  /**
+   * @async
+   * @function register
+   * @description Registra un nuevo usuario, hashea la contraseña y dispara el email de confirmación.
+   * @param {object} req - Objeto de solicitud de Express (con datos del usuario en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async register(req, res) {
     try {
-      // 1. Hashear la contraseña
+      // 1. Hashear la contraseña usando el servicio de autenticación
       const hashedPassword = await authService.hashPassword(
         req.body.contraseña
       );
@@ -19,8 +33,9 @@ const authController = {
       const userData = {
         ...req.body,
         contraseña_hash: hashedPassword,
-      }; // 2. Crear el usuario en la base de datos (maneja token de confirmación y email)
+      };
 
+      // 2. Crear el usuario en la base de datos (el servicio maneja la generación del token de confirmación y el envío del email)
       const newUser = await usuarioService.create(userData);
 
       res.status(201).json({
@@ -35,8 +50,64 @@ const authController = {
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
-  }, // Función para el inicio de sesión (MODIFICADA PARA 2FA Y INACTIVOS)
+  },
 
+  /**
+   * @async
+   * @function confirmarEmail
+   * @description Confirma la cuenta del usuario utilizando el token enviado por email.
+   * @param {object} req - Objeto de solicitud de Express (con `token` en `params`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async confirmarEmail(req, res) {
+    try {
+      const { token } = req.params;
+
+      await usuarioService.confirmEmail(token);
+
+      res.status(200).json({
+        message:
+          "Email confirmado exitosamente. ¡Gracias! Ahora puedes iniciar sesión. 🎉",
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  /**
+   * @async
+   * @function resendConfirmation
+   * @description Reenvía el email de confirmación al usuario si su cuenta no está activada.
+   * @param {object} req - Objeto de solicitud de Express (con `email` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async resendConfirmation(req, res) {
+    try {
+      const { email } = req.body;
+
+      await usuarioService.resendConfirmationEmail(email);
+
+      res.status(200).json({
+        message:
+          "Si su cuenta necesita ser activada, hemos enviado un nuevo enlace a su correo electrónico.",
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  // ===================================================================
+  // 🔑 INICIO DE SESIÓN (CON LÓGICA 2FA)
+  // ===================================================================
+
+  /**
+   * @async
+   * @function login
+   * @description Procesa el inicio de sesión. Si 2FA está habilitado, emite un token temporal.
+   * Si 2FA no está habilitado, emite el token JWT final.
+   * @param {object} req - Objeto de solicitud de Express (con `nombre_usuario` y `contraseña` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async login(req, res) {
     try {
       const { nombre_usuario, contraseña } = req.body;
@@ -46,6 +117,7 @@ const authController = {
         return res.status(401).json({ error: "Credenciales incorrectas." });
       }
 
+      // 1. Verificación de contraseña
       const isMatch = await authService.comparePassword(
         contraseña,
         user.contraseña_hash
@@ -55,7 +127,7 @@ const authController = {
         return res.status(401).json({ error: "Credenciales incorrectas." });
       }
 
-      // 🛑 NUEVA VERIFICACIÓN: Bloquear inicio de sesión si el usuario está inactivo (soft-delete) 🛑
+      // 2. Verificación de estado de cuenta (Activo / Soft-Delete)
       if (!user.activo) {
         return res.status(403).json({
           error: "Acceso denegado.",
@@ -64,25 +136,29 @@ const authController = {
         });
       }
 
+      // 3. Verificación de email confirmado
       if (!user.confirmado_email) {
         return res.status(403).json({
           error: "Cuenta no activada.",
           message:
             "Por favor, revise su correo electrónico y haga clic en el enlace de confirmación para activar su cuenta.",
         });
-      } // 🚀 LÓGICA CLAVE PARA 2FA (Paso 1) 🚀
+      }
 
+      // 🚀 4. LÓGICA CLAVE PARA 2FA (Paso 1: Emisión de token temporal) 🚀
       if (user.is_2fa_enabled) {
         // Si 2FA está activo, emitir un token temporal para el proceso de verificación 2FA.
         const twoFaToken = jwtService.generate2FAToken(user);
 
         return res.status(202).json({
           message: "Se requiere Autenticación de Dos Factores (2FA).",
-          twoFaToken: twoFaToken, // Token temporal para el siguiente paso
+          twoFaToken: twoFaToken, // Token temporal para el siguiente paso (`verify2FA`)
           is2FARequired: true,
           user: { id: user.id },
         });
-      } // 🚀 FIN DE LA LÓGICA DE 2FA 🚀 // CÓDIGO NORMAL DE LOGIN (Si 2FA NO está habilitado)
+      }
+
+      // 5. Inicio de Sesión NORMAL (Si 2FA NO está habilitado)
       const token = jwtService.generateToken(user);
 
       res.status(200).json({
@@ -97,15 +173,21 @@ const authController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
-  /**
-   * 🚀 NUEVO CONTROLADOR: Verifica el código 2FA y emite el token JWT final (Paso 2).
-   */,
+  },
 
+  /**
+   * @async
+   * @function verify2FA
+   * @description Verifica el código 2FA (TOTP) usando el token temporal (Paso 2).
+   * Si es correcto, emite el token JWT de sesión final.
+   * @param {object} req - Objeto de solicitud de Express (con `twoFaToken` y `token` TOTP en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async verify2FA(req, res) {
     try {
-      const { twoFaToken, token } = req.body; // twoFaToken: JWT temporal; token: Código TOTP de 6 dígitos // 1. Verificar el token temporal 2FA
+      const { twoFaToken, token } = req.body; // twoFaToken: JWT temporal; token: Código TOTP
 
+      // 1. Verificar el token temporal 2FA
       const decodedTwoFa = jwtService.verify2FAToken(twoFaToken);
       if (!decodedTwoFa) {
         return res
@@ -121,24 +203,26 @@ const authController = {
           .json({ error: "Configuración 2FA inválida o no habilitada." });
       }
 
-      // 🛑 DOBLE CHECK: El usuario debe estar activo incluso en el paso 2FA final
+      // 🛑 DOBLE CHECK: El usuario debe estar activo
       if (!user.activo) {
         return res.status(403).json({
           error: "Acceso denegado.",
           message: "Su cuenta ha sido desactivada.",
         });
-      } // 2. Verificar el código TOTP
+      }
 
+      // 2. Verificar el código TOTP
       const isVerified = auth2faService.verifyToken(user.twofa_secret, token);
 
       if (!isVerified) {
         return res.status(401).json({ error: "Código 2FA incorrecto." });
-      } // 3. ÉXITO: Emitir el token JWT final de sesión
+      }
 
+      // 3. ÉXITO: Emitir el token JWT final de sesión
       const finalToken = jwtService.generateToken(user);
 
       res.status(200).json({
-        message: "Inicio de sesión 2FA exitoso.",
+        message: "Inicio de sesión 2FA exitoso. ✅",
         token: finalToken,
         user: {
           id: user.id,
@@ -149,66 +233,61 @@ const authController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
+
   /**
-   * Reenvía el email de confirmación al usuario.
-   */,
-
-  async resendConfirmation(req, res) {
-    try {
-      const { email } = req.body;
-
-      await usuarioService.resendConfirmationEmail(email);
-
-      res.status(200).json({
-        message:
-          "Si su cuenta necesita ser activada, hemos enviado un nuevo enlace a su correo electrónico.",
-      });
-    } catch (error) {
-      res.status(400).json({ error: error.message });
-    }
-  }
-  /**
-   * 🚀 NUEVO CONTROLADOR: Cierra la sesión del usuario.
-   * En sistemas JWT, esto solo indica al cliente que elimine su token.
-   */,
+   * @async
+   * @function logout
+   * @description Cierra la sesión del usuario. En sistemas JWT, indica al cliente que elimine su token.
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async logout(req, res) {
-    // La acción real de eliminar el token la debe hacer el cliente (frontend).
-    // El servidor simplemente confirma la acción y puede enviar un token 'nulo' o vacío.
+    // La responsabilidad de eliminar el token recae en el cliente (frontend)
     res.status(200).json({
       message:
         "Sesión cerrada exitosamente. Elimine el token de su almacenamiento local.",
-      token: null, // Indica al cliente que ya no hay token válido
+      token: null, // Indicador para el cliente
     });
-  }
+  },
+
+  // ===================================================================
+  // 🔒 RESTABLECIMIENTO DE CONTRASEÑA
+  // ===================================================================
+
   /**
-   * 🚀 NUEVO: Envía un email con el enlace de restablecimiento de contraseña.
-   */,
+   * @async
+   * @function forgotPassword
+   * @description Genera un token de restablecimiento de contraseña y envía el enlace por email.
+   * Envía una respuesta genérica por motivos de seguridad (evitar enumeración de emails).
+   * @param {object} req - Objeto de solicitud de Express (con `email` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async forgotPassword(req, res) {
     try {
       const { email } = req.body;
 
-      const resetToken = await usuarioService.generatePasswordResetToken(email); // 🛑 Si el usuario no existe, enviamos una respuesta genérica para evitar enumeración.
+      const resetToken = await usuarioService.generatePasswordResetToken(email);
 
       if (resetToken) {
-        // Generar el enlace de restablecimiento.
-        // Asegúrate de usar la URL base de tu frontend.
+        // Generar el enlace de restablecimiento (usar la URL del frontend)
         const resetLink = `http://localhost:3000/reset-password/${resetToken}`;
 
         const emailHtml = `
-                    <p>Has solicitado restablecer tu contraseña.</p>
-                    <p>Haz clic en el siguiente enlace para completar el proceso:</p>
-                    <a href="${resetLink}">Restablecer Contraseña</a>
-                    <p>Este enlace expirará en una hora.</p>
-                `;
+            <p>Has solicitado restablecer tu contraseña.</p>
+            <p>Haz clic en el siguiente enlace para completar el proceso:</p>
+            <a href="${resetLink}">Restablecer Contraseña</a>
+            <p>Este enlace expirará en una hora.</p>
+        `;
 
         await emailService.sendEmail(
           email,
           "Restablecimiento de Contraseña",
           emailHtml
         );
-      } // Respuesta genérica por motivos de seguridad, sin importar si el correo existía.
+      }
 
+      // Respuesta genérica por motivos de seguridad
       res.status(200).json({
         message:
           "Si existe una cuenta con ese correo, hemos enviado instrucciones para restablecer tu contraseña.",
@@ -216,31 +295,38 @@ const authController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
-  /**
-   * 🚀 NUEVO: Restablece la contraseña usando el token y la nueva contraseña.
-   */,
+  },
 
+  /**
+   * @async
+   * @function resetPassword
+   * @description Restablece la contraseña del usuario usando el token.
+   * @param {object} req - Objeto de solicitud de Express (con `token` en `params` y `nueva_contraseña` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async resetPassword(req, res) {
     try {
       const { token } = req.params; // Token del enlace
-      const { nueva_contraseña } = req.body; // 1. Verificar el token y su expiración
+      const { nueva_contraseña } = req.body;
 
+      // 1. Verificar el token y su expiración
       const user = await usuarioService.findByResetToken(token);
 
       if (!user) {
         return res
           .status(400)
           .json({ error: "Token de restablecimiento inválido o expirado." });
-      } // 2. Hashear la nueva contraseña
+      }
 
-      const hashedPassword = await authService.hashPassword(nueva_contraseña); // 3. Actualizar la contraseña y limpiar el token/expiración en la BD
+      // 2. Hashear la nueva contraseña
+      const hashedPassword = await authService.hashPassword(nueva_contraseña);
 
+      // 3. Actualizar la contraseña y limpiar el token/expiración en la BD
       await user.update({
         contraseña_hash: hashedPassword,
         reset_password_token: null, // Limpiar
         reset_password_expires: null, // Limpiar
-      }); // 4. (Opcional) Notificar por email que la contraseña ha cambiado por seguridad.
+      });
 
       res.status(200).json({
         message:
@@ -248,21 +334,6 @@ const authController = {
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
-    }
-  }, // Función para confirmar el email del usuario
-
-  async confirmarEmail(req, res) {
-    try {
-      const { token } = req.params;
-
-      await usuarioService.confirmEmail(token);
-
-      res.status(200).json({
-        message:
-          "Email confirmado exitosamente. ¡Gracias! Ahora puedes iniciar sesión.",
-      });
-    } catch (error) {
-      res.status(400).json({ error: error.message });
     }
   },
 };

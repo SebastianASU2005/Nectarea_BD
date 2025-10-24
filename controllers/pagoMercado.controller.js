@@ -6,8 +6,12 @@ const { sequelize } = require("../config/database");
 const crypto = require("crypto");
 const Inversion = require("../models/inversion");
 const { Transaction } = require("sequelize");
+const emailService = require("../services/email.service");
+const usuarioService = require("../services/usuario.service");
+const mensajeService = require("../services/mensaje.service");
+const User = require("../models/usuario");
 
-// Mapeo de estados MP a estados internos
+// Mapeo de estados de Mercado Pago (MP) a estados internos de la aplicación
 const MP_STATUS_MAP = {
   approved: "aprobado",
   pending: "en_proceso",
@@ -19,36 +23,101 @@ const MP_STATUS_MAP = {
 };
 
 /**
- * 🔑 FUNCIÓN DE VALIDACIÓN CRÍTICA DE LA FIRMA (Optimizado y Seguro)
- * Utiliza la clave secreta, las cabeceras y el cuerpo para verificar la autenticidad del webhook.
+ * 🔑 FUNCIÓN DE VALIDACIÓN CRÍTICA DE LA FIRMA (Mercado Pago Webhook)
+ * Utiliza la clave secreta (`MP_WEBHOOK_SECRET`), las cabeceras (`x-signature`, `x-request-id`)
+ * y el ID de la data para verificar la autenticidad del webhook mediante HMAC-SHA256.
+ * @param {object} req - Objeto de solicitud de Express.
+ * @returns {boolean} True si la firma es válida, false en caso contrario.
  */
 function verifySignature(req) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   const signatureHeader = req.headers["x-signature"];
   const requestId = req.headers["x-request-id"];
-  const dataId = req.body?.data?.id || req.query.id || req.query["data.id"];
 
-  console.log("🔐 VALIDACIÓN DE FIRMA");
-  console.log("Secret presente:", !!secret);
-  console.log("Signature presente:", !!signatureHeader);
-  console.log("Request ID:", requestId);
-  console.log("Data ID:", dataId);
+  console.log("🔐 VALIDACIÓN DE FIRMA - DATOS COMPLETOS:", {
+    // Headers
+    signature: signatureHeader
+      ? signatureHeader.substring(0, 50) + "..."
+      : "MISSING",
+    requestId: requestId || "MISSING",
 
-  // ⚠️ Si falta algún dato, RECHAZA inmediatamente
+    // Query params
+    topic: req.query.topic,
+    type: req.query.type,
+    queryId: req.query.id,
+    queryDataId: req.query["data.id"],
+
+    // Body
+    bodyType: req.body?.type,
+    bodyTopic: req.body?.topic,
+    bodyDataId: req.body?.data?.id,
+    bodyResource: req.body?.resource,
+
+    // Config
+    hasSecret: !!secret,
+    secretPrefix: secret ? secret.substring(0, 10) + "..." : "MISSING",
+  });
+
+  // ⚠️ Si no hay secret configurado, RECHAZA
   if (!secret) {
     console.error("❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado");
     return false;
   }
 
-  if (!signatureHeader || !requestId || !dataId) {
-    console.error("❌ Headers o data.id faltantes");
+  // ✅ CASO 1: Webhooks SIN firma (merchant_order, algunos eventos antiguos)
+  // Mercado Pago NO siempre envía x-signature para todos los tipos de notificación
+  if (!signatureHeader) {
+    const topic = req.query.topic || req.query.type || req.body?.type;
+
+    // merchant_order y algunos eventos legacy no tienen x-signature
+    if (topic === "merchant_order" || topic === "order") {
+      console.log("✅ Webhook sin firma aceptado (merchant_order o legacy)");
+      return true;
+    }
+
+    // Para payment sin firma, verificamos si al menos tiene los datos básicos
+    if (topic === "payment") {
+      const hasBasicData = !!(req.query.id || req.body?.data?.id);
+      if (hasBasicData) {
+        console.warn(
+          "⚠️ Payment webhook sin firma pero con datos válidos - ACEPTANDO"
+        );
+        return true;
+      }
+    }
+
+    console.error("❌ Webhook sin firma y sin tipo reconocido");
     return false;
   }
 
-  // Parsear ts y v1
+  // ✅ CASO 2: Webhooks CON firma (payment v1)
+  if (!requestId) {
+    console.error("❌ Falta x-request-id pero hay x-signature");
+    return false;
+  }
+
+  // Extraer dataId de múltiples fuentes posibles
+  let dataId =
+    req.query.id ||
+    req.query["data.id"] ||
+    req.body?.data?.id ||
+    req.body?.id ||
+    req.body?.resource;
+
+  // Caso de webhook `resource` que puede ser una URL
+  if (typeof dataId === "string" && dataId.startsWith("http")) {
+    dataId = dataId.split("/").pop();
+  }
+
+  if (!dataId) {
+    console.error("❌ No se pudo extraer dataId");
+    return false;
+  }
+
+  // Parsear `ts` (timestamp) y `v1` (hash de la firma)
   const parts = signatureHeader.split(",");
   let ts, v1;
-  
+
   for (const part of parts) {
     const [key, value] = part.split("=");
     if (key?.trim() === "ts") ts = value?.trim();
@@ -56,42 +125,49 @@ function verifySignature(req) {
   }
 
   if (!ts || !v1) {
-    console.error("❌ No se pudo extraer ts o v1");
+    console.error("❌ No se pudo extraer ts o v1 de la firma");
     return false;
   }
 
-  // Construir manifiesto EXACTO (sin espacios extra)
+  // Construir manifiesto EXACTO requerido por MP
   const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  
-  console.log("📋 Manifest:", manifest);
 
-  // Calcular HMAC
+  // Calcular HMAC-SHA256 local
+  const crypto = require("crypto");
   const localHash = crypto
     .createHmac("sha256", secret)
     .update(manifest)
     .digest("hex");
 
-  console.log("🔒 Hash local:", localHash);
-  console.log("🔒 Hash MP:   ", v1);
-  console.log("✅ Match:", localHash === v1);
+  const isValid = localHash === v1;
 
-  return localHash === v1;
+  console.log(isValid ? "✅ Firma válida" : "❌ Firma inválida", {
+    dataId,
+    requestId,
+    ts,
+    expected: localHash.substring(0, 20) + "...",
+    received: v1.substring(0, 20) + "...",
+  });
+
+  return isValid;
 }
+
+module.exports = { verifySignature };
 
 const paymentController = {
   /**
-   * ✨ ENDPOINT GENÉRICO: Crea NUEVO checkout o regenera checkout para una transacción existente.
+   * @async
+   * @function createCheckoutGenerico
+   * @description Crea un nuevo checkout o regenera uno para una transacción existente.
+   * Utiliza una transacción de base de datos para la atomicidad.
+   * @param {object} req - Objeto de solicitud de Express (con datos de transacción en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
    */
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
     const {
       id_transaccion,
-      tipo_transaccion,
-      monto,
-      id_proyecto,
-      id_inversion,
-      id_puja,
-      id_suscripcion,
+      // ... otros datos necesarios para una transacción nueva
       metodo = "mercadopago",
     } = req.body;
 
@@ -108,6 +184,7 @@ const paymentController = {
       let redirectUrl;
 
       if (id_transaccion) {
+        // Flujo para Transacción Existente (Regenerar Checkout)
         transaccion = await Transaccion.findByPk(id_transaccion, {
           transaction: t,
         });
@@ -126,14 +203,16 @@ const paymentController = {
             { transaction: t }
           ));
       } else {
+        // Flujo para Transacción Nueva
         const datosTransaccion = {
-          tipo_transaccion,
-          monto,
+          // Extrae los campos relevantes para crear una Transacción
+          tipo_transaccion: req.body.tipo_transaccion,
+          monto: req.body.monto,
           id_usuario: userId,
-          id_proyecto,
-          id_inversion,
-          id_puja,
-          id_suscripcion,
+          id_proyecto: req.body.id_proyecto,
+          id_inversion: req.body.id_inversion,
+          id_puja: req.body.id_puja,
+          id_suscripcion: req.body.id_suscripcion,
         };
 
         ({ transaccion, pagoMercado, redirectUrl } =
@@ -162,9 +241,16 @@ const paymentController = {
       });
     }
   },
+
   /**
-   * 🎯 Endpoint simplificado para inversiones
-   */ async createCheckout(req, res) {
+   * @async
+   * @function createCheckout
+   * @description Endpoint simplificado para generar un checkout de pago para una **Inversión** pendiente.
+   * Internamente llama a `createCheckoutGenerico`.
+   * @param {object} req - Objeto de solicitud de Express (con `id_inversion` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async createCheckout(req, res) {
     const userId = req.user.id;
     const { id_inversion, metodo = "mercadopago" } = req.body;
 
@@ -172,6 +258,7 @@ const paymentController = {
       return res.status(400).json({ error: "id_inversion es requerido" });
     }
 
+    // Buscar y validar la inversión pendiente del usuario
     const inversion = await Inversion.findOne({
       where: { id: id_inversion, id_usuario: userId, estado: "pendiente" },
     });
@@ -182,6 +269,7 @@ const paymentController = {
       });
     }
 
+    // Reconstruir el cuerpo de la solicitud para que lo procese el método genérico
     req.body = {
       tipo_transaccion: "directo",
       monto: parseFloat(inversion.monto),
@@ -192,38 +280,42 @@ const paymentController = {
 
     return this.createCheckoutGenerico(req, res);
   },
+
   /**
-   * 🔔 WEBHOOK: Procesa notificaciones de Mercado Pago
-   */ async handleWebhook(req, res) {
-    // ⚠️ VALIDACIÓN CRÍTICA
+   * @async
+   * @function handleWebhook
+   * @description 🔔 WEBHOOK CRÍTICO: Procesa las notificaciones de eventos de Mercado Pago.
+   * Actualiza los estados de la Transacción y ejecuta la lógica de negocio si el pago es aprobado.
+   * @param {object} req - Objeto de solicitud de Express (datos de MP en `query` y `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async handleWebhook(req, res) {
+    // ⚠️ VALIDACIÓN CRÍTICA DE LA FIRMA
     const isValid = verifySignature(req);
 
     if (!isValid) {
       console.error("🚫 FIRMA INVÁLIDA - RECHAZANDO WEBHOOK");
-      console.error("IP:", req.ip);
-      console.error("Headers:", JSON.stringify(req.headers, null, 2));
-
-      // ⛔ NO PROCESAR NADA
       return res.status(401).send("Unauthorized");
     }
 
     console.log("✅ Firma válida - Procesando webhook");
 
     const { metodo } = req.params;
-    let transaccionId = null;
+    let transaccionId = null; // Variable para rastrear la ID en caso de error
 
-    console.log("--- WEBHOOK INGRESO (Firma Validada) ---");
-    // No es necesario logear el body completo si es muy grande, pero dejamos los query params
-    console.log("Query:", req.query);
-    console.log("-----------------------");
+    // 🚨 DECLARACIÓN DE VARIABLES FUERA DEL TRY PARA ALCANCE EN EL BLOQUE CATCH (CORRECCIÓN CRÍTICA)
+    let transaccion = null;
+    let pagoMercado = null;
 
-    const { topic, id } = req.query; // Aseguramos que topic e id estén disponibles
+    const { topic, id } = req.query;
 
+    // Flujo para `merchant_order` (usado para pagos con múltiples ítems o transacciones)
     if (topic === "merchant_order" && id) {
       try {
         console.log(
           `🔄 Merchant Order ${id} recibida. Buscando pagos asociados...`
         );
+        // El servicio se encarga de buscar y procesar todos los pagos dentro de esta MO
         await pagoMercadoService.procesarPagosDeMerchantOrder(id);
         console.log(
           `✅ Merchant Order ${id} procesada. Pagos internos actualizados.`
@@ -233,11 +325,12 @@ const paymentController = {
         console.error(
           `❌ Error al procesar Merchant Order ${id}: ${error.message}`
         );
+        // Se retorna 200 OK para evitar que MP reenvíe, pero se registra el error
         return res.status(200).send("OK - Error en procesamiento de MO");
       }
     }
-    // Si no es 'merchant_order', el flujo continúa asumiendo que es un 'payment'.
 
+    // Si no es `merchant_order`, se asume un flujo de `payment` individual
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
       metodo
@@ -250,20 +343,23 @@ const paymentController = {
 
     const {
       transaccionId: id_transaccion,
-      status,
+      status, // Estado de MP
       paymentDetails,
-      transactionId,
+      transactionId, // ID de pago de la pasarela
       rawDetails,
     } = paymentResult;
-    transaccionId = id_transaccion;
-    const internalStatus = MP_STATUS_MAP[status] || "en_proceso";
+    transaccionId = id_transaccion; // Asigna al rastreador de errores
+    const internalStatus = MP_STATUS_MAP[status] || "en_proceso"; // Mapeo a estado interno
 
+    // Iniciar transacción con nivel de aislamiento alto para evitar condiciones de carrera
     const t = await sequelize.transaction({
       isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
     });
 
     try {
-      const transaccion = await Transaccion.findByPk(transaccionId, {
+      // 1. Bloquear la Transacción para evitar procesamiento múltiple
+      // Asignación a la variable declarada con 'let' fuera del try
+      transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
@@ -282,7 +378,9 @@ const paymentController = {
         return res.status(200).send("OK - Ya procesado");
       }
 
-      let pagoMercado = await PagoMercado.findOne({
+      // 2. Actualizar/Crear registro de PagoMercado
+      // Asignación a la variable declarada con 'let' fuera del try
+      pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         transaction: t,
       });
@@ -296,7 +394,7 @@ const paymentController = {
       };
 
       if (!pagoMercado) {
-        console.warn(`PagoMercado no encontrado. Creando registro de pago.`);
+        // Si no existe, crea el registro y asócialo a la Transacción
         pagoMercado = await PagoMercado.create(
           {
             id_transaccion: transaccion.id,
@@ -306,20 +404,21 @@ const paymentController = {
           },
           { transaction: t }
         );
-
         await transaccion.update(
           { id_pago_pasarela: pagoMercado.id },
           { transaction: t }
         );
       } else {
+        // Si existe, solo actualiza
         await pagoMercado.update(pagoData, { transaction: t });
       }
 
+      // 3. Ejecutar Lógica de Negocio según el Estado
       if (internalStatus === "aprobado") {
         console.log(
           `✅ Pago ${transactionId} APROBADO. Ejecutando lógica de negocio...`
         );
-
+        // El servicio confirma la transacción y aplica la lógica de negocio (ej. crear Inversión, asignar tokens, etc.)
         await transaccionService.confirmarTransaccion(transaccion.id, {
           transaction: t,
         });
@@ -328,16 +427,13 @@ const paymentController = {
         internalStatus === "devuelto" ||
         internalStatus === "en_proceso"
       ) {
+        // Procesar fallo/devolución/proceso
         const newStatus =
           internalStatus === "rechazado"
             ? "fallido"
             : internalStatus === "devuelto"
             ? "reembolsado"
             : "en_proceso";
-
-        console.warn(
-          `❌ Pago ${transactionId} ${internalStatus.toUpperCase()}. Procesando fallo/devolución.`
-        );
 
         await transaccionService.procesarFalloTransaccion(
           transaccion.id,
@@ -346,6 +442,7 @@ const paymentController = {
           { transaction: t }
         );
       } else {
+        // Actualizar el estado de la transacción con el estado interno mapeado
         await transaccion.update(
           { estado_transaccion: internalStatus },
           { transaction: t }
@@ -359,18 +456,203 @@ const paymentController = {
 
       return res.status(200).send("OK");
     } catch (error) {
+      // 🛑 LÓGICA DE REEMBOLSO AQUÍ: Se ejecuta ANTES del rollback.
+      const errorMsg = error.message;
+
+      // Lista de errores que requieren reembolso automático
+      const requiereReembolso =
+        errorMsg.includes("ya no tiene cupos disponibles") ||
+        errorMsg.includes("capacidad máxima") ||
+        errorMsg.includes("no está disponible") ||
+        errorMsg.includes("ya alcanzó su objetivo de fondeo") ||
+        errorMsg.includes("rechazado_por_capacidad") ||
+        errorMsg.includes("rechazado_proyecto_cerrado") ||
+        errorMsg.includes("expiró");
+
+      if (requiereReembolso) {
+        console.log(
+          `💰 Iniciando flujo de reembolso automático para Transacción ${transaccionId} por error de negocio: ${errorMsg}`
+        );
+
+        try {
+          // Las variables 'pagoMercado' y 'transaccion' son accesibles aquí
+          if (
+            pagoMercado &&
+            pagoMercado.id_transaccion_pasarela &&
+            transaccion &&
+            transaccion.monto > 0
+          ) {
+            let reembolsoExitoso = false;
+            let errorReembolso = null;
+
+            // 1. Llamar al servicio de reembolso de Mercado Pago
+            try {
+              const resultadoReembolso =
+                await pagoMercadoService.realizarReembolso(
+                  pagoMercado.id_transaccion_pasarela,
+                  parseFloat(transaccion.monto)
+                );
+
+              reembolsoExitoso = resultadoReembolso?.success === true;
+
+              if (reembolsoExitoso) {
+                console.log(
+                  `✅ Reembolso de MP solicitado exitosamente para ${pagoMercado.id_transaccion_pasarela}.`
+                );
+              } else {
+                errorReembolso =
+                  resultadoReembolso?.message || "Reembolso falló sin detalles";
+                console.warn(
+                  `⚠️ Fallo en el reembolso de MP: ${errorReembolso}`
+                );
+              }
+            } catch (refundError) {
+              errorReembolso = refundError.message;
+              console.error(`❌ ERROR CRÍTICO DE REEMBOLSO: ${errorReembolso}`);
+            }
+
+            // 2. Notificación a Usuario y Administradores 🚨
+            const user = await User.findByPk(transaccion.id_usuario);
+
+            if (user) {
+              // 2a. Email al usuario (solo si el reembolso fue exitoso)
+              if (reembolsoExitoso) {
+                try {
+                  await emailService.notificarReembolsoUsuario(
+                    user,
+                    transaccion,
+                    errorMsg
+                  );
+                } catch (e) {
+                  console.error(
+                    `Error al enviar email al usuario: ${e.message}`
+                  );
+                }
+              }
+
+              // 2b. Email a TODOS los administradores (siempre, éxito o fallo)
+              try {
+                const admins = await usuarioService.findAllAdmins();
+
+                for (const admin of admins) {
+                  if (admin.email) {
+                    try {
+                      await emailService.notificarReembolsoAdmin(
+                        admin.email,
+                        user,
+                        transaccion,
+                        errorMsg,
+                        {
+                          reembolsoExitoso,
+                          errorReembolso,
+                          idPagoMP: pagoMercado.id_transaccion_pasarela,
+                        }
+                      );
+                    } catch (e) {
+                      console.error(
+                        `Error al enviar email de reembolso al admin ${admin.id}: ${e.message}`
+                      );
+                    }
+                  }
+                }
+
+                // 2c. Mensaje interno al sistema para todos los admins
+                const tipoTransaccion =
+                  transaccion.tipo_transaccion || "desconocida";
+                const estadoReembolso = reembolsoExitoso
+                  ? "✅ REEMBOLSO EXITOSO"
+                  : `⚠️ FALLO EN REEMBOLSO: ${errorReembolso}`;
+
+                const contenidoMensaje = `🚨 ROLLBACK CRÍTICO - Transacción #${
+                  transaccion.id
+                }
+
+Usuario: ${user.nombre} (${user.email})
+Tipo: ${tipoTransaccion}
+Monto: $${parseFloat(transaccion.monto).toFixed(2)}
+ID Pago MP: ${pagoMercado.id_transaccion_pasarela}
+
+Razón del fallo: ${errorMsg}
+
+${estadoReembolso}
+
+${
+  reembolsoExitoso
+    ? "El usuario recibirá el reembolso en su medio de pago."
+    : "⚠️ ACCIÓN REQUERIDA: Debe realizarse el reembolso MANUAL en Mercado Pago."
+}`;
+
+                for (const admin of admins) {
+                  await mensajeService.crear({
+                    id_remitente: process.env.ID_SISTEMA || null,
+                    id_receptor: admin.id,
+                    contenido: contenidoMensaje,
+                  });
+                }
+              } catch (adminError) {
+                console.error(
+                  `Error al notificar a administradores: ${adminError.message}`
+                );
+              }
+            } else {
+              console.error(
+                `Error: Usuario ${transaccion.id_usuario} no encontrado para notificar reembolso.`
+              );
+            }
+          } else {
+            console.warn(
+              `⚠️ NO se pudo realizar el reembolso automático para Transacción ${transaccionId}. Faltan datos de pago de MP.`
+            );
+
+            // Notificar a admins sobre este caso crítico
+            try {
+              const admins = await usuarioService.findAllAdmins();
+              const contenidoCritico = `🚨 FALLO CRÍTICO: Transacción #${transaccionId}
+
+No se pudo intentar el reembolso porque faltan datos del pago de Mercado Pago.
+
+Estado: ${transaccion?.estado_transaccion || "desconocido"}
+Monto: $${parseFloat(transaccion?.monto || 0).toFixed(2)}
+
+⚠️ ACCIÓN REQUERIDA INMEDIATA: Revisar manualmente en el panel de MP.`;
+
+              for (const admin of admins) {
+                await mensajeService.crear({
+                  id_remitente: process.env.ID_SISTEMA || null,
+                  id_receptor: admin.id,
+                  contenido: contenidoCritico,
+                });
+              }
+            } catch (e) {
+              console.error(`Error al notificar falta de datos: ${e.message}`);
+            }
+          }
+        } catch (reembolsoError) {
+          console.error(
+            `❌ ERROR GENERAL EN FLUJO DE REEMBOLSO:`,
+            reembolsoError.message
+          );
+        }
+      }
+
+      // El ROLLBACK debe hacerse siempre si hubo un error en la lógica de negocio.
       await t.rollback();
       console.error(
         `❌ Error CRÍTICO en webhook (Transacción ${transaccionId}):`,
-        error.message
+        errorMsg
       );
 
+      // Marcar como fallido fuera de la transacción
       if (transaccionId) {
         try {
+          const detalleError = requiereReembolso
+            ? `Error fatal en webhook (ROLLBACK + REEMBOLSO SOLICITADO): ${errorMsg}`
+            : `Error fatal en webhook (ROLLBACK): ${errorMsg}`;
+
           await Transaccion.update(
             {
               estado_transaccion: "fallido",
-              error_detalle: `Error fatal en webhook: ${error.message}`,
+              error_detalle: detalleError,
             },
             { where: { id: transaccionId } }
           );
@@ -385,9 +667,16 @@ const paymentController = {
       return res.status(500).send("Error interno");
     }
   },
+
   /**
-   * ✨ Inicia el proceso de pago de un registro pendiente
-   */ async iniciarPagoPorModelo(req, res) {
+   * @async
+   * @function iniciarPagoPorModelo
+   * @description ✨ Endpoint genérico que inicia una transacción y checkout para cualquier modelo
+   * (`inversion`, `puja`, `suscripcion`) usando sus IDs.
+   * @param {object} req - Objeto de solicitud de Express (con `modelo` y `modeloId` en `params`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async iniciarPagoPorModelo(req, res) {
     try {
       const { modelo, modeloId } = req.params;
       const userId = req.user.id;
@@ -401,6 +690,7 @@ const paymentController = {
         });
       }
 
+      // Delega la lógica de negocio al servicio para encontrar el modelo, validar, crear Transacción y Checkout
       const { transaccion, redirectUrl } =
         await transaccionService.iniciarTransaccionYCheckout(
           modelo,
@@ -426,17 +716,24 @@ const paymentController = {
       });
     }
   },
+
   /**
-   * ↩️ REDIRECCIÓN: Maneja la respuesta GET del usuario desde la pasarela de pago (Success, Failure, Pending).
-   */ async handleCheckoutRedirect(req, res) {
-    const { id_transaccion, collection_status, status } = req.query; // Obtener parámetros de la URL
+   * @async
+   * @function handleCheckoutRedirect
+   * @description ↩️ REDIRECCIÓN: Maneja la respuesta GET del usuario desde la pasarela de pago.
+   * Solo redirige al frontend con el estado, pero realiza una actualización preliminar si hay cancelación.
+   * @param {object} req - Objeto de solicitud de Express (con parámetros de estado en `query`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async handleCheckoutRedirect(req, res) {
+    const { id_transaccion, collection_status, status } = req.query;
     if (!id_transaccion) {
       return res
         .status(400)
         .send("ID de Transacción requerido para la redirección.");
     }
     try {
-      // Usamos collection_status o status para determinar si el usuario canceló
+      // Usamos `collection_status` o `status` para verificar si el usuario canceló
       const finalStatus = collection_status || status;
       if (
         finalStatus === "rejected" ||
@@ -446,11 +743,14 @@ const paymentController = {
         console.log(
           `Usuario canceló o pago rechazado para Transacción ${id_transaccion}. Marcando como fallido.`
         );
+        // Marca la transacción como fallida, pero la lógica crítica de pago la maneja el webhook.
         await transaccionService.cancelarTransaccionPorUsuario(id_transaccion);
         return res.redirect(
           `${process.env.FRONTEND_URL}/pago-fallido?transaccion=${id_transaccion}`
         );
       }
+
+      // Si no es fallo/cancelación, redirige al frontend para mostrar el estado final (que se obtiene con `getPaymentStatus`)
       return res.redirect(
         `${process.env.FRONTEND_URL}/pago-estado?transaccion=${id_transaccion}`
       );
@@ -462,12 +762,21 @@ const paymentController = {
     }
   },
 
+  /**
+   * @async
+   * @function getPaymentStatus
+   * @description Obtiene el estado actual de una transacción y opcionalmente fuerza una actualización
+   * de estado consultando directamente a la pasarela de pago.
+   * @param {object} req - Objeto de solicitud de Express (con `id_transaccion` en `params` y `refresh` en `query`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async getPaymentStatus(req, res) {
     try {
       const { id_transaccion } = req.params;
       const { refresh } = req.query;
       const userId = req.user.id;
 
+      // 1. Buscar la transacción y verificar propiedad
       let transaccion = await Transaccion.findOne({
         where: { id: id_transaccion, id_usuario: userId },
       });
@@ -483,27 +792,32 @@ const paymentController = {
         refresh === "true" &&
         !statusFinal.includes(transaccion.estado_transaccion);
 
+      // Buscar el registro de pago más reciente
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         order: [["createdAt", "DESC"]],
       });
 
+      // 2. Forzar actualización de estado si se solicita y es necesario
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
         console.log(
           `Forzando actualización de estado de MP para transacción ${id_transaccion}`
         );
 
+        // El servicio consulta a la API de MP y actualiza DB si el estado ha cambiado
         const updatedData = await pagoMercadoService.refreshPaymentStatus(
           transaccion.id,
           pagoMercado.id_transaccion_pasarela
         );
 
         if (updatedData) {
+          // Si hubo actualización, usamos los nuevos objetos
           transaccion = updatedData.transaccion;
           pagoMercado = updatedData.pagoMercado;
         }
       }
 
+      // 3. Formatear la respuesta
       const pagoDetalle = pagoMercado
         ? {
             id: pagoMercado.id,

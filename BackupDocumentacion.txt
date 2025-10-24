@@ -1412,3 +1412,470 @@ Nota de Implementación: El uso de [Op.gt]: new Date() es crucial para asegurar 
 ```
 
 ```
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Controladores y rutas:
+
+7. Mapeo de Controladores: Flujo de Autenticación (auth.controller.js)
+Esta sección detalla la funcionalidad de las funciones dentro del controlador de autenticación, que actúan como la capa de orquestación entre las peticiones HTTP y los servicios de negocio (usuarioService, authService, etc.).
+
+7.1. Detalle del Controlador: controllers/auth.controller.js
+El controlador de autenticación maneja el flujo más crítico de la API, incluyendo el manejo de contraseñas, tokens JWT, estados de cuenta (activo, confirmado_email) y la Autenticación de Doble Factor (2FA).
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+register	Registra un nuevo usuario en el sistema.	1. Utiliza authService.hashPassword() para cifrar la clave. 2. Llama a usuarioService.create() que persiste el usuario y genera/envía el token de confirmación por email (emailService).	201 (Created): Éxito. 400 (Bad Request): Fallo de validación o usuario existente.
+login	Inicia sesión y decide el flujo de seguridad.	1. Verifica credenciales (authService.comparePassword). 2. Bloquea si la cuenta está inactiva o sin confirmar (código 403). 3. Si 2FA está activo: Emite un twoFaToken temporal (5m) y devuelve 202 para forzar el Paso 2. 4. Si 2FA NO está activo: Emite el JWT de sesión final y devuelve 200.	200 (OK): Sesión completa. 202 (Accepted): 2FA requerido. 401 (Unauthorized): Credenciales incorrectas. 403 (Forbidden): Cuenta inactiva/no confirmada.
+verify2FA	Completa el proceso de login tras la verificación 2FA.	1. Valida el twoFaToken temporal. 2. Utiliza auth2faService.verifyToken() para validar el código TOTP de 6 dígitos. 3. Si es correcto, emite el JWT de sesión final.	200 (OK): Sesión final. 401 (Unauthorized): Token o código TOTP inválido.
+forgotPassword	Inicia el flujo de recuperación de contraseña.	Llama a usuarioService.generatePasswordResetToken(). Envía un email con el resetLink. CRÍTICO: Devuelve siempre 200 con un mensaje genérico (evita enumeración de emails).	200 (OK): Instrucciones enviadas (genérico).
+resetPassword	Aplica la nueva contraseña.	1. Verifica la validez y expiración del :token. 2. Hashea la nueva clave. 3. Actualiza el hash de la contraseña y limpia los campos reset_password_token y reset_password_expires en la DB.	200 (OK): Contraseña actualizada. 400 (Bad Request): Token inválido/expirado.
+confirmarEmail	Activa la cuenta mediante el enlace.	Llama a usuarioService.confirmEmail() para cambiar confirmado_email a true.	200 (OK): Activación exitosa. 400 (Bad Request): Token inválido.
+logout	Cierra la sesión (lógico).	Confirma al cliente que la sesión ha terminado. CRÍTICO: El frontend es responsable de eliminar el JWT de su almacenamiento.	200 (OK).
+
+
+7.2. Mapeo de Endpoints: routes/auth.routes.js
+Este archivo define la estructura de la API para la autenticación. Las rutas protegidas por authMiddleware.authenticate requieren un JWT válido en el header Authorization: Bearer <token>.
+
+Método HTTP	Endpoint Completo	Middleware Requerido	Controlador Mapeado	Propósito del Endpoint
+POST	/api/auth/register	Ninguno	authController.register	Registro de nuevos usuarios.
+POST	/api/auth/login	Ninguno	authController.login	Paso 1 del inicio de sesión (credenciales).
+POST	/api/auth/2fa/verify	Ninguno	authController.verify2FA	Paso 2 del inicio de sesión (código TOTP).
+POST	/api/auth/forgot-password	Ninguno	authController.forgotPassword	Solicitud de email para recuperación de contraseña.
+POST	/api/auth/reset-password/:token	Ninguno	authController.resetPassword	Aplicar la nueva contraseña.
+POST	/api/auth/reenviar_confirmacion	Ninguno	authController.resendConfirmation	Reenvía el enlace de activación de email.
+GET	/api/auth/confirmar_email/:token	Ninguno	authController.confirmarEmail	Enlace para activación final de la cuenta.
+POST	/api/auth/logout	authenticate	authController.logout	Cierre de sesión (invalida el token en el cliente).
+POST	/api/auth/2fa/generate-secret	authenticate	auth2faController.generate2FASecret	Genera y devuelve el QR para la configuración 2FA.
+POST	/api/auth/2fa/enable	authenticate	auth2faController.verifyAndEnable2FA	Activa 2FA permanentemente.
+POST	/api/auth/2fa/disable	authenticate	auth2faController.disable2FA	Desactiva 2FA (requiere clave y código TOTP).
+
+Mapeo de Controladores: Configuración de 2FA (auth2fa.controller.js)
+Este controlador maneja la lógica para que un usuario pueda activar, desactivar y verificar su Autenticación de Dos Factores (TOTP), un proceso que siempre requiere que el usuario esté autenticado previamente (vía JWT).
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+generate2FASecret	Genera la clave secreta y el QR para el setup inicial.	1. Valida que el usuario no tenga 2FA habilitado ya (is_2fa_enabled). 2. Llama a auth2faService.generateSecret() (usando el email como identificador). 3. CRÍTICO: Almacena el secreto (secret) temporalmente en la BD (campo twofa_secret) para el paso de verificación.	200 (OK): Éxito. Devuelve otpauthUrl (URL para generar el QR) y el secret. 400 (Bad Request): 2FA ya habilitado.
+verifyAndEnable2FA	Verifica el código de prueba y activa 2FA permanentemente.	1. Valida el secret guardado previamente. 2. Utiliza auth2faService.verifyToken() para validar que el código (token) de 6 dígitos es correcto. 3. Llama a auth2faService.enable2FA() para setear is_2fa_enabled = true en la base de datos.	200 (OK): 2FA habilitado. 401 (Unauthorized): Código TOTP inválido. 400 (Bad Request): Clave secreta no generada previamente.
+disable2FA	Desactiva la protección de Doble Factor.	1. Requiere la contraseña del usuario y el código TOTP actual. 2. La lógica de auth2faService.disable2FA() se encarga de: a) Comparar la contraseña. b) Verificar el código TOTP. c) Si ambos son correctos, setea is_2fa_enabled = false y limpia el twofa_secret.	200 (OK): Deshabilitación exitosa. 400 (Bad Request): Contraseña o código TOTP incorrecto.
+
+Este es un excelente controlador para documentar, ya que combina la gestión de archivos, la lógica de negocio, la autorización estricta y la seguridad de integridad documental (hashing).
+
+A continuación, tienes la documentación profesional de los archivos del Controlador y las Rutas de Contratos, siguiendo la estructura solicitada.
+
+7.4. Mapeo de Controladores: Contratos y Seguridad Documental (contrato.controller.js)
+Este controlador centraliza la gestión de archivos de contratos y firmas. Su lógica es crítica, ya que aplica reglas estrictas de autorización (basadas en roles y en relaciones con las inversiones/suscripciones) y garantiza la integridad de los documentos mediante el uso de hashes criptográficos.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+upload	Sube una plantilla de contrato base a un proyecto.	1. Seguridad de Rol: Requiere rol admin (req.user.role === 'admin'). 2. Hashing: Calcula el hash_archivo_original del archivo subido (req.file.path) mediante generateFileHash(). 3. Transacción Segura: Si el registro en contratoService.create() falla, elimina el archivo físico (fs.unlink).	201 (Created): Éxito. 403 (Forbidden): Rol incorrecto. 400 (Bad Request): Archivo faltante.
+sign	Sube el contrato firmado por el usuario y registra la firma.	1. Autorización Reforzada: Verifica que el usuario autenticado (req.user.id) sea el dueño de la id_inversion (estado: 'pagado') o id_suscripcion (estado: 'activa') que intenta firmar. 2. Hashing: Calcula el hash_documento_firmado del archivo firmado para verificación futura. 3. Registro: Llama a contratoService.registerSignature() para actualizar el contrato base. CRÍTICO: Limpia el archivo físico si falla cualquier validación o el registro en DB.	200 (OK): Firma registrada. 403 (Forbidden): No tiene autorización (Inversión/Suscripción no válida). 400 (Bad Request): Datos faltantes. 404 (Not Found): Contrato base no existe.
+findMyContracts	Obtiene todos los contratos que el usuario autenticado ha firmado o tiene acceso.	Llama a contratoService.findByUserId(userId) filtrando por relación de usuario.	200 (OK).
+findById	Obtiene los detalles de un contrato específico.	1. Integridad: Verifica el estado integrity_compromised (asumido por el servicio). Devuelve 409 si el archivo fue alterado. 2. Autorización: Permite el acceso si: es Admin, es el Firmante, o tiene una Inversión/Suscripción en el proyecto. 3. Sanitización: Elimina datos sensibles (firma_digital, hashes) antes de enviarlos al frontend.	200 (OK). 409 (Conflict): Integridad comprometida. 403 (Forbidden): Acceso denegado. 404 (Not Found).
+download	Permite la descarga segura del archivo de contrato.	1. Integridad y Autorización: Aplica las mismas comprobaciones que findById para bloquear descargas no autorizadas o de archivos alterados. 2. Entrega: Utiliza res.download() de Express para transmitir el archivo de forma segura.	200 (OK): Inicia la descarga. 409 (Conflict): Integridad comprometida. 403 (Forbidden): Acceso denegado. 404 (Not Found).
+softDelete	Marca un contrato como inactivo.	Llama a contratoService.softDelete(id) (asumido: activo: false).	200 (OK). 404 (Not Found).
+
+7.5. Mapeo de Endpoints: routes/contrato.routes.js
+El enrutamiento de contratos requiere el uso del middleware Multer para manejar la subida de archivos, además de middleware de autenticación y autorización por rol.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Notas Clave
+POST	/api/contratos/upload	authenticate -> authorizeAdmin -> upload.single('contrato')	contratoController.upload	Subida de plantilla de contrato. Requiere rol Admin.
+POST	/api/contratos/firmar	authenticate -> upload.single('contrato_firmado')	contratoController.sign	Subida del contrato firmado por el usuario.
+GET	/api/contratos/	authenticate -> authorizeAdmin	contratoController.findAll	Lista todos los contratos (Solo Admin).
+GET	/api/contratos/mis_contratos	authenticate	contratoController.findMyContracts	Lista los contratos asociados al usuario autenticado.
+GET	/api/contratos/descargar/:id	authenticate	contratoController.download	Descarga segura de un contrato. (Ubicación de la ruta CRÍTICA).
+GET	/api/contratos/:id	authenticate	contratoController.findById	Obtiene detalles de un contrato específico. (Ubicación de la ruta CRÍTICA).
+DELETE	/api/contratos/:id	authenticate -> authorizeAdmin	contratoController.softDelete	Eliminación lógica del contrato.
+
+Mapeo de Controladores: Gestión de Cuotas Mensuales (cuota_mensual.controller.js)
+Este controlador se enfoca en la creación y consulta de las cuotas asociadas a los proyectos, siendo crucial para el seguimiento del flujo de inversión. La creación y modificación están estrictamente restringidas a los administradores.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Registra una nueva cuota mensual en la base de datos.	1. Validación: Verifica la existencia de id_proyecto. 2. Integración: Llama a proyectoService.findById() para obtener datos del proyecto (nombre_proyecto, plazo_inversion). 3. Transacción Clave: Llama a cuotaMensualService.createAndSetProjectAmount() que crea la cuota y ajusta el monto total del proyecto.	201 (Created): Éxito. 400 (Bad Request): id_proyecto faltante. 404 (Not Found): Proyecto inexistente.
+findByProjectId	Obtiene todas las cuotas de un proyecto específico.	Llama a cuotaMensualService.findByProjectId(id_proyecto). No requiere validación de rol, solo autenticación.	200 (OK): Lista de cuotas. 500 (Internal Error).
+findLastByProjectId	Obtiene la cuota más reciente de un proyecto.	Llama a cuotaMensualService.findLastByProjectId(id_proyecto). Útil para mostrar el estado actual o la siguiente cuota.	200 (OK): Última cuota. 404 (Not Found): Cuotas no encontradas.
+update	Modifica los campos de una cuota existente.	Llama a cuotaMensualService.update(id, data).	200 (OK): Actualización exitosa. 404 (Not Found): Cuota inexistente.
+softDelete	Elimina lógicamente una cuota (cambio de estado).	Llama a cuotaMensualService.softDelete(id).	200 (OK). 404 (Not Found).
+
+
+7.7. Mapeo de Endpoints: routes/cuota_mensual.routes.js
+Las rutas de Cuotas Mensuales se centran en la seguridad, restringiendo las operaciones de escritura (creación, actualización, eliminación) solo a administradores. Las operaciones de lectura son accesibles para cualquier usuario autenticado.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/cuotas/	authenticate -> authorizeAdmin	cuotaMensualController.create	Creación de cuota. Requiere rol Admin.
+GET	/api/cuotas/:id_proyecto	authenticate	cuotaMensualController.findByProjectId	Obtiene el historial de cuotas de un proyecto. Solo requiere autenticación de usuario.
+GET	/api/cuotas/:id_proyecto/last	authenticate	cuotaMensualController.findLastByProjectId	Obtiene el último registro de cuota. Solo requiere autenticación de usuario.
+PUT	/api/cuotas/:id	authenticate -> authorizeAdmin	cuotaMensualController.update	Actualización de cuota por ID. Requiere rol Admin.
+DELETE	/api/cuotas/:id	authenticate -> authorizeAdmin	cuotaMensualController.softDelete	Eliminación lógica de cuota por ID. Requiere rol Admin.
+
+Mapeo de Controladores: Gestión de Archivos (Imágenes) (imagen.controller.js)
+Este controlador administra la subida, consulta y eliminación lógica de las imágenes asociadas a Proyectos y Lotes. Es notable por su dependencia del middleware de subida de archivos (imageUpload.middleware) y por el uso diferenciado de rutas para administradores y usuarios generales.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Sube un archivo de imagen y crea el registro en la BD.	1. Manejo de Archivos: Verifica que req.file exista (Multer lo adjuntó). 2. Validación: La imagen debe estar asociada a id_proyecto o id_lote. 3. Registro: Utiliza req.file.path (ruta física) como la URL para imagenService.create().	201 (Created): Éxito. 400 (Bad Request): Archivo faltante o sin asociación.
+getImagesByProjectId	Obtiene todas las imágenes activas de un proyecto.	Llama a imagenService.findByProjectIdActivo(id_proyecto).	200 (OK). 400 (Bad Request): ID faltante.
+getImagesByLoteId	Obtiene todas las imágenes activas de un lote.	Llama a imagenService.findByLoteIdActivo(id_lote).	200 (OK). 400 (Bad Request): ID faltante.
+findByIdActivo	Obtiene una imagen activa por su ID.	Llama a imagenService.findByIdActivo(id). Ruta utilizada por usuarios.	200 (OK). 404 (Not Found).
+findById	Obtiene una imagen por ID (incluye inactivas).	Llama a imagenService.findById(id). Ruta utilizada exclusivamente por Administradores.	200 (OK). 404 (Not Found).
+findAllActivo	Obtiene una lista de todas las imágenes activas en el sistema.	Llama a imagenService.findAllActivo().	200 (OK).
+findAll	Obtiene una lista de todas las imágenes (incluye inactivas).	Llama a imagenService.findAll(). Solo para Administradores.	200 (OK).
+update	Actualiza los metadatos de una imagen.	Llama a imagenService.update(id, data). No maneja la subida de un nuevo archivo de imagen.	200 (OK). 404 (Not Found).
+softDelete	Marca una imagen como eliminada lógicamente.	Llama a imagenService.softDelete(id) (asumido: activo: false).	200 (OK). 404 (Not Found).
+
+
+7.9. Mapeo de Endpoints: routes/imagen.routes.js
+El enrutamiento de imágenes utiliza un orden específico para manejar las rutas con prefijo (/proyecto/, /lote/, /admin/) antes que la ruta genérica dinámica (/:id). Las operaciones de escritura y consulta de datos sensibles están restringidas al rol Admin.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/imagenes/	authenticate -> authorizeAdmin -> imageUpload.single('image')	imagenController.create	Subida de imagen. Requiere Admin y el archivo en form-data con clave image.
+GET	/api/imagenes/proyecto/:idProyecto	authenticate	imagenController.getImagesByProjectId	Imágenes activas asociadas a un proyecto.
+GET	/api/imagenes/lote/:idLote	authenticate	imagenController.getImagesByLoteId	Imágenes activas asociadas a un lote.
+GET	/api/imagenes/activas	authenticate	imagenController.findAllActivo	Lista todas las imágenes activas (para catálogos).
+GET	/api/imagenes/	authenticate -> authorizeAdmin	imagenController.findAll	Lista todas las imágenes (incl. inactivas). Requiere Admin.
+GET	/api/imagenes/admin/:id	authenticate -> authorizeAdmin	imagenController.findById	Obtiene imagen (activa/inactiva) por ID. Requiere Admin.
+GET	/api/imagenes/:id	authenticate	imagenController.findByIdActivo	Obtiene imagen activa por ID. Ruta genérica para usuarios.
+PUT	/api/imagenes/:id	authenticate -> authorizeAdmin	imagenController.update	Actualización de metadatos. Requiere Admin.
+DELETE	/api/imagenes/:id	authenticate -> authorizeAdmin	imagenController.softDelete	Eliminación lógica. Requiere Admin.
+
+Mapeo de Controladores: Inversiones y Checkout Seguro (inversion.controller.js)
+Este controlador maneja el ciclo de vida de una inversión, desde su creación inicial (pendiente) hasta la solicitud de pago, implementando un punto de control de seguridad 2FA antes de la redirección a la pasarela de pago.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Registra una nueva inversión en estado pendiente de pago.	Llama a inversionService.crearInversion(data). Solo registra la intención y devuelve una URL sugerida para el pago.	201 (Created): Éxito. Devuelve el inversionId. 400 (Bad Request).
+requestCheckoutInversion	Inicia el proceso de pago, actuando como control de seguridad 2FA.	1. Validación: Verifica que la inversión exista, pertenezca al usuario y esté pendiente. 2. Control 2FA: Si user.is_2fa_enabled es true, devuelve 202 (Accepted) e informa que se requiere la verificación 2FA. El frontend debe detenerse y solicitar el código. 3. Flujo Normal (Sin 2FA): Si 2FA está desactivado, llama a TransaccionService.iniciarTransaccionYCheckout() y devuelve la redirectUrl a la pasarela.	200 (OK): Redirección directa a la pasarela. 202 (Accepted): 2FA requerido. 403 (Forbidden): Inversión no válida o no pertenece al usuario.
+confirmarInversionCon2FA	Ejecuta la transacción solo después de verificar el código 2FA.	1. Verificación: Llama a auth2faService.verifyToken() usando el codigo_2fa proporcionado y el twofa_secret del usuario. 2. Ejecución: Si la verificación 2FA es exitosa (código 200), procede a llamar a TransaccionService.iniciarTransaccionYCheckout() para generar la transacción y la redirectUrl.	200 (OK): Verificación exitosa. Devuelve redirectUrl. 401 (Unauthorized): Código 2FA incorrecto. 403 (Forbidden): Inversión o estado no válidos.
+findMyInversions	Obtiene todas las inversiones del usuario autenticado.	Llama a inversionService.findByUserId(userId).	200 (OK).
+findMyInversionById	Obtiene una inversión específica verificando que pertenezca al usuario.	Llama a inversionService.findByIdAndUserId(id, userId).	200 (OK). 404 (Not Found).
+findAll	Obtiene todas las inversiones (incluye inactivas).	Llama a inversionService.findAll(). Solo para Administradores.	200 (OK).
+softDeleteMyInversion	Elimina lógicamente una inversión (si aún está en estado pendiente).	Llama a inversionService.softDeleteByIdAndUserId(id, userId). Solo puede eliminar sus propias inversiones.	204 (No Content): Eliminación exitosa. 404 (Not Found).
+softDelete	Elimina lógicamente una inversión (función de Admin).	Llama a inversionService.softDelete(id). Solo para Administradores.	204 (No Content): Eliminación exitosa. 404 (Not Found).
+
+
+7.11. Mapeo de Endpoints: routes/inversion.routes.js
+El enrutamiento de Inversiones es crítico debido a la secuencia de pasos de pago y la seguridad del 2FA. La mayoría de las rutas están protegidas por authMiddleware.authenticate.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/inversion/	authenticate	inversionController.create	Registro inicial de la inversión (estado pendiente).
+POST	/api/inversion/iniciar-pago/:idInversion	authenticate	inversionController.requestCheckoutInversion	Paso 1 del checkout. Decide si se requiere 2FA o redirige.
+POST	/api/inversion/confirmar-2fa	authenticate	inversionController.confirmarInversionCon2FA	Paso 2 del checkout. Verifica el código 2FA y ejecuta la redirección.
+GET	/api/inversion/mis_inversiones	authenticate	inversionController.findMyInversions	Lista todas las inversiones del usuario logueado.
+GET	/api/inversion/	authenticate -> authorizeAdmin	inversionController.findAll	Lista todas las inversiones (incl. inactivas). Requiere Admin.
+GET	/api/inversion/activas	authenticate -> authorizeAdmin	inversionController.findAllActivo	Lista solo inversiones activas. Requiere Admin.
+GET	/api/inversion/:id	authenticate	inversionController.findById	Obtiene inversión por ID (Admin) o verifica posesión.
+PUT	/api/inversion/:id	authenticate -> authorizeAdmin	inversionController.update	Actualización de inversión. Requiere Admin.
+DELETE	/api/inversion/:id	authenticate -> authorizeAdmin	inversionController.softDelete	Eliminación lógica de inversión. Requiere Admin.
+
+Mapeo de Controladores: Gestión de Lotes y Subastas (lote.controller.js)
+Este controlador maneja la creación y el mantenimiento de los lotes de inversión y contiene la lógica compleja para iniciar y finalizar el proceso de subasta asociado a cada lote.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Crea un nuevo lote de inversión.	Llama a loteService.create(data).	201 (Created). 400 (Bad Request).
+findAllActivo	Obtiene todos los lotes disponibles para inversión (activos).	Llama a loteService.findAllActivo().	200 (OK).
+findByIdActivo	Obtiene un lote específico, solo si está activo.	Llama a loteService.findByIdActivo(id).	200 (OK). 404 (Not Found).
+findAll	Obtiene todos los lotes (incluyendo inactivos).	Llama a loteService.findAll(). Solo para Administradores.	200 (OK).
+findById	Obtiene un lote por ID (incluye inactivos).	Llama a loteService.findById(id). Solo para Administradores.	200 (OK). 404 (Not Found).
+update	Actualiza los datos de un lote.	Llama a loteService.update(id, data).	200 (OK). 404 (Not Found).
+softDelete	Elimina lógicamente un lote.	Llama a loteService.softDelete(id).	200 (OK). 404 (Not Found).
+startAuction	Inicia el proceso de subasta para un lote.	1. Actualiza estado_subasta a 'activa' y fecha_inicio. 2. CRÍTICO: Utiliza SuscripcionProyectoService para obtener usuarios suscritos al proyecto. 3. Envía un mensaje de notificación a todos los suscriptores a través de mensajeService.crear().	200 (OK). 404 (Not Found): Lote o Proyecto.
+endAuction	Finaliza la subasta, determina el ganador y genera la transacción.	1. Llama a la lógica compleja de loteService.endAuction(id). 2. Si hay un ganador (hubo pujas), devuelve la transaccion creada para que el ganador proceda al pago.	200 (OK): Finalización exitosa (con o sin ganador). 400 (Bad Request): Error en la lógica de finalización.
+
+
+7.13. Mapeo de Endpoints: routes/lote.routes.js
+Las rutas de lotes balancean el acceso público a la información de inversión activa y la restricción a las operaciones de control de subasta y mantenimiento, que son exclusivas de los administradores.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/lotes/	authenticate -> authorizeAdmin	loteController.create	Creación de lotes. Requiere Admin.
+GET	/api/lotes/activos	authenticate	loteController.findAllActivo	Lista todos los lotes activos (para la sección de inversión pública).
+GET	/api/lotes/	authenticate -> authorizeAdmin	loteController.findAll	Lista todos los lotes (incl. inactivos). Requiere Admin.
+POST	/api/lotes/:id/start_auction	authenticate -> authorizeAdmin	loteController.startAuction	Inicia la subasta de un lote. Requiere Admin.
+PUT	/api/lotes/:id/end	authenticate -> authorizeAdmin	loteController.endAuction	Finaliza la subasta de un lote. Requiere Admin.
+GET	/api/lotes/:id/activo	authenticate	loteController.findByIdActivo	Obtiene un lote específico solo si está activo.
+GET	/api/lotes/:id	authenticate -> authorizeAdmin	loteController.findById	Obtiene un lote por ID (activos/inactivos). Requiere Admin.
+PUT	/api/lotes/:id	authenticate -> authorizeAdmin	loteController.update	Actualización de lote. Requiere Admin.
+DELETE	/api/lotes/:id	authenticate -> authorizeAdmin	loteController.softDelete	Eliminación lógica de lote. Requiere Admin.
+
+Mapeo de Controladores: Mensajería Interna (mensaje.controller.js)
+Este controlador administra la funcionalidad de mensajería privada, permitiendo a los usuarios enviar, recibir, contar y marcar mensajes como leídos. Todas las operaciones requieren autenticación.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+obtenerMisMensajes	Obtiene la lista completa de mensajes recibidos y enviados por el usuario autenticado.	Llama a mensajeService.obtenerPorUsuario(userId).	200 (OK).
+enviarMensaje	Permite al usuario autenticado enviar un mensaje a otro usuario.	Obtiene el id_remitente de req.user.id. Llama a mensajeService.crear().	201 (Created): Éxito. 400 (Bad Request).
+obtenerConteoNoLeidos	Proporciona el número de mensajes no leídos para el usuario autenticado.	Llama a mensajeService.contarNoLeidos(userId).	200 (OK). Devuelve un objeto { conteo: N }.
+obtenerConversacion	Recupera el historial de mensajes entre el usuario autenticado y un receptor específico.	Llama a mensajeService.obtenerConversacion(userId, id_receptor).	200 (OK).
+marcarComoLeido	Marca un mensaje específico como leído por el usuario.	Llama a mensajeService.marcarComoLeido(id, userId). CRÍTICO: Valida que el mensaje sea recibido por el usuario que intenta marcarlo.	200 (OK). 404 (Not Found): Mensaje no existe o no es del usuario.
+
+
+7.15. Mapeo de Endpoints: routes/mensaje.routes.js
+Todas las rutas del sistema de mensajería están protegidas por el middleware de autenticación (authMiddleware.authenticate) para asegurar la privacidad de la comunicación. Es crucial el orden de las rutas estáticas antes que las dinámicas.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/api/mensajes/	authenticate	mensajeController.obtenerMisMensajes	Lista todos los mensajes del usuario (Bandeja de entrada/salida).
+POST	/api/mensajes/	authenticate	mensajeController.enviarMensaje	Envío de un nuevo mensaje.
+GET	/api/mensajes/no_leidos	authenticate	mensajeController.obtenerConteoNoLeidos	Obtiene el número de mensajes no leídos.
+PUT	/api/mensajes/leido/:id	authenticate	mensajeController.marcarComoLeido	Marca un mensaje por ID como leído.
+GET	/api/mensajes/:id_receptor	authenticate	mensajeController.obtenerConversacion	Obtiene la conversación con el usuario especificado.
+
+Mapeo de Controladores: Gestión de Pagos y Checkout con 2FA (pago.controller.js)
+Este controlador maneja la funcionalidad de pagos, desde la consulta personal y administrativa hasta el proceso crítico de checkout, que utiliza un flujo de bifurcación de seguridad para los usuarios con 2FA activo.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+requestCheckout	Inicia el proceso de pago para un registro existente.	1. Validación: Llama a pagoService.getValidPaymentDetails(pagoId, userId) para verificar la propiedad y estado. 2. Control 2FA: Si user.is_2fa_enabled es true, devuelve 202 (Accepted) indicando que se requiere el código 2FA. 3. Flujo Normal: Si no hay 2FA, llama a transaccionService.iniciarTransaccionYCheckout() y devuelve la redirectUrl.	200 (Redirección). 202 (2FA Requerido). 403 (No autorizado). 409 (Conflicto/Pago ya procesado).
+confirmarPagoYContinuar	Continúa el checkout después de la verificación exitosa del 2FA.	1. Verificación: Llama a auth2faService.verifyToken() con el código proporcionado. 2. Ejecución: Si es correcto, llama a transaccionService.iniciarTransaccionYCheckout() para generar la transacción y la redirectUrl.	200 (Redirección). 401 (Código 2FA incorrecto). 403 (2FA no activo).
+findMyPayments	Obtiene la lista de todos los pagos realizados por el usuario autenticado.	Llama a pagoService.findByUserId(userId).	200 (OK).
+triggerManualPayment	Genera manualmente un pago a partir de una suscripción.	Llama a pagoService.generarPagoMensualConDescuento(id_suscripcion). Función administrativa para generar pagos a demanda.	201 (Created). 400 (Falta ID).
+findAll	Obtiene la lista de todos los pagos en el sistema.	Llama a pagoService.findAll(). Solo para Administradores.	200 (OK).
+findById	Obtiene un pago específico por ID.	Llama a pagoService.findById(id). Solo para Administradores.	200 (OK). 404 (Not Found).
+update	Actualiza los datos de un pago.	Llama a pagoService.update(id, data). Solo para Administradores.	200 (OK). 404 (Not Found).
+softDelete	Elimina lógicamente un pago.	Llama a pagoService.softDelete(id). Solo para Administradores.	200 (OK). 404 (Not Found).
+
+
+7.17. Mapeo de Endpoints: routes/pago.routes.js
+El enrutamiento de Pagos prioriza la seguridad y el flujo del checkout. Es fundamental que las rutas estáticas de usuario (/mis_pagos) y de control de flujo (/confirmar-pago-2fa) se definan antes que las rutas dinámicas genéricas.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/api/pagos/mis_pagos	authenticate	pagoController.findMyPayments	Consulta los pagos del usuario logueado.
+POST	/api/pagos/pagar-mes/:id	authenticate	pagoController.requestCheckout	Paso 1 del checkout. Inicia el proceso de pago y verifica si se necesita 2FA.
+POST	/api/pagos/confirmar-pago-2fa	authenticate	pagoController.confirmarPagoYContinuar	Paso 2 del checkout. Verifica el código 2FA y redirige a la pasarela.
+GET	/api/pagos/	authenticate -> authorizeAdmin	pagoController.findAll	Lista todos los pagos. Requiere Admin.
+POST	/api/pagos/trigger-manual-payment	authenticate -> authorizeAdmin	pagoController.triggerManualPayment	Generación manual/simulada de un pago. Requiere Admin.
+GET	/api/pagos/:id	authenticate -> authorizeAdmin	pagoController.findById	Obtiene un pago específico por ID. Requiere Admin.
+PUT	/api/pagos/:id	authenticate -> authorizeAdmin	pagoController.update	Actualización de pago. Requiere Admin.
+DELETE	/api/pagos/:id	authenticate -> authorizeAdmin	pagoController.softDelete	Eliminación lógica de pago. Requiere Admin.
+
+¡Excelente elección! El controlador de Pagos (Mercado Pago) es el más crítico a nivel de infraestructura, ya que gestiona la comunicación segura y asíncrona con la pasarela de pago, implementando validaciones criptográficas.
+
+Aquí tienes la documentación detallada.
+
+7.18. Mapeo de Controladores: Pagos y Pasarela (Mercado Pago) (pagoMercado.controller.js)
+Este controlador centraliza toda la lógica relacionada con la creación de checkouts, la gestión de webhooks (notificaciones asíncronas) y la consulta de estados, asegurando la integridad de las transacciones mediante un control estricto de seguridad.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+verifySignature	CRÍTICA DE SEGURIDAD: Verifica la autenticidad de las notificaciones entrantes de Mercado Pago (Webhooks) utilizando el algoritmo HMAC-SHA256 y la clave secreta configurada.	Interna. Rechaza cualquier solicitud de webhook que no tenga una firma criptográfica válida, protegiendo contra la suplantación de identidad.	N/A (Interna).
+iniciarPagoPorModelo	Ruta Estándar: Inicia el proceso de checkout para cualquier modelo pendiente de pago (Inversión, Puja, etc.) de forma genérica.	Llama a transaccionService.iniciarTransaccionYCheckout(modelo, modeloId, userId).	200 (OK): Devuelve redirectUrl. 400 (IDs inválidos).
+createCheckoutGenerico	Ruta Avanzada: Crea una nueva Transacción y su checkout MP, o regenera un checkout para una Transacción existente.	Utiliza una Transacción de BD para asegurar atomicidad. Llama a transaccionService.crearTransaccionConCheckout.	200 (OK): Devuelve redirectUrl. 500 (Error de servidor/BD).
+handleWebhook	Procesamiento de Webhooks: Maneja las notificaciones de estado enviadas por Mercado Pago.	1. Llama a verifySignature (si falla, devuelve 401). 2. Procesa merchant_order (para actualizar múltiples pagos) o payment. 3. Si es un pago aprobado, llama a transaccionService.confirmarTransaccion dentro de una Transacción de BD con bloqueo (LOCK.UPDATE) para evitar duplicados.	200 (OK): Siempre responde 200 a MP (incluso si hay un error de procesamiento interno) para evitar reintentos. 401 (Unauthorized): Firma Inválida.
+handleCheckoutRedirect	Maneja la redirección del usuario (GET) después de interactuar con la pasarela de pago (Mercado Pago).	Revisa el estado de la URL (collection_status). Si el usuario rechaza/cancela el pago, llama a transaccionService.cancelarTransaccionPorUsuario y redirige al frontend a la página de fallo.	302 (Redirect): A la URL del frontend (/pago-estado o /pago-fallido).
+getPaymentStatus	Permite al usuario autenticado consultar el estado final de una transacción.	Verifica que la Transacción pertenezca al usuario. Si se solicita refresh=true y la transacción está en proceso, llama a pagoMercadoService.refreshPaymentStatus para obtener el estado más reciente de la pasarela.	200 (OK): Devuelve el estado y los detalles de pago. 404 (No encontrado/No pertenece).
+createCheckout	Flujo de compatibilidad con inversiones (envoltorio de createCheckoutGenerico).	Busca la inversión, valida su estado pendiente, y delega en createCheckoutGenerico.	200 (OK). 404 (Inversión no encontrada).
+
+
+7.19. Mapeo de Endpoints: routes/pagoMercado.routes.js
+Estas rutas requieren autenticación, salvo las dos rutas públicas (/webhook y /redirect) que deben ser accesibles para la pasarela de pago.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/payment/checkout/:modelo/:modeloId	authenticate	paymentController.iniciarPagoPorModelo	Flujo Estándar: Inicia el pago para un registro (ej. /inversion/5).
+POST	/api/payment/checkout/generico	authenticate	paymentController.createCheckoutGenerico	Flujo avanzado: Crea/Regenera una Transacción y Checkout.
+POST	/api/payment/checkout	authenticate	paymentController.createCheckout	Flujo de compatibilidad (Inversiones).
+GET	/api/payment/status/:id_transaccion	authenticate	paymentController.getPaymentStatus	Consulta el estado final de una transacción (con opción de refresco).
+GET	/api/payment/redirect	N/A (Ruta de retorno de la pasarela)	paymentController.handleCheckoutRedirect	Redirige al usuario al frontend después del pago.
+POST	/webhook/:metodo	N/A (Definida en el nivel más alto, ej., server.js)	paymentController.handleWebhook	Recepción de Webhooks de MP. Abierta al público (la seguridad se garantiza con la firma criptográfica).
+
+
+Mapeo de Controladores: Gestión de Proyectos (proyecto.controller.js)
+Este controlador maneja la creación y el mantenimiento de los proyectos de inversión, incluyendo la lógica compleja para vincular lotes y notificar a los usuarios sobre nuevos proyectos. Gran parte de la funcionalidad CRUD está restringida a administradores, mientras que las funciones de consulta de proyectos "activos" están disponibles para cualquier usuario autenticado.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+findAllActivo	Obtiene todos los proyectos que están activos y visibles para inversión.	Llama a proyectoService.findAllActivo().	200 (OK).
+findByIdActivo	Obtiene un proyecto específico, solo si está activo.	Llama a proyectoService.findByIdActivo(id).	200 (OK). 404 (Not Found).
+findMyProjects	Obtiene una lista única de proyectos en los que el usuario ha invertido o está suscrito.	Lógica de combinación: Usa suscripcionProyectoService.findByUserId y inversionService.findByUserId.	200 (OK).
+create	Crea un nuevo proyecto.	CRÍTICA: Ejecuta una Transacción de BD para asegurar la atomicidad de: 1. Creación del Proyecto. 2. Asociación de lotesIds al nuevo proyecto. 3. Envío de un mensaje de notificación general a todos los usuarios activos.	201 (Created). 400 (Bad Request).
+update	Actualiza un proyecto existente.	Ejecuta una Transacción de BD para actualizar el proyecto y reasociar la lista de lotes (loteService.updateLotesProyecto).	200 (OK). 404 (Not Found).
+softDelete	"Elimina" un proyecto (soft delete).	Llama a proyectoService.softDelete(id).	200 (OK). 404 (Not Found).
+findAll	Obtiene todos los proyectos (incluye inactivos y eliminados lógicamente).	Llama a proyectoService.findAll(). Solo para Administradores.	200 (OK).
+findById	Obtiene un proyecto por ID (incluye inactivos).	Llama a proyectoService.findById(id). Solo para Administradores.	200 (OK). 404 (Not Found).
+endAuction	(Función de Lote) Finaliza la subasta de un lote de ese proyecto.	Llama a loteService.endAuction(id). (Lógica crítica de asignación de ganador).	200 (OK). 400 (Bad Request).
+
+
+7.21. Mapeo de Endpoints: routes/proyecto.routes.js
+El enrutamiento de proyectos se organiza para que las rutas de consumo masivo (/activos) estén definidas antes que las rutas dinámicas, lo que asegura un correcto enrutamiento. Las rutas de Administración requieren autenticación y la validación de rol (authorizeAdmin).
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/api/proyectos/activos	authenticate	proyectoController.findAllActivo	Lista todos los proyectos activos para inversión (Consumo público).
+POST	/api/proyectos/	authenticate -> authorizeAdmin	proyectoController.create	Creación de un nuevo proyecto. Requiere Admin.
+GET	/api/proyectos/	authenticate -> authorizeAdmin	proyectoController.findAll	Lista todos los proyectos (CRUD Admin). Requiere Admin.
+GET	/api/proyectos/:id/activo	authenticate	proyectoController.findByIdActivo	Obtiene un proyecto por ID, solo si está activo.
+GET	/api/proyectos/:id	authenticate -> authorizeAdmin	proyectoController.findById	Obtiene cualquier proyecto por ID (CRUD Admin). Requiere Admin.
+PUT	/api/proyectos/:id	authenticate -> authorizeAdmin	proyectoController.update	Actualización de proyecto. Requiere Admin.
+DELETE	/api/proyectos/:id	authenticate -> authorizeAdmin	proyectoController.softDelete	Eliminación lógica de proyecto. Requiere Admin.
+
+Mapeo de Controladores: Gestión de Pujas y Checkout 2FA (puja.controller.js)
+Este controlador administra la funcionalidad de las pujas, desde su creación y consulta personal hasta el flujo de pago que se activa cuando un usuario resulta ganador de una subasta y debe pagar el lote.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Crea una nueva puja en un lote activo.	Llama a pujaService.create(), asegurando que la puja se asigne al req.user.id.	201 (Created). 400 (Monto/Lote inválido).
+requestCheckout	Inicia el proceso de pago para una puja ganadora.	Bifurcación 2FA: Si el usuario tiene 2FA activo, devuelve 202 solicitando el código. Si no, genera el checkout llamando a pujaService.requestCheckoutForPuja().	200 (Redirección). 202 (2FA Requerido). 403 (No autorizado). 409 (Puja no está en estado "ganadora pendiente").
+confirmarPujaCon2FA	Verifica el código 2FA y, si es correcto, continúa con el checkout de la puja.	CRÍTICA: Llama a auth2faService.verifyToken(). Si la verificación es exitosa, llama a pujaService.requestCheckoutForPuja() para generar la Transacción.	200 (Redirección). 401 (Código 2FA incorrecto). 403 (2FA no activo).
+manageAuctionEnd	Función interna de administración para ejecutar la lógica final de una subasta.	Llama a pujaService.gestionarTokensAlFinalizar(id_lote) para gestionar los tokens y la asignación final del lote. Solo para Administradores.	200 (OK). 400 (Datos faltantes).
+findMyPujas	Obtiene todas las pujas que el usuario autenticado ha realizado.	Llama a pujaService.findByUserId(userId).	200 (OK).
+findAllActivo	Obtiene todas las pujas activas en la plataforma.	Llama a pujaService.findAllActivo().	200 (OK).
+findAll	Obtiene todas las pujas del sistema.	Llama a pujaService.findAll(). Solo para Administradores.	200 (OK).
+CRUD Genérico/Mi Puja	Funciones CRUD para Administradores o para acciones específicas del usuario (findMyPujaById, softDeleteMyPuja, etc.).	Realizan operaciones básicas de consulta/modificación, validando la propiedad en el caso de las rutas de usuario.	200 (OK) / 204 (No Content) / 404 (Not Found).
+
+
+7.23. Mapeo de Endpoints: routes/puja.routes.js
+El orden de las rutas es especialmente sensible aquí para priorizar las rutas del usuario (/mis_pujas) y los flujos de checkout antes de que el parámetro dinámico :id general capture las peticiones.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/pujas/	authenticate	pujaController.create	Crea una nueva puja.
+GET	/api/pujas/activas	authenticate	pujaController.findAllActivo	Lista todas las pujas que están en subastas activas.
+GET	/api/pujas/mis_pujas	authenticate	pujaController.findMyPujas	Lista las pujas del usuario autenticado.
+GET	/api/pujas/mis_pujas/:id	authenticate	pujaController.findMyPujaById	Obtiene una puja específica del usuario.
+DELETE	/api/pujas/mis_pujas/:id	authenticate	pujaController.softDeleteMyPuja	Elimina una puja del usuario.
+POST	/api/pujas/iniciar-pago/:id	authenticate	pujaController.requestCheckout	Paso 1 Checkout: Inicia el pago de la puja ganadora y gestiona la bifurcación 2FA.
+POST	/api/pujas/confirmar-2fa	authenticate	pujaController.confirmarPujaCon2FA	Paso 2 Checkout: Verifica el código 2FA y continúa con la generación del checkout.
+GET	/api/pujas/	authenticate -> authorizeAdmin	pujaController.findAll	Lista todas las pujas (Admin).
+POST	/api/pujas/gestionar_finalizacion	authenticate -> authorizeAdmin	pujaController.manageAuctionEnd	Punto de control para gestionar tokens al finalizar subasta. Requiere Admin.
+GET	/api/pujas/:id	authenticate -> authorizeAdmin	pujaController.findById	Obtiene una puja por ID (Admin).
+PUT	/api/pujas/:id	authenticate -> authorizeAdmin	pujaController.update	Actualiza una puja por ID (Admin).
+DELETE	/api/pujas/:id	authenticate -> authorizeAdmin	pujaController.softDelete	Elimina una puja por ID (Admin).
+
+Mapeo de Controladores: Redirección Post-Pago (redireccion.controller.js)
+Este controlador se encarga de recibir las peticiones de retorno (GET) enviadas por la pasarela de pago después de que el usuario interactúa con ella. Su única función es actualizar el estado de la transacción si es un fallo/cancelación y redirigir al usuario al frontend con el estado correspondiente.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+handleFailure	Procesa el retorno del usuario por fallo o cancelación de la operación de pago.	CRÍTICA: Llama a transaccionService.cancelarTransaccionPorUsuario(id) para marcar la transacción interna como fallido. Redirige al frontend (/payment-result/:id?status=failure).	302 (Redirect) a Frontend URL.
+handleSuccess	Procesa el retorno del usuario por éxito en la pasarela.	Asunción: El estado final de pagado se actualizará por el Webhook (proceso asíncrono y seguro). Esta función solo redirige al usuario a la vista de éxito (/payment-result/:id?status=success).	302 (Redirect) a Frontend URL.
+handlePending	Procesa el retorno del usuario por estado pendiente en la pasarela.	Redirige al usuario a la vista de estado pendiente, sugiriendo la consulta de estado posterior (/payment-result/:id?status=pending).	302 (Redirect) a Frontend URL.
+
+
+7.25. Mapeo de Endpoints: Redirección (redireccion.routes.js)
+Estas rutas son públicas y deben estar expuestas directamente para que la pasarela de pago pueda enviar el navegador del usuario de vuelta al servidor tras completar la interacción.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/pago/exito/:id	N/A (Público)	redireccionController.handleSuccess	Retorno de pasarela en caso de éxito.
+GET	/pago/fallo/:id	N/A (Público)	redireccionController.handleFailure	Retorno de pasarela en caso de fallo o cancelación por el usuario.
+GET	/pago/pendiente/:id	N/A (Público)	redireccionController.handlePending	Retorno de pasarela en caso de que el pago quede en proceso (ej. efectivo).
+
+
+ Mapeo de Controladores: Resumen de Cuenta (resumen_cuenta.controller.js)
+Este controlador es responsable de generar los resúmenes detallados de las cuentas de inversión/suscripción, calcular las cuotas mensuales (basadas en valores dinámicos como el cemento) y proporcionar acceso a los usuarios a sus propios resúmenes, mientras reserva el control CRUD completo para los administradores.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Creación y Cálculo: Crea un nuevo resumen de cuenta.	CRÍTICA: Depende de cuotaMensualService.createAndSetProjectAmount para calcular el valor móvil y el valor mensual final basado en el precio del cemento y los porcentajes de plan/IVA. Crea el ResumenCuenta con estos detalles.	201 (Created). 404 (Proyecto no encontrado). 500 (Error de cálculo/BD).
+findMyAccountSummaries	Obtiene todos los resúmenes de cuenta del usuario autenticado.	Llama a resumenCuentaService.getAccountSummariesByUserId(userId).	200 (OK).
+findAll	Obtiene todos los resúmenes de cuenta del sistema.	Llama a resumenCuentaService.findAll(). Solo para Administradores.	200 (OK).
+getAccountSummaryById	Obtiene un resumen específico.	Control de Acceso: Verifica si el usuario es Administrador (acceso total) o si es el propietario del resumen (findResumenByIdAndUserId).	200 (OK). 404 (No encontrado o no autorizado).
+update	Actualiza manualmente un resumen de cuenta.	Llama a resumenCuentaService.update(). Solo para Administradores.	200 (OK). 404 (Not Found).
+softDelete	Elimina lógicamente un resumen de cuenta.	Llama a resumenCuentaService.softDelete(). Solo para Administradores.	200 (OK). 404 (Not Found).
+
+
+7.27. Mapeo de Endpoints: Resumen de Cuenta (resumen_cuenta.routes.js)
+Las rutas están diseñadas para diferenciar claramente entre el acceso del usuario final (lectura de sus resúmenes) y las operaciones de administración (CRUD total), utilizando authMiddleware.authorizeAdmin.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/api/resumen_cuenta/mis_resumenes	authenticate	resumenCuentaController.findMyAccountSummaries	Obtiene la lista de resúmenes del usuario. (Lectura para el cliente).
+GET	/api/resumen_cuenta/	authenticate -> authorizeAdmin	resumenCuentaController.findAll	Lista todos los resúmenes (CRUD Admin). Requiere Admin.
+GET	/api/resumen_cuenta/:id	authenticate	resumenCuentaController.getAccountSummaryById	Obtiene un resumen específico, verificando la propiedad o el rol de Admin.
+PUT	/api/resumen_cuenta/:id	authenticate -> authorizeAdmin	resumenCuentaController.update	Actualiza un resumen por ID. Requiere Admin.
+DELETE	/api/resumen_cuenta/:id	authenticate -> authorizeAdmin	resumenCuentaController.softDelete	Eliminación lógica de un resumen. Requiere Admin.
+
+Mapeo de Controladores: Suscripción de Proyecto (suscripcion_proyecto.controller.js)
+Este controlador maneja el proceso de suscripción a un proyecto de inversión, desde el pago inicial (con validación 2FA) hasta la creación del registro de la suscripción y su posterior gestión.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+iniciarSuscripcion	Inicia la transacción de pago para la inversión inicial del proyecto.	CRÍTICA (Transacción y 2FA): 1. Verifica si el proyecto es válido. 2. Si el usuario tiene 2FA activo, crea la Transacción y el Pago como pendiente en una transacción de BD, y devuelve 202 (requiere 2FA). 3. Si no hay 2FA, genera la URL de checkout de la pasarela y devuelve 200 con la URL.	200 (Redirección). 202 (2FA Requerido). 400 (Proyecto finalizado). 404 (Proyecto no encontrado).
+confirmarSuscripcionCon2FA	Verifica el código 2FA para un pago de suscripción pendiente.	CRÍTICA: Llama a auth2faService.verifyToken. Si es exitoso, llama a TransaccionService.generarCheckoutParaTransaccionExistente para crear la preferencia de pago y devolver la URL de redirección.	200 (Redirección). 401 (Código 2FA incorrecto). 403 (Transacción inválida/no pertenece).
+confirmarSuscripcion	Endpoint Webhook llamado por la pasarela de pago para notificar el pago exitoso.	CRÍTICA: Llama a suscripcionProyectoService.confirmarSuscripcion(transaccionId). Esta función es responsable de crear el registro de la suscripción y el Resumen de Cuenta (si aplica) una vez que el pago ha sido validado por el webhook.	200 (OK - respuesta al webhook). 400 (ID de transacción faltante).
+findMySubscriptions	Obtiene todas las suscripciones activas del usuario.	Llama a suscripcionProyectoService.findByUserId(userId).	200 (OK).
+findMySubscriptionById	Obtiene una suscripción específica del usuario.	Llama a suscripcionProyectoService.findByIdAndUserId(id, userId).	200 (OK). 404 (No encontrada o no pertenece).
+softDeleteMySubscription	Cancela (soft delete) una suscripción del usuario.	Verifica que la suscripción pertenezca al usuario antes de llamar a suscripcionProyectoService.softDelete().	200 (OK). 404 (No encontrada o no pertenece).
+findAll / findById	Funciones CRUD para administradores.	Acceso completo a todas las suscripciones. Requiere Admin.	200 (OK). 404 (Not Found).
+
+
+7.29. Mapeo de Endpoints: Suscripción de Proyecto (suscripcion_proyecto.routes.js)
+Las rutas reflejan el flujo de pago con 2FA y separan claramente los accesos de usuario (/mis_suscripciones) de las funcionalidades de administración.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/suscripciones/iniciar-pago	authenticate	suscripcionProyectoController.iniciarSuscripcion	Paso 1 Checkout: Inicia la transacción de pago y gestiona la bifurcación 2FA.
+POST	/api/suscripciones/confirmar-2fa	authenticate	suscripcionProyectoController.confirmarSuscripcionCon2FA	Paso 2 Checkout: Verifica el código 2FA y genera la URL de redirección.
+GET	/api/suscripciones/activas	authenticate	suscripcionProyectoController.findAllActivo	Lista las suscripciones activas a proyectos.
+GET	/api/suscripciones/mis_suscripciones	authenticate	suscripcionProyectoController.findMySubscriptions	Lista las suscripciones del usuario.
+GET	/api/suscripciones/mis_suscripciones/:id	authenticate	suscripcionProyectoController.findMySubscriptionById	Obtiene una suscripción específica del usuario.
+DELETE	/api/suscripciones/mis_suscripciones/:id	authenticate	suscripcionProyectoController.softDeleteMySubscription	Cancela una suscripción del usuario.
+POST	/api/suscripciones/confirmar-pago	N/A (Público)	suscripcionProyectoController.confirmarSuscripcion	Webhook: Punto de entrada para la pasarela de pago para confirmar pagos.
+GET	/api/suscripciones/	authenticate -> authorizeAdmin	suscripcionProyectoController.findAll	Lista todas las suscripciones (Admin).
+GET	/api/suscripciones/:id	authenticate -> authorizeAdmin	suscripcionProyectoController.findById	Obtiene una suscripción por ID (Admin).
+DELETE	/api/suscripciones/:id	authenticate -> authorizeAdmin	suscripcionProyectoController.softDelete	Eliminación lógica de una suscripción (Admin).
+
+
+Mapeo de Controladores: Gestión de Suscripciones Genéricas (suscripcion.controller.js)
+Este controlador está diseñado para una única tarea: permitir que un usuario autenticado cancele una suscripción existente, asegurando que solo pueda modificar su propia información.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+cancel	Permite a un usuario realizar una eliminación lógica (soft delete) de su propia suscripción.	Control de Acceso: Realiza una verificación estricta para asegurar que el id_usuario de la suscripción coincida con el req.user.id del usuario autenticado. Llama a suscripcionService.softDelete(id).	200 (OK). 403 (Acceso denegado: no es el propietario). 400 (Error de servicio).
+
+
+7.31. Mapeo de Endpoints: Suscripción Genérica (suscripcion.routes.js)
+Esta sección define el único endpoint expuesto por este módulo, que es un verbo específico (/cancelar) para evitar conflictos con las rutas CRUD genéricas de otros controladores.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+PUT	/api/suscripciones/:id/cancelar	authenticate	suscripcionController.cancel	Permite al usuario cancelar su suscripción específica (:id). Requiere Autenticación y la validación de propiedad interna.
+
+
+Mapeo de Controladores: Transacciones y Flujo de Pago (transaccion.controller.js)
+Este controlador se centra en la gestión y consulta de los registros de transacciones. Su función más crítica es confirmarTransaccion, que asegura que el cambio de estado de una transacción y sus efectos asociados (como crear suscripciones o cerrar pujas) sean atómicos.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Crea una nueva transacción.	Llama a transaccionService.create(). Aunque existe, las transacciones se crean principalmente como parte de flujos mayores (suscripciones, pujas).	201 (Created). 400 (Datos inválidos).
+confirmarTransaccion	CRÍTICO: Procesa y confirma una transacción como pagada (usado por webhooks o Administrador).	Envuelve el proceso en una transacción de Sequelize (t) para garantizar que, si falla alguna actualización subsiguiente (ej. crear una suscripción), todo se revierta (t.rollback()). Llama a transaccionService.confirmarTransaccion().	200 (OK). 400 (Error de lógica o servicio).
+findMyTransactions	Obtiene todas las transacciones del usuario autenticado.	Llama a transaccionService.findByUserId(userId).	200 (OK).
+findMyTransactionById	Obtiene una transacción específica del usuario.	Llama a transaccionService.findByIdAndUserId(id, userId), validando la propiedad.	200 (OK). 404 (No encontrada o no pertenece).
+findAll	Obtiene todas las transacciones del sistema.	Llama a transaccionService.findAll(). Solo para Administradores.	200 (OK).
+CRUD Genérico	Funciones CRUD para Administradores.	findById, update, softDelete. Permiten la gestión completa por parte de un usuario con rol Admin.	200 (OK) / 204 (No Content). 404 (Not Found).
+
+
+7.33. Mapeo de Endpoints: Transacción (transaccion.routes.js)
+Las rutas están organizadas para priorizar las consultas del usuario final (/mis_transacciones) antes de exponer las rutas dinámicas para la administración.
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+GET	/api/transacciones/	authenticate -> authorizeAdmin	transaccionController.findAll	Lista todas las transacciones del sistema. Requiere Admin.
+PUT	/api/transacciones/:id/confirmar	authenticate -> authorizeAdmin	transaccionController.confirmarTransaccion	Ruta de administrador para forzar la confirmación de una transacción.
+GET	/api/transacciones/mis_transacciones	authenticate	transaccionController.findMyTransactions	Obtiene la lista de transacciones del usuario.
+GET	/api/transacciones/mis_transacciones/:id	authenticate	transaccionController.findMyTransactionById	Obtiene una transacción específica del usuario, validando la propiedad.
+PUT	/api/transacciones/mis_transacciones/:id	authenticate	transaccionController.updateMyTransaction	Permite al usuario actualizar su propia transacción (si aplica).
+GET	/api/transacciones/:id	authenticate -> authorizeAdmin	transaccionController.findById	Obtiene una transacción por ID (Admin).
+PUT	/api/transacciones/:id	authenticate -> authorizeAdmin	transaccionController.update	Actualiza una transacción por ID (Admin).
+DELETE	/api/transacciones/:id	authenticate -> authorizeAdmin	transaccionController.softDelete	Eliminación lógica de una transacción por ID (Admin).
+
+Mapeo de Controladores: Usuarios y Autenticación (usuario.controller.js)
+Este controlador administra la funcionalidad central de la plataforma, incluyendo el registro, la gestión del perfil propio del usuario (/me) y la capacidad de los administradores para realizar el CRUD completo sobre todos los usuarios.
+
+Función del Controlador	Propósito Principal	Lógica Crítica y Servicios Utilizados	Códigos de Respuesta Clave para el Frontend
+create	Registra un nuevo usuario.	Llama a usuarioService.create(). El servicio maneja el hashing de la contraseña y la generación del token de confirmación de email. Oculta datos sensibles en la respuesta.	201 (Created). 400 (Validación fallida, ej: email duplicado).
+confirmEmail	Activa la cuenta de un usuario mediante el token recibido por correo.	Llama a usuarioService.confirmEmail(token). Actualiza email_confirmado: true.	200 (Éxito). 400 (Token inválido o expirado).
+findMe	Obtiene la información del perfil del usuario autenticado.	Usa req.user.id para buscar el perfil.	200 (OK). 404 (Usuario no encontrado).
+updateMe	Actualiza la información del perfil del usuario autenticado.	Usa req.user.id para actualizar.	200 (OK). 400 (Validación fallida).
+softDeleteMe	Inhabilita la cuenta del usuario autenticado (Soft Delete).	Llama a usuarioService.softDelete(req.user.id).	204 (No Content).
+findAll	Obtiene la lista completa de todos los usuarios (activos e inactivos).	Llama a usuarioService.findAll(). Solo para Administradores.	200 (OK).
+findAllActivo	Obtiene la lista de usuarios con cuenta activa (activo: true).	Llama a usuarioService.findAllActivo(). Solo para Administradores.	200 (OK).
+CRUD Admin	findById, update, softDelete.	Permite la gestión completa de cualquier usuario por su ID. Requiere rol Admin.	200 (OK) / 204 (No Content). 404 (Not Found).
+
+
+7.35. Mapeo de Endpoints: Usuarios y Seguridad (usuario.routes.js)
+El orden de las rutas es crítico para evitar que las rutas estáticas (/confirmar, /me, /activos) sean interpretadas erróneamente como un ID (/:id).
+
+Método HTTP	Endpoint Completo	Middleware Flow	Controlador Mapeado	Propósito y Requisitos de Seguridad
+POST	/api/usuarios/	N/A (Público)	usuarioController.create	Registro de nuevo usuario.
+GET	/api/usuarios/confirmar/:token	N/A (Público)	usuarioController.confirmEmail	Enlace de activación por correo electrónico.
+GET	/api/usuarios/me	authenticate	usuarioController.findMe	Obtener perfil del usuario autenticado.
+PUT	/api/usuarios/me	authenticate	usuarioController.updateMe	Actualizar perfil del usuario autenticado.
+DELETE	/api/usuarios/me	authenticate	usuarioController.softDeleteMe	Desactivar/Eliminar perfil propio.
+GET	/api/usuarios/	authenticate -> authorizeAdmin	usuarioController.findAll	Lista todos los usuarios. Requiere Admin.
+GET	/api/usuarios/activos	authenticate -> authorizeAdmin	usuarioController.findAllActivo	Lista solo usuarios activos. Requiere Admin.
+GET	/api/usuarios/:id	authenticate -> authorizeAdmin	usuarioController.findById	Obtiene un usuario por ID. Requiere Admin.
+PUT	/api/usuarios/:id	authenticate -> authorizeAdmin	usuarioController.update	Actualiza un usuario por ID. Requiere Admin.
+DELETE	/api/usuarios/:id	authenticate -> authorizeAdmin	usuarioController.softDelete	Eliminación lógica de un usuario por ID. Requiere Admin.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,6 @@
-// Archivo: models/associations.js
+// models/associations.js
 
+// Importa todos los modelos
 const Usuario = require("./usuario");
 const Inversion = require("./inversion");
 const Lote = require("./lote");
@@ -9,14 +10,17 @@ const Transaccion = require("./transaccion");
 const Imagen = require("./imagen");
 const Contrato = require("./contrato");
 const SuscripcionProyecto = require("./suscripcion_proyecto");
+const SuscripcionCancelada = require("./suscripcion_cancelada"); // 🆕 ¡MODELO AÑADIDO!
 const Pago = require("./pago"); // Pagos de mensualidad
-const PagoMercado = require("./pagoMercado"); // Pagos de pasarela (Mercado Pago) 👈 ¡Asegúrate de que este modelo esté creado!
+const PagoMercado = require("./pagoMercado"); // Pagos de pasarela (Mercado Pago)
 const Mensaje = require("./mensaje");
 const CuotaMensual = require("./CuotaMensual");
 const ResumenCuenta = require("./resumen_cuenta");
 
 const configureAssociations = () => {
+  // -------------------------------------------------------------------
   // --- Relaciones de Usuario ---
+  // -------------------------------------------------------------------
   Usuario.hasMany(Inversion, {
     foreignKey: "id_inversor",
     as: "inversiones",
@@ -52,16 +56,23 @@ const configureAssociations = () => {
     as: "suscripciones",
     onDelete: "RESTRICT",
   });
+  Usuario.hasMany(SuscripcionCancelada, {
+    // 🆕 Relación con el nuevo modelo
+    foreignKey: "id_usuario",
+    as: "suscripciones_canceladas",
+    onDelete: "RESTRICT",
+  });
   Usuario.hasMany(Mensaje, {
     foreignKey: "id_remitente",
     as: "mensajesEnviados",
+    onDelete: "RESTRICT",
   });
   Usuario.hasMany(Mensaje, {
     foreignKey: "id_receptor",
     as: "mensajesRecibidos",
-  });
+    onDelete: "RESTRICT",
+  }); // ------------------------------------------------------------------- // --- Relaciones de Inversion --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Inversion ---
   Inversion.belongsTo(Usuario, { foreignKey: "id_inversor", as: "inversor" });
   Inversion.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
@@ -74,9 +85,12 @@ const configureAssociations = () => {
   Inversion.belongsTo(SuscripcionProyecto, {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Proyecto --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Proyecto ---
+  Proyecto.belongsTo(Usuario, {
+    foreignKey: "id_creador_proyecto",
+    as: "creador",
+  });
   Proyecto.hasMany(Transaccion, {
     foreignKey: "id_proyecto",
     as: "transacciones",
@@ -102,13 +116,18 @@ const configureAssociations = () => {
     as: "suscripciones_proyecto",
     onDelete: "RESTRICT",
   });
+  Proyecto.hasMany(SuscripcionCancelada, {
+    // 🆕 Relación con el nuevo modelo
+    foreignKey: "id_proyecto",
+    as: "cancelaciones",
+    onDelete: "RESTRICT",
+  });
   Proyecto.hasMany(Puja, { foreignKey: "id_proyecto", as: "pujas" });
   Proyecto.hasMany(CuotaMensual, {
     foreignKey: "id_proyecto",
     as: "cuotas_mensuales",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Lote --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Lote ---
   Lote.belongsTo(Usuario, { foreignKey: "id_ganador", as: "ganador" });
   Lote.hasMany(Puja, {
     foreignKey: "id_lote",
@@ -120,9 +139,8 @@ const configureAssociations = () => {
     foreignKey: "id_lote",
     as: "imagenes",
     onDelete: "RESTRICT",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Puja --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Puja ---
   Puja.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
   Puja.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
   Puja.hasOne(Transaccion, {
@@ -133,50 +151,39 @@ const configureAssociations = () => {
   Puja.belongsTo(SuscripcionProyecto, {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Transaccion --- // -------------------------------------------------------------------
 
-  // ----------------------------------------------------------------------------------
-  // --- Relaciones de Transaccion (ACTUALIZADAS con id_pago_mensual y id_pago_pasarela) ---
-  // ----------------------------------------------------------------------------------
   Transaccion.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
   Transaccion.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
     as: "proyectoTransaccion",
   });
   Transaccion.belongsTo(Puja, { foreignKey: "id_puja", as: "puja" });
-
-  // 1. Relación con Pagos de Mensualidad
   Transaccion.belongsTo(Pago, {
     foreignKey: "id_pago_mensual",
     as: "pagoMensual",
   });
-
-  // 2. Relación con Pagos de Pasarela (Mercado Pago)
   Transaccion.belongsTo(PagoMercado, {
     foreignKey: "id_pago_pasarela",
     as: "pagoPasarela",
   });
-
   Transaccion.belongsTo(Inversion, {
     foreignKey: "id_inversion",
     as: "inversion",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Imagen --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Imagen ---
   Imagen.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
     as: "proyectoImagen",
   });
-  Imagen.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
+  Imagen.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" }); // ------------------------------------------------------------------- // --- Relaciones de Contrato --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Contrato ---
   Contrato.belongsTo(Proyecto, { foreignKey: "id_proyecto", as: "proyecto" });
   Contrato.belongsTo(Usuario, {
     foreignKey: "id_usuario_firmante",
     as: "usuario_firmante",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de SuscripcionProyecto --- // -------------------------------------------------------------------
 
-  // --- Relaciones de SuscripcionProyecto ---
   SuscripcionProyecto.belongsTo(Usuario, {
     foreignKey: "id_usuario",
     as: "usuario",
@@ -202,8 +209,25 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion",
     as: "resumen_cuenta",
   });
+  SuscripcionProyecto.hasOne(SuscripcionCancelada, {
+    // 🆕 Relación con el nuevo modelo
+    foreignKey: "id_suscripcion_original",
+    as: "registroCancelacion",
+  }); // ------------------------------------------------------------------- // --- Relaciones de SuscripcionCancelada (NUEVAS) --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Pago (Mensualidad) ---
+  SuscripcionCancelada.belongsTo(Usuario, {
+    foreignKey: "id_usuario",
+    as: "usuarioCancelador",
+  });
+  SuscripcionCancelada.belongsTo(Proyecto, {
+    foreignKey: "id_proyecto",
+    as: "proyectoCancelado",
+  });
+  SuscripcionCancelada.belongsTo(SuscripcionProyecto, {
+    foreignKey: "id_suscripcion_original",
+    as: "suscripcionOriginal",
+  }); // ------------------------------------------------------------------- // --- Relaciones de Pago (Mensualidad) --- // -------------------------------------------------------------------
+
   Pago.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuarioDirecto" });
   Pago.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
@@ -213,37 +237,28 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
   });
-  // La relación de Pago a Transaccion ahora usa el nuevo campo
   Pago.hasOne(Transaccion, {
     foreignKey: "id_pago_mensual",
     as: "transaccionMensual",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de PagoMercado (Pasarela) --- // -------------------------------------------------------------------
 
-  // ----------------------------------------------------------------------------------
-  // --- Relaciones de PagoMercado (Pasarela) --- 👈 ¡NUEVA SECCIÓN IMPORTANTE!
-  // ----------------------------------------------------------------------------------
-  // PagoMercado tiene el ID de la transacción en nuestra BD
   PagoMercado.belongsTo(Transaccion, {
     foreignKey: "id_transaccion",
     as: "transaccionAsociada",
   });
-  // Relación inversa desde Transaccion
   PagoMercado.hasOne(Transaccion, {
     foreignKey: "id_pago_pasarela",
     as: "transaccionDePasarela",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de Mensaje --- // -------------------------------------------------------------------
 
-  // --- Relaciones de Mensaje ---
   Mensaje.belongsTo(Usuario, { foreignKey: "id_remitente", as: "remitente" });
-  Mensaje.belongsTo(Usuario, { foreignKey: "id_receptor", as: "receptor" });
+  Mensaje.belongsTo(Usuario, { foreignKey: "id_receptor", as: "receptor" }); // ------------------------------------------------------------------- // --- Relaciones de CuotaMensual --- // -------------------------------------------------------------------
 
-  // --- Relaciones de CuotaMensual ---
   CuotaMensual.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
     as: "proyectoCuota",
-  });
+  }); // ------------------------------------------------------------------- // --- Relaciones de ResumenCuenta --- // -------------------------------------------------------------------
 
-  // --- Relaciones de ResumenCuenta ---
   ResumenCuenta.belongsTo(SuscripcionProyecto, {
     foreignKey: "id_suscripcion",
     as: "suscripcion",

@@ -64,6 +64,20 @@ router.get(
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findAll
 );
+router.get(
+  "/proyecto/:id_proyecto/all", // ⬅️ Nuevo endpoint más explícito
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.findAllByProjectId
+);
+
+// Ruta 2: Trae solo las ACTIVAS (Recomendado para la mayoría de reportes)
+router.get(
+  "/proyecto/:id_proyecto", // ⬅️ Usamos el endpoint más limpio para la versión activa (por defecto)
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.findActiveByProjectId
+);
 
 // 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final de este nivel para no colisionar)
 router.get(

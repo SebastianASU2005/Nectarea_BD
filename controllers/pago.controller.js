@@ -6,10 +6,22 @@ const transaccionService = require("../services/transaccion.service");
 const auth2faService = require("../services/auth2fa.service");
 const usuarioService = require("../services/usuario.service");
 
+/**
+ * Controlador de Express para gestionar los pagos pendientes, incluyendo
+ * la creación, listado, y el flujo de checkout con punto de control 2FA.
+ */
 const pagoController = {
   // ===================================================================
-  // FUNCIÓN EXISTENTE: CREAR PAGO
+  // FUNCIONES BÁSICAS
   // ===================================================================
+
+  /**
+   * @async
+   * @function create
+   * @description Crea un nuevo registro de pago (generalmente iniciado por el sistema).
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async create(req, res) {
     try {
       const nuevoPago = await pagoService.create(req.body);
@@ -19,9 +31,13 @@ const pagoController = {
     }
   },
 
-  // ===================================================================
-  // FUNCIÓN EXISTENTE: ENCONTRAR MIS PAGOS
-  // ===================================================================
+  /**
+   * @async
+   * @function findMyPayments
+   * @description Obtiene todos los pagos asociados al usuario autenticado.
+   * @param {object} req - Objeto de solicitud de Express (contiene `req.user.id`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async findMyPayments(req, res) {
     try {
       const userId = req.user.id;
@@ -35,12 +51,24 @@ const pagoController = {
   // ===================================================================
   // 🚀 FUNCIÓN MODIFICADA: INICIAR CHECKOUT (Bifurcación 2FA) 🚦
   // ===================================================================
+
+  /**
+   * @async
+   * @function requestCheckout
+   * @description Inicia el proceso de checkout para un pago pendiente.
+   * Detiene el flujo con un código 202 si el 2FA está activo, solicitando el código al cliente.
+   * @param {object} req - Objeto de solicitud de Express (con `id` del pago en `params`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async requestCheckout(req, res) {
     try {
       const pagoId = req.params.id;
-      const userId = req.user.id;
+      const userId = req.user.id; // 👈 VERIFICA ESTE VALOR
+      console.log(
+        `[DEBUG] Pago ID: ${pagoId}, Usuario Autenticado ID: ${userId}`
+      );
 
-      // 1. Validar el pago y obtener el usuario
+      // 1. Validar el pago (existencia, estado y propiedad) y obtener el usuario
       const [pagoValidado, user] = await Promise.all([
         pagoService.getValidPaymentDetails(pagoId, userId),
         usuarioService.findById(userId),
@@ -48,7 +76,7 @@ const pagoController = {
 
       // 🛑 2. PUNTO DE CONTROL DE SEGURIDAD 2FA 🛑
       if (user.is_2fa_enabled) {
-        // Si el 2FA está activo, detenemos la redirección y solicitamos el código.
+        // Retorna 202 Accepted para que el cliente sepa que debe enviar el código 2FA
         return res.status(202).json({
           message: "Se requiere verificación 2FA para iniciar el checkout.",
           is2FARequired: true,
@@ -75,6 +103,7 @@ const pagoController = {
     } catch (error) {
       const message = error.message;
 
+      // Manejo específico de errores
       if (
         message.includes("Acceso denegado") ||
         message.includes("no encontrado")
@@ -92,24 +121,30 @@ const pagoController = {
   // ===================================================================
   // 🚀 NUEVA FUNCIÓN: VERIFICAR 2FA Y CONTINUAR CHECKOUT
   // ===================================================================
+
+  /**
+   * @async
+   * @function confirmarPagoYContinuar
+   * @description Verifica el código 2FA proporcionado por el usuario y, si es correcto,
+   * genera la Transacción y el Checkout para el pago pendiente.
+   * @param {object} req - Objeto de solicitud de Express (con `pagoId` y `codigo_2fa` en `body`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
   async confirmarPagoYContinuar(req, res) {
     try {
       const userId = req.user.id;
       const { pagoId, codigo_2fa } = req.body;
 
-      // 1. Obtener y validar datos
+      // 1. Obtener y validar datos (usuario y pago)
       const [user, pagoValidado] = await Promise.all([
         usuarioService.findById(userId),
-        pagoService.getValidPaymentDetails(pagoId, userId), // Reutilizamos la validación de propiedad y estado
+        pagoService.getValidPaymentDetails(pagoId, userId), // Reutiliza la validación
       ]);
 
       if (!user.is_2fa_enabled || !user.twofa_secret) {
-        return res
-          .status(403)
-          .json({
-            error:
-              "2FA no activo o error de flujo. Intente el checkout normal.",
-          });
+        return res.status(403).json({
+          error: "2FA no activo o error de flujo. Intente el checkout normal.",
+        });
       }
 
       // 2. VERIFICACIÓN CRÍTICA DEL 2FA
@@ -146,6 +181,12 @@ const pagoController = {
   // ===================================================================
   // FUNCIONES DE ADMINISTRACIÓN Y OTROS
   // ===================================================================
+
+  /**
+   * @async
+   * @function findAll
+   * @description Obtiene todos los pagos (para administradores).
+   */
   async findAll(req, res) {
     try {
       const pagos = await pagoService.findAll();
@@ -154,6 +195,12 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function findById
+   * @description Obtiene un pago por ID (para administradores).
+   */
   async findById(req, res) {
     try {
       const pago = await pagoService.findById(req.params.id);
@@ -165,6 +212,12 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function update
+   * @description Actualiza un pago por ID (para administradores).
+   */
   async update(req, res) {
     try {
       const pagoActualizado = await pagoService.update(req.params.id, req.body);
@@ -176,6 +229,12 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function softDelete
+   * @description Elimina lógicamente un pago por ID.
+   */
   async softDelete(req, res) {
     try {
       const pagoEliminado = await pagoService.softDelete(req.params.id);
@@ -187,26 +246,59 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
+
+  /**
+   * @async
+   * @function triggerManualPayment
+   * @description Función de administración o sistema para generar un pago mensual manualmente.
+   * ✅ CORREGIDO: Ahora usa una transacción de BD para atomicidad.
+   */
   async triggerManualPayment(req, res, next) {
+    // ✅ AGREGAR IMPORTACIÓN AL INICIO DEL ARCHIVO
+    const { sequelize } = require("../config/database");
+
+    const t = await sequelize.transaction();
+
     try {
       const { id_suscripcion } = req.body;
+
       if (!id_suscripcion) {
-        return res
-          .status(400)
-          .json({ message: "El id_suscripcion es requerido." });
+        await t.rollback();
+        return res.status(400).json({
+          message: "El id_suscripcion es requerido.",
+        });
       }
+
+      // ✅ Pasar la transacción al servicio
       const nuevoPago = await pagoService.generarPagoMensualConDescuento(
-        id_suscripcion
+        id_suscripcion,
+        { transaction: t } // ✅ CRÍTICO: Pasar la transacción
       );
+
       if (nuevoPago.message) {
+        // Maneja el caso en que el servicio devuelve un mensaje (sin meses restantes)
+        await t.commit();
         return res.status(200).json(nuevoPago);
       }
 
+      await t.commit(); // ✅ Confirmar cambios
+
       res.status(201).json({
         message: "Pago mensual simulado y creado exitosamente.",
-        pago: nuevoPago,
+        pago: {
+          id: nuevoPago.id,
+          id_suscripcion: nuevoPago.id_suscripcion,
+          id_usuario: nuevoPago.id_usuario, // ✅ Ahora debería tener valor
+          id_proyecto: nuevoPago.id_proyecto, // ✅ Ahora debería tener valor
+          monto: nuevoPago.monto,
+          estado_pago: nuevoPago.estado_pago,
+          mes: nuevoPago.mes,
+          fecha_vencimiento: nuevoPago.fecha_vencimiento,
+        },
       });
     } catch (error) {
+      await t.rollback(); // ✅ Revertir en caso de error
+      console.error("Error al generar pago manual:", error.message);
       next(error);
     }
   },

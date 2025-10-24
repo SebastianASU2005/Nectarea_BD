@@ -1,106 +1,116 @@
+// Librerías
 const cron = require("node-cron");
 const { sequelize } = require("../config/database");
+const { Op } = require("sequelize");
 const Proyecto = require("../models/proyecto");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
-const Pago = require("../models/pago");
 const Usuario = require("../models/usuario");
-const { getNextMonthDate } = require("../utils/dates");
-const emailService = require("../services/email.service");
+const emailService = require("../services/email.service"); // Importado
+const pagoService = require("../services/pago.service");
 
-// Objeto que contiene el job y el método para iniciarlo
-const monthlyPaymentGenerationTask = {
-  // Aquí se define la tarea, pero no se inicia automáticamente
-  job: cron.schedule(
-    "0 2 1 * *",
-    async () => {
-      console.log("Iniciando el proceso de generación de pagos mensuales...");
-      const t = await sequelize.transaction();
+/**
+ * 🎯 LÓGICA CENTRAL DE LA TAREA: Genera los pagos mensuales para suscripciones activas.
+ * Llama a generarPagoMensualConDescuento para aplicar saldos a favor.
+ * @async
+ */
+const generatePaymentsCore = async () => {
+  console.log(
+    "Iniciando el proceso de generación de pagos mensuales con descuento..."
+  );
+  const t = await sequelize.transaction();
 
-      try {
-        const proyectosActivos = await Proyecto.findAll({
-          where: {
-            estado_proyecto: "En proceso",
-            tipo_inversion: "mensual",
-          },
-          transaction: t,
-        });
+  try {
+    // 1. Encontrar proyectos activos que requieren pagos mensuales
+    const proyectosActivos = await Proyecto.findAll({
+      where: {
+        estado_proyecto: "En proceso",
+        tipo_inversion: "mensual",
+      },
+      transaction: t,
+    });
 
-        for (const proyecto of proyectosActivos) {
-          const suscripciones = await SuscripcionProyecto.findAll({
-            where: { id_proyecto: proyecto.id, activo: true },
-            transaction: t,
-          });
+    for (const proyecto of proyectosActivos) {
+      // 2. Encontrar todas las suscripciones activas para el proyecto
+      const suscripciones = await SuscripcionProyecto.findAll({
+        where: { id_proyecto: proyecto.id, activo: true },
+        transaction: t,
+      });
 
-          if (suscripciones.length > 0) {
-            // Dado que la CRON solo crea pagos una vez al mes por proyecto,
-            // el último pago puede ser de CUALQUIER suscripción de ese proyecto
-            // para determinar el `mes` de la cuota.
-            const ultimoPago = await Pago.findOne({
-              where: { id_suscripcion: suscripciones[0].id }, // Usamos la primera suscripción solo para el contexto del mes
-              order: [["mes", "DESC"]],
+      if (suscripciones.length > 0) {
+        for (const suscripcion of suscripciones) {
+          // 3. LÓGICA CLAVE: Generar el pago
+          const resultadoPago =
+            await pagoService.generarPagoMensualConDescuento(suscripcion.id, {
               transaction: t,
             });
-            const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
-            const fechaVencimiento = new Date();
-            fechaVencimiento.setDate(10);
-            fechaVencimiento.setHours(0, 0, 0, 0);
 
-            for (const suscripcion of suscripciones) {
-              const monto = proyecto.monto_inversion; // 🛑 CORRECCIÓN: AGREGAR id_usuario y id_proyecto desde la suscripción.
-              await Pago.create(
-                {
-                  id_suscripcion: suscripcion.id,
-                  id_usuario: suscripcion.id_usuario, // <-- AGREGADO
-                  id_proyecto: suscripcion.id_proyecto, // <-- AGREGADO
-                  monto: monto,
-                  fecha_vencimiento: fechaVencimiento,
-                  estado_pago: "pendiente",
-                  mes: proximoMes,
-                },
-                { transaction: t }
+          // 4. Procesar el resultado
+          if (resultadoPago && resultadoPago.id) {
+            console.log(
+              `Pago ${resultadoPago.mes} creado/descontado para suscripción ${suscripcion.id}. Estado: ${resultadoPago.estado_pago}. Monto Pendiente: ${resultadoPago.monto}.`
+            );
+
+            // 5. Enviar notificación al usuario
+            // ⚠️ Se asume que Usuario.findByPk no requiere la transacción para el email.
+            const usuario = await Usuario.findByPk(suscripcion.id_usuario);
+
+            // 🟢 CAMBIO: Llamada a la función específica del email service
+            if (usuario && usuario.email) {
+              const fechaVencimientoDate = new Date(
+                resultadoPago.fecha_vencimiento
               );
+              const fechaVencimientoString = fechaVencimientoDate
+                .toISOString()
+                .split("T")[0];
 
-              console.log(
-                `Pago ${proximoMes} creado para la suscripción ${suscripcion.id} en el proyecto ${proyecto.id}.`
+              await emailService.notificarPagoGenerado(
+                // ⬅️ FUNCIÓN ESPECÍFICA
+                usuario, // Se pasa el objeto usuario completo
+                proyecto,
+                resultadoPago.mes,
+                parseFloat(resultadoPago.monto),
+                fechaVencimientoString
               );
-
-              const usuario = await Usuario.findByPk(suscripcion.id_usuario, {
-                transaction: t,
-              });
-              if (usuario && usuario.email) {
-                const subject = `Recordatorio de Pago: ${proyecto.nombre_proyecto} - Mes ${proximoMes}`;
-                const text = `Hola ${
-                  usuario.nombre
-                },\n\nTe recordamos que se ha generado tu pago mensual por un monto de $${monto} para el proyecto "${
-                  proyecto.nombre_proyecto
-                }".\n\nEl pago vence el ${
-                  fechaVencimiento.toISOString().split("T")[0]
-                }.\n\nGracias por tu apoyo.`;
-
-                await emailService.sendEmail(usuario.email, subject, text);
-              }
             }
+            // 🟢 FIN CAMBIO
+          } else if (resultadoPago && resultadoPago.message) {
+            console.log(
+              `Suscripción ${suscripcion.id}: ${resultadoPago.message}`
+            );
           }
         }
-
-        await t.commit();
-        console.log("Proceso de generación de pagos completado.");
-      } catch (error) {
-        await t.rollback();
-        console.error("Error en el cron job de pagos:", error);
       }
-    },
+    }
+
+    await t.commit();
+    console.log("Proceso de generación de pagos completado.");
+  } catch (error) {
+    await t.rollback();
+    console.error("Error en el cron job de pagos:", error);
+  }
+};
+
+// Objeto que contiene el job y los métodos para iniciar/ejecutar
+const monthlyPaymentGenerationTask = {
+  // 🗓️ CRON MODIFICADO para ejecutarse el DÍA 1 de cada mes a las 13:24
+  job: cron.schedule(
+    "24 13 1 * *", // MINUTO 24, HORA 13 (1:24 PM), DÍA 1
+    generatePaymentsCore,
     {
-      // Aquí se mantiene en 'false' para que no se inicie solo al cargar el archivo
       scheduled: false,
     }
-  ), // Método que tu app.js llamará para iniciar el cron job
+  ),
 
   start() {
     this.job.start();
     console.log(
-      "Cron job de generación de pagos mensuales programado para ejecutarse el primer día de cada mes a las 2:00 AM."
+      "Cron job de generación de pagos mensuales programado para ejecutarse a la 1:24 PM (hora de tu servidor) el DÍA 1 de cada mes. 🗓️"
     );
+  },
+
+  async runManual() {
+    console.log("--- EJECUCIÓN MANUAL DE TAREA DE PAGOS INICIADA ---");
+    return generatePaymentsCore();
   },
 };
 

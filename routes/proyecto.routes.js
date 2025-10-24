@@ -5,7 +5,6 @@ const authMiddleware = require("../middleware/auth.middleware");
 
 // ===============================================
 // 1. RUTAS ESTÁTICAS Y CON PREFIJO (USUARIO & ADMIN)
-// Estas deben ir ANTES que cualquier /:id genérico.
 // ===============================================
 
 // Rutas de Usuario
@@ -13,6 +12,12 @@ router.get(
   "/activos",
   authMiddleware.authenticate,
   proyectoController.findAllActivo
+);
+// Ruta de usuario para proyectos propios (asumo que es /me o similar, si no está definida)
+router.get(
+    "/mis-proyectos",
+    authMiddleware.authenticate,
+    proyectoController.findMyProjects
 );
 
 // Rutas de Administrador (Estáticas)
@@ -22,7 +27,7 @@ router.post(
   authMiddleware.authorizeAdmin,
   proyectoController.create
 );
-// Esta ruta de LISTAR TODO debe ir aquí para no capturar las dinámicas.
+// Listar todos (Admin)
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -32,15 +37,29 @@ router.get(
 
 // ===============================================
 // 2. RUTAS DINÁMICAS (TODAS)
-// Estas DEBEN ir al final del archivo.
 // ===============================================
 
 // Ruta dinámica específica del usuario (con sufijo)
-// Va antes de /:id genérico
 router.get(
   "/:id/activo",
   authMiddleware.authenticate,
   proyectoController.findByIdActivo
+);
+
+// 🚨 NUEVA RUTA: ASIGNAR LOTES A UN PROYECTO EXISTENTE (Admin)
+router.put(
+    "/:id/lotes",
+    authMiddleware.authenticate,
+    authMiddleware.authorizeAdmin,
+    proyectoController.asignarLotes // <-- Nuevo controlador
+);
+
+// Ruta para INICIAR EL PROCESO (Admin)
+router.put(
+  "/:id/iniciar-proceso",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.iniciarProceso
 );
 
 // Rutas genéricas de Administrador (CRUD por ID)

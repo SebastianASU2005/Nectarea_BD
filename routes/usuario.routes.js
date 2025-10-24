@@ -21,6 +21,13 @@ router.get(
   authMiddleware.authorizeAdmin,
   usuarioController.findAllActivo
 );
+// 🆕 RUTA AÑADIDA: Obtener solo administradores activos
+router.get(
+  "/admins",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  usuarioController.findAllAdmins
+);
 
 // ===========================================
 // Rutas de Usuario Propio y Verificación (CON PREFIJO)

@@ -36,6 +36,11 @@ const Proyecto = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
+    suscripciones_minimas: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0, 
+    },
     obj_suscripciones: {
       type: DataTypes.INTEGER,
     },
@@ -60,6 +65,16 @@ const Proyecto = sequelize.define(
     pack_de_lotes: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
+    },
+    // NUEVOS CAMPOS PARA PROYECTOS MENSUALES
+    fecha_inicio_proceso: {
+      type: DataTypes.DATEONLY, // Fecha en que alcanzó el objetivo de suscripciones y pasó a 'En proceso'
+      allowNull: true, // Puede ser nulo si no ha iniciado el proceso
+    },
+    meses_restantes: {
+      type: DataTypes.INTEGER, // Contador para el plazo de inversión
+      allowNull: true,
+      defaultValue: null,
     },
   },
   {

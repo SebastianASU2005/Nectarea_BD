@@ -55,7 +55,7 @@ const Transaccion = sequelize.define(
       allowNull: true,
     },
     estado_transaccion: {
-      type: DataTypes.ENUM("pendiente", "pagado", "fallido", "reembolsado"),
+      type: DataTypes.ENUM("pendiente", "pagado", "fallido", "reembolsado","expirado","rechazado_proyecto_cerrado","rechazado_por_capacidad","en_proceso"),
       allowNull: false,
       defaultValue: "pendiente",
     },

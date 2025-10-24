@@ -1,13 +1,29 @@
-const SuscripcionProyecto = require('../models/suscripcion_proyecto');
-const Proyecto = require('../models/proyecto');
-const Pago = require('../models/pago');
-const SuscripcionCancelada = require('../models/suscripcion_cancelada');
-const { sequelize } = require('../config/database');
+// Importar los modelos necesarios (se mantienen)
+const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+const Proyecto = require("../models/proyecto");
+const Pago = require("../models/pago");
+const SuscripcionCancelada = require("../models/suscripcion_cancelada");
+const { sequelize } = require("../config/database");
 
+// 🆕 Importar el servicio principal que ahora contiene la lógica de cancelación
+const suscripcionProyectoService = require("./suscripcion_proyecto.service");
+
+/**
+ * Servicio de lógica de negocio para la gestión de CancelacionDeSuscripciones a Proyectos.
+ * Funciona como un "wrapper" para redirigir la lógica pesada al servicio principal.
+ */
 const suscripcionService = {
+  /**
+   * @async
+   * @function findById
+   */
   async findById(id) {
     return SuscripcionProyecto.findByPk(id);
-  },
+  }
+  /**
+   * @async
+   * @function findByUserIdAndProjectId
+   */,
 
   async findByUserIdAndProjectId(userId, projectId) {
     return SuscripcionProyecto.findOne({
@@ -17,54 +33,50 @@ const suscripcionService = {
         activo: true,
       },
     });
+  }
+  /**
+   * @async
+   * @function softDelete
+   * @description **DELEGADO:** Llama al softDelete del servicio principal.
+   * @param {number} suscripcionId - ID de la suscripción a cancelar.
+   * @param {number} userId - ID del usuario. 🆕 PARÁMETRO AÑADIDO
+   * @returns {Promise<SuscripcionProyecto>}
+   * @throws {Error} Si la cancelación falla (incluida la validación de puja).
+   */,
+
+  async softDelete(suscripcionId, userId) {
+    // 🆕 Se añade 'userId' para pasar al servicio principal.
+    // 🛑 Delega la lógica de negocio al servicio consolidado.
+    return suscripcionProyectoService.softDelete(suscripcionId, userId);
+  }
+  /**
+   * @async
+   * @function findAllCanceladas
+   * @description **DELEGADO**
+   */,
+  async findAllCanceladas() {
+    // 🛑 Delega la consulta al servicio consolidado.
+    return suscripcionProyectoService.findAllCanceladas();
+  }
+  /**
+   * @async
+   * @function findMyCanceladas
+   * @description **DELEGADO**
+   */,
+  async findMyCanceladas(userId) {
+    // 🛑 Delega la consulta al servicio consolidado.
+    return suscripcionProyectoService.findMyCanceladas(userId);
   },
+  /**
+     * @async
+     * @function findByProjectCanceladas
+     * @description **DELEGADO**
+     */
+    async findByProjectCanceladas(projectId) { // 👈 ¡Añadir esta función!
+        // 🛑 Delega la consulta al servicio consolidado.
+        return suscripcionProyectoService.findByProjectCanceladas(projectId);
+    },
 
-  async softDelete(suscripcionId) {
-    const t = await sequelize.transaction();
-    try {
-      const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, { transaction: t });
-      if (!suscripcion) throw new Error("Suscripción no encontrada.");
-
-      // Verificar si la suscripción ya está cancelada para evitar errores
-      if (!suscripcion.activo) throw new Error("La suscripción ya ha sido cancelada.");
-      
-      // 1. Marcar la suscripción como inactiva (soft delete)
-      await suscripcion.update({ activo: false }, { transaction: t });
-
-      // 2. Decrementar el contador de suscriptores en el proyecto
-      const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, { transaction: t });
-      if (proyecto) {
-        await proyecto.decrement('suscriptores_actuales', { by: 1, transaction: t });
-      }
-
-      // 3. Crear un registro en SuscripcionCancelada para el futuro reembolso
-      const pagosRealizados = await Pago.findAll({
-        where: {
-          id_suscripcion: suscripcion.id,
-          estado_pago: 'pagado',
-        },
-        transaction: t,
-      });
-
-      const montoTotalPagado = pagosRealizados.reduce((sum, pago) => sum + parseFloat(pago.monto), 0);
-
-      await SuscripcionCancelada.create({
-        id_suscripcion_original: suscripcion.id,
-        id_usuario: suscripcion.id_usuario,
-        id_proyecto: suscripcion.id_proyecto,
-        meses_pagados: pagosRealizados.length,
-        monto_pagado_total: montoTotalPagado,
-        fecha_cancelacion: new Date(),
-      }, { transaction: t });
-
-      await t.commit();
-      return suscripcion;
-
-    } catch (error) {
-      await t.rollback();
-      throw error;
-    }
-  },
 };
 
 module.exports = suscripcionService;

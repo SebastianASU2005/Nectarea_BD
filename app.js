@@ -30,8 +30,6 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
 }
 
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
-// Esto es lo que permite que la función verifySignature en el controlador funcione.
-// El cuerpo crudo se guarda en req.rawBody
 function captureRawBody(req, res, buf, encoding) {
   if (buf && buf.length) {
     req.rawBody = buf.toString(encoding || "utf8");
@@ -39,27 +37,19 @@ function captureRawBody(req, res, buf, encoding) {
 }
 
 // ====================================================================
-// 🎯 CORRECCIÓN CRÍTICA PARA EL WEBHOOK: Middleware Específico
-// ====================================================================
-app.use(
-  "/api/payment/webhook/:metodo",
-  express.json({ verify: captureRawBody }),
-  express.urlencoded({ extended: true, verify: captureRawBody })
-);
-
-// ====================================================================
-// 3. MIDDLEWARES GLOBALES (Para el resto de las rutas de la API)
+// 2. MIDDLEWARES GLOBALES (Para el 99% de las rutas de la API)
 // ====================================================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
+// Permite acceder a archivos subidos mediante la URL /uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Importa la conexión a la base de datos
 const { sequelize } = require("./config/database");
 
-// ... (Resto de la configuración de multer y directorios, sin cambios)
+// --- Configuración básica de Multer para la subida de archivos ---
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
@@ -75,7 +65,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Importa todos los modelos para que Sequelize los conozca
+// Importa todos los modelos para que Sequelize los conozca antes de configurar asociaciones
 const Usuario = require("./models/usuario");
 const Inversion = require("./models/inversion");
 const Lote = require("./models/lote");
@@ -90,11 +80,12 @@ const ResumenCuenta = require("./models/resumen_cuenta");
 const PagoMercado = require("./models/pagoMercado");
 const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
+const SuscripcionCancelada = require("./models/suscripcion_cancelada");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
 
-// Importa los archivos de rutas para cada modelo
+// Importa los archivos de rutas para cada módulo
 const usuarioRoutes = require("./routes/usuario.routes");
 const inversionRoutes = require("./routes/inversion.routes");
 const loteRoutes = require("./routes/lote.routes");
@@ -104,6 +95,7 @@ const imagenRoutes = require("./routes/imagen.routes");
 const transaccionRoutes = require("./routes/transaccion.routes");
 const contratoRoutes = require("./routes/contrato.routes");
 const suscripcionProyectoRoutes = require("./routes/suscripcion_proyecto.routes");
+const suscripcionRoutes = require("./routes/suscripcion.routes");
 const pagoRoutes = require("./routes/pago.routes");
 const authRoutes = require("./routes/auth.routes");
 const mensajeRoutes = require("./routes/mensaje.routes");
@@ -113,27 +105,41 @@ const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
 const testRoutes = require("./routes/test.routes");
 
+// Importación de las tareas programadas (CRON JOBS)
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
-
-// Importación de las tareas programadas existentes
 const monthlyPaymentGenerationTask = require("./tasks/monthlyPaymentGenerationTask");
 const overduePaymentManager = require("./tasks/OverduePaymentManager");
 const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
-const cleanupUnconfirmedUsersTask = require("./tasks/cleanupUnconfirmedUsersTask"); // CRON JOB DE LIMPIEZA
-
-// 🛑 NUEVA IMPORTACIÓN DEL CRON JOB DE IMPAGO 🛑
+const cleanupUnconfirmedUsersTask = require("./tasks/cleanupUnconfirmedUsersTask");
 const { startCronJobs } = require("./tasks/ManejoImpagoPuja");
+const { initAuctionScheduler } = require("./tasks/auctionSchedulerTask");
+const { iniciarCronJobExpiracion } = require("./tasks/expireOldTransactions.job");
+const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 
 // ====================================================================
-// 4. RUTAS DEL WEBHOOK (Aplicada después del middleware especial)
+// 3. RUTAS DEL WEBHOOK (USANDO ROUTER DEDICADO PARA MIDDLEWARE RAW) 🎯
 // ====================================================================
-app.post("/api/payment/webhook/:metodo", paymentController.handleWebhook);
+const webhookRouter = express.Router();
+
+// 🚨 Middleware Específico para el webhook que captura el cuerpo RAW
+webhookRouter.use(
+  express.json({ verify: captureRawBody }),
+  express.urlencoded({ extended: true, verify: captureRawBody })
+);
+
+// La ruta de webhook se define dentro del router
+webhookRouter.post("/:metodo", paymentController.handleWebhook);
+
+// Aplicar el router SOLO a la ruta base del webhook
+app.use("/api/payment/webhook", webhookRouter);
 
 console.log(
   "✅ Ruta de webhook configurada: POST /api/payment/webhook/:metodo"
 );
 
-// 5. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
+// ====================================================================
+// 4. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
+// ====================================================================
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
@@ -143,6 +149,7 @@ app.use("/api/imagenes", imagenRoutes);
 app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/contratos", contratoRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
+app.use("/api/suscripcionesCanceladas", suscripcionRoutes);
 app.use("/api/pagos", pagoRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
@@ -150,38 +157,29 @@ app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/test", testRoutes);
 
-// 6. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
+// 5. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
 
-// 7. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
+// 6. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
 app.use(redireccionRoutes);
 
+/**
+ * @async
+ * @function synchronizeDatabase
+ * @description Conecta y sincroniza la base de datos en dos fases para garantizar
+ * que todas las tablas existan antes de configurar las claves foráneas.
+ */
 async function synchronizeDatabase() {
   try {
     // ==========================================================
     // FASE 1: Creación inicial de las tablas (solo columnas)
     // ==========================================================
+    // Sincroniza todos los modelos para asegurar que las tablas existen
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
     await SuscripcionProyecto.sync({ alter: true });
-    await CuotaMensual.sync({ alter: true });
-    await ResumenCuenta.sync({ alter: true });
-    await Mensaje.sync({ alter: true });
-    await Puja.sync({ alter: true });
-    await Inversion.sync({ alter: true });
-    await Pago.sync({ alter: true });
-    await PagoMercado.sync({ alter: true });
-    await Transaccion.sync({ alter: true });
-    await Imagen.sync({ alter: true });
-    await Contrato.sync({ alter: true }); // ========================================================== // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ, después de que // todas las tablas existen en la base de datos. // ==========================================================
-
-    configureAssociations(); // ========================================================== // FASE 2: Sincronización para añadir las Claves Foráneas (FKs) // ==========================================================
-
-    await Usuario.sync({ alter: true });
-    await Proyecto.sync({ alter: true });
-    await Lote.sync({ alter: true });
-    await SuscripcionProyecto.sync({ alter: true });
+    await SuscripcionCancelada.sync({ alter: true }); // ✅ Correcto
     await CuotaMensual.sync({ alter: true });
     await ResumenCuenta.sync({ alter: true });
     await Mensaje.sync({ alter: true });
@@ -193,16 +191,46 @@ async function synchronizeDatabase() {
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
 
-    console.log("¡Base de datos y relaciones sincronizadas correctamente!"); // ========================================================== // 🚀 INICIO DE TAREAS PROGRAMADAS // ==========================================================
+    // ==========================================================
+    // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ
+    // ==========================================================
+    configureAssociations();
 
+    // ==========================================================
+    // FASE 2: Sincronización para añadir las Claves Foráneas (FKs)
+    // ==========================================================
+    await Usuario.sync({ alter: true });
+    await Proyecto.sync({ alter: true });
+    await Lote.sync({ alter: true });
+    await SuscripcionProyecto.sync({ alter: true });
+    await SuscripcionCancelada.sync({ alter: true }); // ⬅️ Añadido para consistencia.
+    await CuotaMensual.sync({ alter: true });
+    await ResumenCuenta.sync({ alter: true });
+    await Mensaje.sync({ alter: true });
+    await Puja.sync({ alter: true });
+    await Inversion.sync({ alter: true });
+    await Pago.sync({ alter: true });
+    await PagoMercado.sync({ alter: true });
+    await Transaccion.sync({ alter: true });
+    await Imagen.sync({ alter: true });
+    await Contrato.sync({ alter: true });
+
+    console.log("¡Base de datos y relaciones sincronizadas correctamente!");
+
+    // ==========================================================
+    // 🚀 INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
+    // ==========================================================
     paymentReminderScheduler.scheduleJobs();
     monthlyPaymentGenerationTask.start();
     overduePaymentManager.start();
     overduePaymentNotifier.start();
-    cleanupUnconfirmedUsersTask.start(); // El cron job de limpieza se inicia aquí // 🛑 INICIAR EL CRON JOB DE MANEJO DE IMPAGOS 🛑
+    cleanupUnconfirmedUsersTask.start();
+    initAuctionScheduler(); // ⬅️ Tu scheduler de inicio/fin de subastas
+    startCronJobs(); // ⬅️ El otro scheduler de manejo de impagos de pujas
+    iniciarCronJobExpiracion()
+    subscriptionCheckScheduler.scheduleJobs();
 
-    startCronJobs();
-
+    // Inicia el servidor de Express
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);
     });
@@ -212,5 +240,5 @@ async function synchronizeDatabase() {
   }
 }
 
-// Llama a la función para iniciar el proceso de sincronización
+// Llama a la función para iniciar el proceso de sincronización y el servidor
 synchronizeDatabase();

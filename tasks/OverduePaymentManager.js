@@ -1,63 +1,106 @@
+// Archivo: overduePaymentManager.js
+
+// Librerías de terceros
 const cron = require("node-cron");
-const { sequelize } = require("../config/database");
-const Pago = require("../models/pago");
 const { Op } = require("sequelize");
 
+// Configuración y Modelos
+const { sequelize } = require("../config/database");
+const Pago = require("../models/pago");
+// 🆕 IMPORTAMOS EL SERVICIO CLAVE
+const resumenCuentaService = require("../services/resumen_cuenta.service");
+
+/**
+ * Módulo para la gestión diaria de pagos: aplica recargos a recurrentes vencidos
+ * y limpia pagos iniciales que quedaron pendientes/atascados.
+ */
 const overduePaymentManager = {
+  // Nota: La expresión CRON 31 12 * * * se ejecuta a las 12:31 PM (hora del servidor).
   job: cron.schedule(
-    "0 3 * * *", // Se ejecuta todos los días a las 3:00 AM
+    "35 09 * * *",
     async () => {
       console.log(
         "--- Iniciando la gestión de pagos vencidos y limpieza de iniciales ---"
       );
       const t = await sequelize.transaction();
 
+      // 🆕 Set para almacenar los IDs de suscripciones que necesitan actualización
+      const suscripcionIdsToUpdate = new Set();
+
       try {
-        const dailyInterestRate = 0.04265 / 30; // Tasa de interés diaria
+        const dailyInterestRate = 0.04265 / 30;
         const now = new Date();
+        // 🎯 CLAVE: Determinar el inicio del día para evitar dobles recargos
+        const inicioDeHoy = new Date(now);
+        inicioDeHoy.setHours(0, 0, 0, 0);
 
+        // ----------------------------------------------------------------------
         // --- 1. PROCESO DE PAGOS RECURRENTES VENCIDOS (MES 2+) ---
-        // Aplica recargo e interés a pagos que son de meses posteriores al inicial.
-        console.log("-> Buscando pagos recurrentes vencidos (Mes 2+)...");
 
-        const pagosRecurrentesVencidos = await Pago.findAll({
+        console.log(
+          "-> Buscando y marcando pagos pendientes expirados (Mes 2+) como 'vencido'..."
+        );
+
+        const pagosAPartirDeMesDos = await Pago.findAll({
           where: {
             estado_pago: "pendiente",
-            mes_pago: { [Op.gt]: 1 }, // FILTRO CRUCIAL: Solo Meses 2 en adelante
+            mes: { [Op.gt]: 1 },
             fecha_vencimiento: { [Op.lt]: now },
           },
           transaction: t,
         });
 
-        for (const pago of pagosRecurrentesVencidos) {
-          const fechaVencimiento = new Date(pago.fecha_vencimiento);
-          // Calcula los días vencidos para aplicar el recargo acumulado
-          const diasVencidos = Math.floor(
-            (now - fechaVencimiento) / (1000 * 60 * 60 * 24)
-          );
-          const recargo = pago.monto * (dailyInterestRate * diasVencidos);
-          const nuevoMonto = parseFloat(pago.monto) + recargo;
+        let rowsUpdated = 0;
+        for (const pago of pagosAPartirDeMesDos) {
+          // ✅ Actualización individual para preservar todos los campos (id_usuario, id_proyecto, etc.)
+          await pago.update({ estado_pago: "vencido" }, { transaction: t });
+          rowsUpdated++;
+          suscripcionIdsToUpdate.add(pago.id_suscripcion);
+        }
 
+        console.log(`Se marcaron ${rowsUpdated} pagos como 'vencido'.`);
+
+        console.log(
+          "-> Búsqueda e inicio de aplicación de recargo diario a pagos ya en estado 'vencido' (Mes 2+)..."
+        );
+
+        // 🚨 PASO B CORREGIDO: Filtramos por updatedAt < inicioDeHoy
+        const pagosRecurrentesVencidos = await Pago.findAll({
+          where: {
+            estado_pago: "vencido",
+            mes: { [Op.gt]: 1 },
+            // 🎯 SOLO aplica recargo si no se ha aplicado HOY.
+            updatedAt: { [Op.lt]: inicioDeHoy },
+          },
+          transaction: t,
+        });
+
+        for (const pago of pagosRecurrentesVencidos) {
+          const dailyRecargo = parseFloat(pago.monto) * dailyInterestRate;
+          const nuevoMonto = parseFloat(pago.monto) + dailyRecargo;
+
+          // La actualización individual actualiza 'updatedAt', marcándolo como procesado HOY
           await pago.update(
             {
-              estado_pago: "vencido", // Se marca como 'vencido' y se aplica recargo
-              monto: nuevoMonto.toFixed(2),
+              monto: nuevoMonto.toFixed(2), // Se actualiza con el nuevo interés compuesto
             },
             { transaction: t }
           );
           console.log(
-            `Pago recurrente ${pago.id} vencido. Se aplicó recargo de $${recargo.toFixed(
+            `Pago recurrente ${
+              pago.id
+            } vencido. Se aplicó recargo DIARIO de $${dailyRecargo.toFixed(
               2
             )}. Nuevo monto: $${nuevoMonto.toFixed(2)}.`
           );
+
+          // 🆕 Agregamos la suscripción al set para su actualización
+          suscripcionIdsToUpdate.add(pago.id_suscripcion);
         }
 
+        // ----------------------------------------------------------------------
         // --- 2. PROCESO DE LIMPIEZA DE PAGO INICIAL ATASCADO (MES 1) ---
-        // Marca como 'cancelado' los pagos iniciales que siguen pendientes, pero con un buffer de seguridad.
-
-        // Buffer de seguridad: pagos cuya fecha de vencimiento (y presunta creación) pasó hace 2 horas.
-        // Esto previene colisiones con usuarios en checkout en tiempo real.
-        const safeTimeLimit = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 horas de búfer
+        const safeTimeLimit = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
         console.log(
           `-> Buscando pagos iniciales atascados (Mes 1) anteriores a ${safeTimeLimit.toLocaleTimeString()}...`
@@ -66,44 +109,64 @@ const overduePaymentManager = {
         const pagosInicialesAtascados = await Pago.findAll({
           where: {
             estado_pago: "pendiente",
-            mes_pago: 1, // Solo Mes 1 (pago de suscripción inicial)
+            mes: 1,
             fecha_vencimiento: { [Op.lt]: safeTimeLimit },
           },
           transaction: t,
         });
 
         for (const pago of pagosInicialesAtascados) {
+          // ✅ Actualización individual para preservar campos
           await pago.update(
             {
-              estado_pago: "cancelado", // Se marca como 'cancelado' (fallido)
+              estado_pago: "cancelado",
             },
             { transaction: t }
           );
-          // IMPORTANTE: No se aplica recargo al pago inicial cancelado.
           console.log(
             `Pago inicial ${pago.id} atascado marcado como 'cancelado'.`
+          );
+          suscripcionIdsToUpdate.add(pago.id_suscripcion);
+        }
+
+        // ----------------------------------------------------------------------
+        // --- 3. ACTUALIZAR RESUMEN DE CUENTA PARA LAS SUSCRIPCIONES AFECTADAS ---
+
+        console.log(
+          `-> Actualizando resumen de cuenta para ${suscripcionIdsToUpdate.size} suscripciones afectadas...`
+        );
+
+        for (const suscripcionId of suscripcionIdsToUpdate) {
+          await resumenCuentaService.updateAccountSummaryOnPayment(
+            suscripcionId,
+            { transaction: t }
           );
         }
 
         await t.commit();
-        console.log("--- Gestión de pagos completada. ---");
+        console.log(
+          "--- Gestión de pagos y resumen de cuenta completada exitosamente. ---"
+        );
       } catch (error) {
         await t.rollback();
-        console.error(
-          "Error en el cron job de gestión de pagos:",
-          error
-        );
+        console.error("Error fatal en el cron job de gestión de pagos:", error);
       }
     },
     {
       scheduled: false,
     }
   ),
+  // ... (Resto de las funciones start() y runManual() se mantienen igual)
   start() {
     this.job.start();
     console.log(
-      "Cron job de pagos vencidos programado para ejecutarse todos los días a las 3:00 AM."
+      "Cron job de pagos vencidos programado para ejecutarse a las 12:31 PM (hora de tu servidor). 🌅"
     );
+  },
+
+  async runManual() {
+    console.log("--- EJECUCIÓN MANUAL DE TAREA DE VENCIMIENTO INICIADA ---");
+    await this.job._task();
   },
 };
 

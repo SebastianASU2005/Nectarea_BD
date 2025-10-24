@@ -1,5 +1,8 @@
+// Importa la versión de promesas del módulo 'fs' para usar async/await
 const fs = require("fs").promises;
+// Módulo para trabajar con rutas de archivos y directorios
 const path = require("path");
+// Módulo para operaciones criptográficas, incluyendo la creación de hashes
 const crypto = require("crypto");
 
 /**
@@ -11,19 +14,28 @@ const crypto = require("crypto");
  */
 const generateFileHash = async (filePath) => {
   try {
-    // filePath contiene la URL generada, necesitamos la ruta absoluta del sistema de archivos.
+    // 1. Extrae solo el nombre del archivo de la ruta/URL proporcionada.
     const fileName = path.basename(filePath);
-    // Asume que 'uploads' está en el directorio raíz del proyecto (process.cwd())
+
+    // 2. Construye la ruta absoluta al archivo.
+    // Se asume que la carpeta 'uploads' está en la raíz del proyecto (donde se ejecuta el script).
     const fullPath = path.join(process.cwd(), "uploads", fileName);
-    
+
+    // 3. Lee el archivo completo en un Buffer.
     const fileBuffer = await fs.readFile(fullPath);
+
+    // 4. Calcula el hash SHA-256 del Buffer y lo devuelve en formato hexadecimal.
     return crypto.createHash("sha256").update(fileBuffer).digest("hex");
   } catch (error) {
-    console.error(`Error al generar el hash para ${filePath}:`, error.message); 
+    // Captura cualquier error de lectura de archivo o generación de hash.
+    console.error(`Error al generar el hash para ${filePath}:`, error.message);
+
+    // Lanza un error genérico y seguro para el consumidor de la función.
     throw new Error(
       "El archivo físico asociado no se pudo verificar (o no existe)."
     );
   }
 };
 
+// Exporta la función para que pueda ser utilizada en otros módulos
 module.exports = { generateFileHash };

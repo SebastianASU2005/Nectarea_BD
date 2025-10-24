@@ -28,6 +28,14 @@ router.get(
   loteController.findAllActivo
 ); // ✅ Va antes que /:id
 
+// 🆕 RUTA: Obtener todos los lotes que NO tienen un proyecto asociado (ADMIN)
+router.get(
+  "/sin_proyecto",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  loteController.findLotesNoAssociated
+);
+
 // ===============================================
 // 2. RUTAS DINÁMICAS ESPECÍFICAS (con ID y sufijo)
 // ===============================================
@@ -51,6 +59,14 @@ router.get(
   "/:id/activo",
   authMiddleware.authenticate,
   loteController.findByIdActivo
+);
+
+// 🆕 RUTA: Obtener todos los lotes de un proyecto específico (ADMIN)
+router.get(
+  "/proyecto/:idProyecto",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  loteController.findLotesByProject
 );
 
 // ===============================================

@@ -1,6 +1,8 @@
 // Archivo: config/database.js
-require('dotenv').config();
-const { Sequelize, DataTypes } = require('sequelize');
+
+require("dotenv").config();
+// 1. IMPORTA 'Op' de sequelize
+const { Sequelize, DataTypes, Op } = require("sequelize");
 
 // Usar variables de entorno para las credenciales de la base de datos
 const sequelize = new Sequelize(
@@ -10,7 +12,7 @@ const sequelize = new Sequelize(
   {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
-    dialect: 'postgres',
+    dialect: "postgres",
   }
 );
 
@@ -18,10 +20,11 @@ const sequelize = new Sequelize(
 (async () => {
   try {
     await sequelize.authenticate();
-    console.log('¡Conexión a la base de datos establecida correctamente!');
+    console.log("¡Conexión a la base de datos establecida correctamente!");
   } catch (error) {
-    console.error('Error al conectar a la base de datos:', error);
+    console.error("Error al conectar a la base de datos:", error);
   }
 })();
 
-module.exports = { sequelize, DataTypes };
+// 2. EXPORTA 'Op' junto con sequelize y DataTypes
+module.exports = { sequelize, DataTypes, Op }; // ✅ ¡CORREGIDO!
