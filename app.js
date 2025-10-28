@@ -81,6 +81,7 @@ const PagoMercado = require("./models/pagoMercado");
 const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 const SuscripcionCancelada = require("./models/suscripcion_cancelada");
+const Favorito = require("./models/Favorito");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
@@ -104,6 +105,7 @@ const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
 const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
 const testRoutes = require("./routes/test.routes");
+const favoritoRoutes = require("./routes/favorito.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
@@ -113,7 +115,9 @@ const overduePaymentNotifier = require("./tasks/OverduePaymentNotifier");
 const cleanupUnconfirmedUsersTask = require("./tasks/cleanupUnconfirmedUsersTask");
 const { startCronJobs } = require("./tasks/ManejoImpagoPuja");
 const { initAuctionScheduler } = require("./tasks/auctionSchedulerTask");
-const { iniciarCronJobExpiracion } = require("./tasks/expireOldTransactions.job");
+const {
+  iniciarCronJobExpiracion,
+} = require("./tasks/expireOldTransactions.job");
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 
 // ====================================================================
@@ -156,6 +160,7 @@ app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/test", testRoutes);
+app.use("/api/favoritos", favoritoRoutes);
 
 // 5. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
@@ -190,6 +195,7 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
+    await Favorito.sync({ alter: true });
 
     // ==========================================================
     // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ
@@ -214,6 +220,7 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
+     await Favorito.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
@@ -227,7 +234,7 @@ async function synchronizeDatabase() {
     cleanupUnconfirmedUsersTask.start();
     initAuctionScheduler(); // ⬅️ Tu scheduler de inicio/fin de subastas
     startCronJobs(); // ⬅️ El otro scheduler de manejo de impagos de pujas
-    iniciarCronJobExpiracion()
+    iniciarCronJobExpiracion();
     subscriptionCheckScheduler.scheduleJobs();
 
     // Inicia el servidor de Express

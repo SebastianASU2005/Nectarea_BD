@@ -76,7 +76,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"astudillo5677@gmail.com\",\n  \"nombre_usuario\": \"cliente_2.0\",\n  \"contraseña\": \"password123\"\n}",
+							"raw": "{\n  \"email\": \"elneppon2005@gmail.com\",\n  \"nombre_usuario\": \"cliente_2\",\n  \"contraseña\": \"password123\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -100,13 +100,23 @@
 					"response": []
 				},
 				{
-					"name": "Login de Usuario Copy",
+					"name": "Logout",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"astudillo5677@gmail.com\",\n  \"nombre_usuario\": \"cliente_1\",\n  \"contraseña\": \"password123\"\n}",
+							"raw": "{\n  \"email\": \"elneppon2005@gmail.com\",\n  \"nombre_usuario\": \"cliente_2\",\n  \"contraseña\": \"password123\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -114,7 +124,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:3000/api/auth/login",
+							"raw": "http://localhost:3000/api/auth/logout",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -123,7 +133,7 @@
 							"path": [
 								"api",
 								"auth",
-								"login"
+								"logout"
 							]
 						}
 					},
@@ -146,7 +156,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzYwMDIwNDA0LCJleHAiOjE3NjAwMjA3MDR9.TwMsmiBqVCtQ7qpszHSCa2zdFNwJT1Y_TXiaSfYbcF0\",\n  \"token\": \"475238\"\n}",
+							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiaWF0IjoxNzYwNTQ1MTc2LCJleHAiOjE3NjA1NDU0NzZ9.5F11YcDNTjlYCc-DUnCLUfrc3-Lfn1uCOO6JjTBYnMA\",\n  \"token\": \"689546\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -173,11 +183,21 @@
 				{
 					"name": "Confirmacion Del 2FA",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"astudillo5677@gmail.com\",\n  \"nombre_usuario\": \"cliente_1\",\n  \"contraseña\": \"password123\"\n}",
+							"raw": "{\n    \"token\":119651\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -185,7 +205,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:3000/api/auth/2fa/generate-secret",
+							"raw": "http://localhost:3000/api/auth/2fa/enable",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -195,7 +215,7 @@
 								"api",
 								"auth",
 								"2fa",
-								"generate-secret"
+								"enable"
 							]
 						}
 					},
@@ -204,6 +224,16 @@
 				{
 					"name": "Generar Secreto 2FA",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
@@ -327,7 +357,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"nueva_contraseña\": \"password123\" \r\n}",
+							"raw": "{\r\n    \"nueva_contraseña\": \"password12\" \r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -350,7 +380,7 @@
 							"variable": [
 								{
 									"key": "token",
-									"value": "adfd61342a2a10ecc2edffd04b5816d20e536219"
+									"value": "09faf10b187108f4d6b55362ad0e57ff4431e742"
 								}
 							]
 						}
@@ -360,11 +390,21 @@
 				{
 					"name": "Desactivar 2FA",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"contraseña\": \"password12\", \r\n    \"token\": \"278622\" // El código TOTP de 6 dígitos activo en este momento\r\n}",
+							"raw": "{\r\n    \"contraseña\": \"password12\", \r\n    \"token\": \"044369\" // El código TOTP de 6 dígitos activo en este momento\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -383,6 +423,52 @@
 								"auth",
 								"2fa",
 								"disable"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"rol\":\"admin\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/usuarios/:id",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"usuarios",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
 							]
 						}
 					},
@@ -482,6 +568,16 @@
 				{
 					"name": "Obtener Contratos Activos (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1021,7 +1117,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "",
+							"raw": "{\r\n    \"inversionId\": 1,\r\n    \"codigo_2fa\": \"839999\"\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1329,6 +1425,35 @@
 								}
 							]
 						}
+					},
+					"response": []
+				},
+				{
+					"name": "LotesSinProyecto(Admin)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/lotes/sin_proyecto",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"lotes",
+								"sin_proyecto"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "LotesPorProyectyo(Admin)",
+					"request": {
+						"method": "GET",
+						"header": []
 					},
 					"response": []
 				}
@@ -1749,7 +1874,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n     \"pagoId\": 3,\r\n     \"codigo_2fa\": \"438929\"\r\n\r\n}",
+							"raw": "{\r\n     \"pagoId\": 3,\r\n     \"codigo_2fa\": \"575522\"\r\n\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -2005,6 +2130,43 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n   \"lotesIds\":[3,4,5]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/proyectos/:id/lotes",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"proyectos",
+								":id",
+								"lotes"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "3"
+								}
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
@@ -2184,6 +2346,16 @@
 				{
 					"name": "Obtener Mis Pujas (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2205,6 +2377,16 @@
 				{
 					"name": "Obtener Mi Puja por ID (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2223,7 +2405,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "6"
 								}
 							]
 						}
@@ -2313,7 +2495,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"pujaId\": 1,\r\n    \"codigo_2fa\": \"575522\"\r\n}",
+							"raw": "{\r\n    \"pujaId\": 2,\r\n    \"codigo_2fa\": \"977566\"\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -2367,7 +2549,7 @@
 							"variable": [
 								{
 									"key": "LoteId",
-									"value": "3"
+									"value": "2"
 								}
 							]
 						}
@@ -2444,7 +2626,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/activas",
+							"raw": "http://localhost:3000/api/suscripciones/activas",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2452,7 +2634,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								"activas"
 							]
 						}
@@ -2462,10 +2644,20 @@
 				{
 					"name": "Obtener Mis Suscripciones (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/mis_suscripciones",
+							"raw": "http://localhost:3000/api/suscripciones/mis_suscripciones",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2473,7 +2665,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								"mis_suscripciones"
 							]
 						}
@@ -2629,6 +2821,22 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "SuscripcionesActivas Por Proyecto",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				},
+				{
+					"name": "TodasSuscripciones Por Proyecto",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
 				}
 			]
 		},
@@ -2638,6 +2846,16 @@
 				{
 					"name": "Cancelar Suscripción (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "PUT",
 						"header": [],
 						"url": {
@@ -2652,6 +2870,97 @@
 								"suscripciones",
 								":id",
 								"cancelar"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "MisCancelaciones(Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripcionesCanceladas/mis_canceladas",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripcionesCanceladas",
+								"mis_canceladas"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "TodasCanceladas(Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripcionesCanceladas/canceladas",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripcionesCanceladas",
+								"canceladas"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "CanceladasPorProyecto(Admin)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripcionesCanceladas/proyecto/canceladas/:id",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripcionesCanceladas",
+								"proyecto",
+								"canceladas",
+								":id"
 							],
 							"variable": [
 								{
@@ -2984,6 +3293,16 @@
 				{
 					"name": "Obtener Todos los Usuarios (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -3136,11 +3455,21 @@
 				{
 					"name": "Actualizar Mi Perfil (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "PUT",
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"nombre\": \"Mi Nombre Actualizado\"\n}",
+							"raw": "{\n    \"nombre_usuario\": \"cliente_2.0\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3343,6 +3672,111 @@
 				},
 				{
 					"name": "MisResumenesDeCuenta (Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/resumen-cuentas/mis_resumenes",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"resumen-cuentas",
+								"mis_resumenes"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Lotes Favoritos",
+			"item": [
+				{
+					"name": "AgregarFavorito(Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"id_lote\":3\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/favorito/toggle",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"favorito",
+								"toggle"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "MisFavoritos(Usuario)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/favoritos/mis-favoritos",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"favoritos",
+								"mis-favoritos"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "New Request",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				},
+				{
+					"name": "EstadisticasFavorito(Admin)",
 					"request": {
 						"method": "GET",
 						"header": []

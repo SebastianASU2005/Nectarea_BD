@@ -16,6 +16,7 @@ const PagoMercado = require("./pagoMercado"); // Pagos de pasarela (Mercado Pago
 const Mensaje = require("./mensaje");
 const CuotaMensual = require("./CuotaMensual");
 const ResumenCuenta = require("./resumen_cuenta");
+const Favorito = require("./Favorito");
 
 const configureAssociations = () => {
   // -------------------------------------------------------------------
@@ -263,6 +264,12 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
   });
+  // Relaciones de Favorito
+  Favorito.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
+  Favorito.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
+
+  Usuario.hasMany(Favorito, { foreignKey: "id_usuario", as: "favoritos" });
+  Lote.hasMany(Favorito, { foreignKey: "id_lote", as: "favoritos" });
 };
 
 module.exports = configureAssociations;
