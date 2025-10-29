@@ -263,6 +263,40 @@ const proyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+  /**
+   * @async
+   * @function findAllActivoAhorristas
+   * @description Obtiene todos los proyectos activos con inversión de tipo 'mensual'.
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async findAllActivoAhorristas(req, res) {
+    try {
+      // Llama a la nueva función del servicio que filtra por 'mensual'
+      const proyectos = await proyectoService.findAllActivoMensual();
+      res.status(200).json(proyectos);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+  /**
+   * @async
+   * @function findAllActivoInversionistas
+   * @description Obtiene todos los proyectos activos con inversión de tipo 'directo'.
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */,
+
+  // 🎯 NUEVO CONTROLADOR: Proyectos de Inversionistas (Tipo Directo)
+  async findAllActivoInversionistas(req, res) {
+    try {
+      // Llama a la nueva función del servicio que filtra por 'directo'
+      const proyectos = await proyectoService.findAllActivoDirecto();
+      res.status(200).json(proyectos);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },  
 
   /**
    * @async

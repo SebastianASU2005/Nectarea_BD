@@ -103,21 +103,20 @@ const authController = {
   /**
    * @async
    * @function login
-   * @description Procesa el inicio de sesión. Si 2FA está habilitado, emite un token temporal.
-   * Si 2FA no está habilitado, emite el token JWT final.
-   * @param {object} req - Objeto de solicitud de Express (con `nombre_usuario` y `contraseña` en `body`).
+   * @description Procesa el inicio de sesión. Permite ingresar con nombre de usuario O email.
+   * @param {object} req - Objeto de solicitud de Express (con `identificador` y `contraseña` en `body`). ⬅️ DOC ACTUALIZADA
    * @param {object} res - Objeto de respuesta de Express.
    */
   async login(req, res) {
     try {
-      const { nombre_usuario, contraseña } = req.body;
-      const user = await usuarioService.findByUsername(nombre_usuario);
+      // 🛑 CAMBIO 1: Cambiar 'nombre_usuario' por 'identificador' para aceptar ambos (usuario o email)
+      const { identificador, contraseña } = req.body; // 🛑 CAMBIO 2: Usar la nueva función del servicio que busca por cualquiera de los dos campos
+      const user = await usuarioService.findByUsernameOrEmail(identificador);
 
       if (!user) {
         return res.status(401).json({ error: "Credenciales incorrectas." });
-      }
+      } // 1. Verificación de contraseña
 
-      // 1. Verificación de contraseña
       const isMatch = await authService.comparePassword(
         contraseña,
         user.contraseña_hash
@@ -125,27 +124,24 @@ const authController = {
 
       if (!isMatch) {
         return res.status(401).json({ error: "Credenciales incorrectas." });
-      }
+      } // 2. Verificación de estado de cuenta (Activo / Soft-Delete)
 
-      // 2. Verificación de estado de cuenta (Activo / Soft-Delete)
       if (!user.activo) {
         return res.status(403).json({
           error: "Acceso denegado.",
           message:
             "Su cuenta ha sido desactivada. Contacte con soporte para reactivarla.",
         });
-      }
+      } // 3. Verificación de email confirmado
 
-      // 3. Verificación de email confirmado
       if (!user.confirmado_email) {
         return res.status(403).json({
           error: "Cuenta no activada.",
           message:
             "Por favor, revise su correo electrónico y haga clic en el enlace de confirmación para activar su cuenta.",
         });
-      }
+      } // 🚀 4. LÓGICA CLAVE PARA 2FA (Paso 1: Emisión de token temporal) 🚀
 
-      // 🚀 4. LÓGICA CLAVE PARA 2FA (Paso 1: Emisión de token temporal) 🚀
       if (user.is_2fa_enabled) {
         // Si 2FA está activo, emitir un token temporal para el proceso de verificación 2FA.
         const twoFaToken = jwtService.generate2FAToken(user);
@@ -156,9 +152,8 @@ const authController = {
           is2FARequired: true,
           user: { id: user.id },
         });
-      }
+      } // 5. Inicio de Sesión NORMAL (Si 2FA NO está habilitado)
 
-      // 5. Inicio de Sesión NORMAL (Si 2FA NO está habilitado)
       const token = jwtService.generateToken(user);
 
       res.status(200).json({
@@ -174,7 +169,6 @@ const authController = {
       res.status(500).json({ error: error.message });
     }
   },
-
   /**
    * @async
    * @function verify2FA
@@ -274,11 +268,11 @@ const authController = {
         const resetLink = `http://localhost:3000/reset-password/${resetToken}`;
 
         const emailHtml = `
-            <p>Has solicitado restablecer tu contraseña.</p>
-            <p>Haz clic en el siguiente enlace para completar el proceso:</p>
-            <a href="${resetLink}">Restablecer Contraseña</a>
-            <p>Este enlace expirará en una hora.</p>
-        `;
+              <p>Has solicitado restablecer tu contraseña.</p>
+              <p>Haz clic en el siguiente enlace para completar el proceso:</p>
+              <a href="${resetLink}">Restablecer Contraseña</a>
+              <p>Este enlace expirará en una hora.</p>
+          `;
 
         await emailService.sendEmail(
           email,

@@ -76,7 +76,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"elneppon2005@gmail.com\",\n  \"nombre_usuario\": \"cliente_2\",\n  \"contraseña\": \"password123\"\n}",
+							"raw": "{\n  \"identificador\":\"astudillo5677@gmail.com\",\n  \"contraseña\": \"password123\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -429,7 +429,7 @@
 					"response": []
 				},
 				{
-					"name": "New Request",
+					"name": "ActualizarUsuario(Admin)",
 					"request": {
 						"auth": {
 							"type": "bearer",
@@ -2163,6 +2163,38 @@
 									"key": "id",
 									"value": "3"
 								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "GetActivosInversionistas(Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/proyectos/activos/inversionistas",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"proyectos",
+								"activos",
+								"inversionistas"
 							]
 						}
 					},

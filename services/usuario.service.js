@@ -171,6 +171,20 @@ const usuarioService = {
   }, // 🚨 COMA AGREGADA AQUÍ
   /**
    * @async
+   * @function findByUsernameOrEmail
+   * @description Encuentra un usuario por su nombre de usuario O su email.
+   * @param {string} identifier - El nombre de usuario o el email ingresado.
+   * @returns {Promise<Usuario|null>}
+   */
+  async findByUsernameOrEmail(identifier) {
+    return Usuario.findOne({
+      where: {
+        [Op.or]: [{ nombre_usuario: identifier }, { email: identifier }],
+      },
+    });
+  }, // ✅ NUEVA FUNCIÓN AÑADIDA
+  /**
+   * @async
    * @function findByUsername
    * @description Encuentra un usuario por su nombre de usuario.
    * @param {string} nombre_usuario

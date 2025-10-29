@@ -64,14 +64,31 @@ const authMiddleware = {
         .json({ error: "Token inválido o expirado. Vuelva a iniciar sesión." });
     }
   },
-  authorizeAdmin(req, res, next) {
-    // El rol del usuario ya está en 'req.user' gracias al middleware anterior
-    if (req.user && req.user.rol === "admin") {
-      next(); // El usuario es admin, continúa
-    } else {
+  authorizeAdmin: async (req, res, next) => {
+    // ⬅️ HACER ESTA FUNCIÓN ASÍNCRONA
+    // 1. Obtener el ID del usuario del payload del token (que ya está en req.user)
+    const userId = req.user.id;
+
+    try {
+      // 2. 🚨 CONSULTAR DIRECTAMENTE A LA BD para obtener solo el rol actual
+      const usuarioActualizado = await usuarioService.findById(userId);
+
+      // 3. Verificar la existencia y el rol
+      if (usuarioActualizado && usuarioActualizado.rol === "admin") {
+        next(); // Autorización concedida
+      } else {
+        // Si el usuario no existe o el rol no es admin (403 Forbidden)
+        res
+          .status(403)
+          .json({
+            error: "Acceso denegado. Se requiere rol de administrador.",
+          });
+      }
+    } catch (error) {
+      // En caso de error de BD, negar el acceso por defecto
       res
-        .status(403)
-        .json({ error: "Acceso denegado. Se requiere rol de administrador." });
+        .status(500)
+        .json({ error: "Error de servidor al verificar la autorización." });
     }
   },
 };

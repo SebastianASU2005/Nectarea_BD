@@ -4,6 +4,7 @@ const PORT = 3000;
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const cors = require("cors");
 // Importa el controlador de pagos directamente para la ruta del webhook
 const paymentController = require("./controllers/pagoMercado.controller");
 
@@ -41,6 +42,13 @@ function captureRawBody(req, res, buf, encoding) {
 // ====================================================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const corsOptions = {
+  // Solo permite peticiones desde tu frontend de desarrollo
+  origin: 'http://localhost:5173', 
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true, // Esto es crucial si usas cookies o sesiones
+  optionsSuccessStatus: 204
+};
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 // Permite acceder a archivos subidos mediante la URL /uploads

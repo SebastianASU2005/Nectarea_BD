@@ -13,11 +13,31 @@ router.get(
   authMiddleware.authenticate,
   proyectoController.findAllActivo
 );
+// Rutas de Usuario
+router.get(
+  "/activos",
+  authMiddleware.authenticate,
+  proyectoController.findAllActivo
+);
+
+// 🎯 NUEVA RUTA: Proyectos de Ahorristas (Mensual)
+router.get(
+  "/activos/ahorristas",
+  authMiddleware.authenticate,
+  proyectoController.findAllActivoAhorristas
+);
+
+// 🎯 NUEVA RUTA: Proyectos de Inversionistas (Directo)
+router.get(
+  "/activos/inversionistas",
+  authMiddleware.authenticate,
+  proyectoController.findAllActivoInversionistas
+);
 // Ruta de usuario para proyectos propios (asumo que es /me o similar, si no está definida)
 router.get(
-    "/mis-proyectos",
-    authMiddleware.authenticate,
-    proyectoController.findMyProjects
+  "/mis-proyectos",
+  authMiddleware.authenticate,
+  proyectoController.findMyProjects
 );
 
 // Rutas de Administrador (Estáticas)
@@ -48,10 +68,10 @@ router.get(
 
 // 🚨 NUEVA RUTA: ASIGNAR LOTES A UN PROYECTO EXISTENTE (Admin)
 router.put(
-    "/:id/lotes",
-    authMiddleware.authenticate,
-    authMiddleware.authorizeAdmin,
-    proyectoController.asignarLotes // <-- Nuevo controlador
+  "/:id/lotes",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.asignarLotes // <-- Nuevo controlador
 );
 
 // Ruta para INICIAR EL PROCESO (Admin)

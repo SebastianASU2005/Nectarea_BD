@@ -57,28 +57,26 @@ const favoritoController = {
       const { id_proyecto } = req.query; // Obtener el parámetro de la query // ⬅️ HACER id_proyecto OBLIGATORIO
 
       if (!id_proyecto) {
-        return res
-          .status(400)
-          .json({
-            error: "El ID del proyecto es requerido para obtener estadísticas.",
-          });
+        return res.status(400).json({
+          error: "El ID del proyecto es requerido para obtener estadísticas.",
+        });
       } // Convertir a entero para pasarlo al servicio
 
       const idProyectoInt = parseInt(id_proyecto);
 
       const estadisticas = await favoritoService.getEstadisticasFavoritos(
         idProyectoInt // ⬅️ Siempre pasamos el ID
-      ); // Calcular más/menos favoritos
+      ); // 🛑 Mantenemos el cálculo de más/menos votado, pero priorizamos la lista completa.
 
       const masVotado = estadisticas[0] || null;
-      const menosVotado = estadisticas[estadisticas.length - 1] || null;
+      const menosVotado = estadisticas[estadisticas.length - 1] || null; // 🏆 RESPUESTA MODIFICADA: Retorna directamente la lista completa de estadísticas // y añade los metadatos como el ID del proyecto, el total, el más y menos votado.
 
       res.status(200).json({
         proyecto_filtrado: idProyectoInt,
-        total_lotes: estadisticas.length,
+        total_lotes_con_favoritos: estadisticas.length, // Más descriptivo
         lote_mas_votado: masVotado,
-        lote_menos_votado: menosVotado,
-        todos_los_lotes: estadisticas,
+        lote_menos_votado: menosVotado, // ✅ CAMBIO CLAVE: Retornar la lista completa con todos los lotes
+        estadisticas_lotes: estadisticas,
       });
     } catch (error) {
       res.status(500).json({ error: error.message });

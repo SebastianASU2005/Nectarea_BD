@@ -6,17 +6,17 @@ const Imagen = require("../models/imagen");
 const Inversion = require("../models/inversion");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 // 🚨 NUEVA IMPORTACIÓN DEL MODELO Usuario para romper la dependencia en las notificaciones
-const Usuario = require("../models/usuario"); 
+const Usuario = require("../models/usuario");
 
-const { Op } = require("sequelize"); 
+const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const emailService = require("./email.service");
 const config = require("../config/config");
 // Se mantienen las importaciones de servicios, aunque el uso se ha reducido/movido
-const suscripcionProyectoService = require("./suscripcion_proyecto.service"); 
+const suscripcionProyectoService = require("./suscripcion_proyecto.service");
 const mensajeService = require("./mensaje.service");
 // ⚠️ Mantenemos la importación de usuarioService ya que 'findAllAdmins' puede ser necesaria.
-const usuarioService = require("./usuario.service"); 
+const usuarioService = require("./usuario.service");
 
 /**
  * Servicio de lógica de negocio para la gestión de Proyectos.
@@ -306,16 +306,16 @@ const proyectoService = {
         objetivo_notificado: false, // Permite notificar el inicio de nuevo
       },
       { transaction: t }
-    ); 
+    );
 
     // 2. Notificación a los suscriptores (Mensaje interno Y Email)
     // ✅ Solución al error de 'suscripcionProyectoService.findActiveByProjectId is not a function'
     const suscripcionesActivas = await SuscripcionProyecto.findAll({
-        where: {
-            id_proyecto: proyecto.id,
-            activo: true,
-        },
-        transaction: t,
+      where: {
+        id_proyecto: proyecto.id,
+        activo: true,
+      },
+      transaction: t,
     });
 
     const remitente_id = 1; // ID del sistema
@@ -344,7 +344,7 @@ const proyectoService = {
 
       try {
         // 🛑 CORRECCIÓN: Usar el Modelo Usuario directamente para evitar el error de 'usuarioService.findByPk is not a function'
-        const usuario = await Usuario.findByPk(suscripcion.id_usuario); 
+        const usuario = await Usuario.findByPk(suscripcion.id_usuario);
         if (usuario && usuario.email) {
           await emailService.notificarPausaProyecto(usuario, proyecto);
         } else {
@@ -362,7 +362,7 @@ const proyectoService = {
 
     // Se mantiene la llamada a usuarioService.findAllAdmins() ya que es una función más compleja
     // que podría no estar fácilmente disponible en el Modelo.
-    const admins = await usuarioService.findAllAdmins(); 
+    const admins = await usuarioService.findAllAdmins();
     const contenidoAdmin = `🛑 ALERTA DE REVERSIÓN: El proyecto "${proyecto.nombre_proyecto}" (ID: ${proyecto.id}) ha sido revertido de 'En proceso' a 'En Espera'. Suscripciones activas (${proyecto.suscripciones_actuales}) cayeron por debajo del mínimo (${proyecto.suscripciones_minimas}). Se han pausado los pagos.`;
 
     for (const admin of admins) {
@@ -421,6 +421,42 @@ const proyectoService = {
       fecha_inicio_proceso: new Date(), // Hoy // ⚠️ Se inicializa SOLO si no estaba ya pausado
       meses_restantes: proyecto.meses_restantes || proyecto.plazo_inversion,
       objetivo_notificado: true,
+    });
+  },
+  /**
+   * @async
+   * @function findAllActivoMensual
+   * @description Obtiene todos los proyectos activos con tipo de inversión 'mensual' (Ahorristas).
+   * @returns {Promise<Proyecto[]>} Lista de proyectos activos mensuales.
+   */
+  async findAllActivoMensual() {
+    return await Proyecto.findAll({
+      where: {
+        activo: true,
+        tipo_inversion: "mensual", // Filtrar por Ahorristas
+      },
+      include: [
+        { model: Lote, as: "lotes" },
+        { model: Imagen, as: "imagenes" },
+      ],
+    });
+  },
+  /**
+   * @async
+   * @function findAllActivoDirecto
+   * @description Obtiene todos los proyectos activos con tipo de inversión 'directo' (Inversionistas).
+   * @returns {Promise<Proyecto[]>} Lista de proyectos activos directos.
+   */
+  async findAllActivoDirecto() {
+    return await Proyecto.findAll({
+      where: {
+        activo: true,
+        tipo_inversion: "directo", // Filtrar por Inversionistas
+      },
+      include: [
+        { model: Lote, as: "lotes" },
+        { model: Imagen, as: "imagenes" },
+      ],
     });
   },
   /**
