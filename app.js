@@ -40,8 +40,6 @@ function captureRawBody(req, res, buf, encoding) {
 // ====================================================================
 // 2. MIDDLEWARES GLOBALES (Para el 99% de las rutas de la API)
 // ====================================================================
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 const corsOptions = {
   // Solo permite peticiones desde tu frontend de desarrollo
   origin: 'http://localhost:5173', 
@@ -49,6 +47,10 @@ const corsOptions = {
   credentials: true, // Esto es crucial si usas cookies o sesiones
   optionsSuccessStatus: 204
 };
+app.use(cors(corsOptions));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 // Permite acceder a archivos subidos mediante la URL /uploads
