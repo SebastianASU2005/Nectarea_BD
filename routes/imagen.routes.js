@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const imagenController = require("../controllers/imagen.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const imageUpload = require("../middleware/imageUpload.middleware"); // <-- 1. Importar el middleware
+const imageUpload = require("../middleware/imageUpload.middleware");
 
 // ===============================================
 // 1. RUTAS ESTÁTICAS Y CON PREFIJO (TODAS)
@@ -23,7 +23,7 @@ router.get(
   authMiddleware.authenticate,
   imagenController.getImagesByLoteId
 );
-// ✅ RUTA CORREGIDA: Obtener todas las imágenes activas (va antes de /:id)
+// Obtener todas las imágenes activas (va antes de /:id)
 router.get(
   "/activas",
   authMiddleware.authenticate,
@@ -33,16 +33,24 @@ router.get(
 // Rutas para administradores (Estáticas y con prefijo)
 
 // -------------------------------------------------------------------
-// RUTA CREATE ACTUALIZADA (POST Estático)
+// 🆕 RUTA ADICIONADA: Obtener imágenes activas sin proyecto ni lote asignado
 // -------------------------------------------------------------------
+router.get(
+  "/unassigned",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  imagenController.getUnassignedActiveImages
+);
+// -------------------------------------------------------------------
+
+// RUTA CREATE ACTUALIZADA (POST Estático)
 router.post(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  imageUpload.single("image"),
+  imageUpload.single("image"), // <-- El nombre del campo del formulario es 'image'
   imagenController.create
 );
-// -------------------------------------------------------------------
 
 // Obtener todas (GET Estático)
 router.get(
@@ -52,7 +60,7 @@ router.get(
   imagenController.findAll
 );
 
-// ✅ RUTA CORREGIDA: Usa el prefijo /admin/:id (va antes de la genérica /:id)
+// Usa el prefijo /admin/:id (va antes de la genérica /:id)
 router.get(
   "/admin/:id",
   authMiddleware.authenticate,

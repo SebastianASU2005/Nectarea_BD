@@ -12,19 +12,14 @@ const subscriptionCheckScheduler = {
    * Programa la tarea de verificación de umbral mínimo de suscripciones.
    */
   scheduleJobs() {
-    // ⏰ CRON JOB: Se ejecuta CADA MINUTO para pruebas.
-    // * * * * *
-    // | | | | |
-    // | | | | ----- Día de la semana (0 - 7)
-    // | | | ------- Mes (1 - 12)
-    // | | --------- Día del mes (1 - 31)
-    // | ----------- Hora (0 - 23)
-    // ------------- Minuto (0 - 59)
+    // ⏰ CRON JOB: Se ejecuta CADA 10 HORAS (Minuto 0 de la hora 0, 10 y 20).
+    // MINUTO HORA DÍA-MES MES DÍA-SEMANA
+    // 0 */10 * * *
     cron.schedule(
-      "* * * * *", // 🚨 CAMBIO AQUÍ: Ejecución CADA MINUTO
+      "0 */10 * * *", // 🚨 CAMBIO AQUÍ: Ejecución cada 10 horas
       async () => {
         console.log(
-          "--- Ejecutando verificación de umbral mínimo de suscripciones (CRON CADA MINUTO PARA PRUEBAS) ---"
+          "--- Ejecutando verificación de umbral mínimo de suscripciones (CRON CADA 10 HORAS) ---"
         );
 
         // Uso de una transacción global para la búsqueda inicial puede no ser necesario,

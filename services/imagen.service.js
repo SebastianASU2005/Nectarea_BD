@@ -1,20 +1,28 @@
 const Imagen = require("../models/imagen");
-const { Op } = require("sequelize"); // Se mantiene por convención, aunque no se usa en la mayoría de las funciones.
+const { Op } = require("sequelize"); // Se mantiene por convención.
 
 /**
  * Servicio de lógica de negocio para la gestión del modelo Imagen.
- * Se enfoca en las operaciones CRUD y la búsqueda por asociación (Proyecto/Lote)
- * con un énfasis en la eliminación lógica (`activo: true/false`).
  */
 const imagenService = {
   /**
    * @async
    * @function create
-   * @description Crea un nuevo registro de Imagen.
+   * @description Crea un nuevo registro de Imagen, validando que solo se asigne a un recurso (Proyecto O Lote).
    * @param {object} data - Datos de la imagen a crear (url, id_proyecto, id_lote, etc.).
    * @returns {Promise<Imagen>} La imagen creada.
+   * @throws {Error} Si se intenta asignar la imagen a un proyecto Y un lote.
    */
   async create(data) {
+    const { id_proyecto, id_lote } = data;
+
+    // Validación de uso único (Proyecto O Lote)
+    if (id_proyecto && id_lote) {
+      throw new Error(
+        "Una imagen solo puede ser asignada a un Proyecto O a un Lote, no a ambos."
+      );
+    }
+
     return await Imagen.create(data);
   },
 
@@ -97,16 +105,26 @@ const imagenService = {
   /**
    * @async
    * @function update
-   * @description Actualiza los datos de una imagen por ID.
+   * @description Actualiza los datos de una imagen por ID. Incluye validación de uso único.
    * @param {number} id - ID de la imagen.
    * @param {object} data - Datos a actualizar.
    * @returns {Promise<Imagen|null>} La imagen actualizada o null si no se encuentra.
+   * @throws {Error} Si se intenta asignar la imagen a un proyecto Y un lote.
    */
   async update(id, data) {
     const imagen = await Imagen.findByPk(id);
     if (!imagen) {
       return null;
     }
+
+    const { id_proyecto, id_lote } = data;
+    // Validación de uso único (Proyecto O Lote) en la actualización
+    if (id_proyecto && id_lote) {
+      throw new Error(
+        "Una imagen solo puede ser asignada a un Proyecto O a un Lote, no a ambos."
+      );
+    }
+
     return await imagen.update(data);
   },
 
@@ -124,6 +142,23 @@ const imagenService = {
     }
     imagen.activo = false;
     return await imagen.save();
+  },
+
+  /**
+   * @async
+   * @function findUnassignedActivo
+   * @description Obtiene todas las imágenes activas que NO tienen un proyecto ni un lote asignado.
+   * @returns {Promise<Imagen[]>} Lista de imágenes activas sin asignar.
+   */
+  async findUnassignedActivo() {
+    return await Imagen.findAll({
+      where: {
+        activo: true,
+        id_proyecto: null,
+        id_lote: null,
+      },
+      order: [["id", "ASC"]],
+    });
   },
 };
 

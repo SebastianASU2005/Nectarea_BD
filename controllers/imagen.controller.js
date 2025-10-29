@@ -1,4 +1,6 @@
 const imagenService = require("../services/imagen.service");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Controlador de Express para gestionar la subida, almacenamiento de referencia
@@ -43,6 +45,26 @@ const imagenController = {
         return res.status(400).json({ error: "ID del lote requerido." });
       }
       const imagenes = await imagenService.findByLoteIdActivo(id_lote);
+      res.json(imagenes);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // ===================================================================
+  // NUEVA FUNCIÓN: BÚSQUEDA DE IMÁGENES SIN ASIGNAR
+  // ===================================================================
+
+  /**
+   * @async
+   * @function getUnassignedActiveImages
+   * @description Obtiene todas las imágenes activas que no están asignadas a un proyecto ni a un lote.
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getUnassignedActiveImages(req, res) {
+    try {
+      const imagenes = await imagenService.findUnassignedActivo();
       res.json(imagenes);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -100,12 +122,13 @@ const imagenController = {
   /**
    * @async
    * @function create
-   * @description Sube la imagen (gestionada por middleware como Multer) y registra su URL/metadatos en la DB.
-   * Requiere que el middleware de subida (ej. Multer) se haya ejecutado previamente.
+   * @description Sube la imagen y registra su URL/metadatos en la DB.
    * @param {object} req - Objeto de solicitud de Express (con `req.file` y datos en `body`).
    * @param {object} res - Objeto de respuesta de Express.
    */
   async create(req, res) {
+    let uploadedFilePath = null; // Para manejo de errores
+
     try {
       // 1. Verificar si el middleware de Multer adjuntó el archivo
       if (!req.file) {
@@ -114,29 +137,41 @@ const imagenController = {
           .json({ error: "No se subió ningún archivo de imagen." });
       }
 
+      uploadedFilePath = req.file.path; // Ruta absoluta del archivo subido
+
       // 2. Construir el objeto de datos para la base de datos
+      // Usamos el nombre del archivo subido para construir la URL pública.
+      const publicPath = `/uploads/imagenes/${req.file.filename}`;
+
       const imagenData = {
-        // req.file.path contiene la ruta absoluta donde Multer guardó el archivo
-        url: req.file.path,
+        url: publicPath, // Ruta pública guardada en la DB
         descripcion: req.body.descripcion,
-        id_proyecto: req.body.id_proyecto || null, // Recibido del cuerpo del formulario (form-data)
-        id_lote: req.body.id_lote || null, // Recibido del cuerpo del formulario (form-data)
+        id_proyecto: req.body.id_proyecto || null,
+        id_lote: req.body.id_lote || null,
       };
 
-      // Validación básica para asegurar que la imagen está asociada a algo
+      // Validación para asegurar que la imagen está asociada a algo (o que se permita crear imágenes sin asignar)
+      // Nota: Si quieres permitir imágenes sin asignar inicialmente, elimina este bloque.
       if (!imagenData.id_proyecto && !imagenData.id_lote) {
-        // Nota: En un entorno real, DEBERÍAS eliminar el archivo subido si la validación falla aquí.
-        // (La lógica de eliminación del archivo debe estar en un middleware de error o aquí).
-        return res.status(400).json({
-          error: "La imagen debe estar asociada a un proyecto o a un lote.",
-        });
+        throw new Error(
+          "La imagen debe estar asociada a un proyecto o a un lote al momento de la creación."
+        );
       }
 
       // 3. Crear el registro en la base de datos
       const nuevaImagen = await imagenService.create(imagenData);
       res.status(201).json(nuevaImagen);
     } catch (error) {
-      // Manejar errores de Multer o de la base de datos
+      // 4. Si falla la DB o la validación, ELIMINAR el archivo subido por Multer
+      if (uploadedFilePath) {
+        try {
+          fs.unlinkSync(uploadedFilePath);
+        } catch (unlinkError) {
+          console.error(
+            `Fallo al eliminar el archivo subido: ${unlinkError.message}`
+          );
+        }
+      }
       res.status(500).json({ error: error.message });
     }
   },
@@ -195,7 +230,8 @@ const imagenController = {
       }
       res.json(imagenActualizada);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      // Esto capturará el error de uso único del servicio
+      res.status(400).json({ error: error.message });
     }
   },
 
@@ -208,7 +244,8 @@ const imagenController = {
    */
   async softDelete(req, res) {
     try {
-      // Nota: En un entorno real, también se debería considerar eliminar el archivo físico del disco (unlink) aquí.
+      // Nota: Aquí se debería eliminar también el archivo físico para liberar espacio.
+      // (Se requiere una llamada al servicio/lógica para obtener la ruta del archivo y usar fs.unlinkSync)
       const imagenEliminada = await imagenService.softDelete(req.params.id);
       if (!imagenEliminada) {
         return res.status(404).json({ message: "Imagen no encontrada." });

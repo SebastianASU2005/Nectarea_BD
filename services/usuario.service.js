@@ -179,10 +179,26 @@ const usuarioService = {
   async findByUsernameOrEmail(identifier) {
     return Usuario.findOne({
       where: {
+        activo: true,
         [Op.or]: [{ nombre_usuario: identifier }, { email: identifier }],
       },
     });
-  }, // ✅ NUEVA FUNCIÓN AÑADIDA
+  },
+  /**
+   * @async
+   * @function findByEmail
+   * @description Encuentra un usuario por su email.
+   * @param {string} email
+   * @returns {Promise<Usuario|null>}
+   */
+  async findByEmail(email) {
+    return Usuario.findOne({
+      where: {
+        email: email,
+        activo: true, // 🚨 FILTRO AÑADIDO: Solo cuentas activas
+      },
+    });
+  },
   /**
    * @async
    * @function findByUsername
@@ -193,6 +209,7 @@ const usuarioService = {
   async findByUsername(nombre_usuario) {
     return Usuario.findOne({
       where: {
+        activo: true,
         nombre_usuario: nombre_usuario,
       },
     });

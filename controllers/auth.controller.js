@@ -25,17 +25,31 @@ const authController = {
    */
   async register(req, res) {
     try {
-      // 1. Hashear la contraseña usando el servicio de autenticación
-      const hashedPassword = await authService.hashPassword(
-        req.body.contraseña
+      const { email, nombre_usuario, contraseña } = req.body; // 🎯 1. VALIDACIÓN DE UNICIDAD DE EMAIL Y NOMBRE DE USUARIO // A. Verificar Email
+
+      const existingUserByEmail = await usuarioService.findByEmail(email);
+      if (existingUserByEmail) {
+        return res.status(409).json({
+          // 409 Conflict es un buen código para duplicados
+          error: "El email ya está asociado a una cuenta activa.",
+        });
+      } // B. Verificar Nombre de Usuario
+
+      const existingUserByUsername = await usuarioService.findByUsername(
+        nombre_usuario
       );
+      if (existingUserByUsername) {
+        return res.status(409).json({
+          error: "El nombre de usuario ya está en uso.",
+        });
+      } // 2. Hashear la contraseña usando el servicio de autenticación
+      const hashedPassword = await authService.hashPassword(contraseña);
 
       const userData = {
         ...req.body,
         contraseña_hash: hashedPassword,
-      };
+      }; // 3. Crear el usuario en la base de datos (si las validaciones pasan)
 
-      // 2. Crear el usuario en la base de datos (el servicio maneja la generación del token de confirmación y el envío del email)
       const newUser = await usuarioService.create(userData);
 
       res.status(201).json({
