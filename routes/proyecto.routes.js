@@ -13,12 +13,6 @@ router.get(
   authMiddleware.authenticate,
   proyectoController.findAllActivo
 );
-// Rutas de Usuario
-router.get(
-  "/activos",
-  authMiddleware.authenticate,
-  proyectoController.findAllActivo
-);
 
 // 🎯 NUEVA RUTA: Proyectos de Ahorristas (Mensual)
 router.get(
