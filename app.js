@@ -22,9 +22,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "      ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("      El servicio de pagos NO funcionará.");
+  console.error("       El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -42,15 +42,14 @@ function captureRawBody(req, res, buf, encoding) {
 // ====================================================================
 const corsOptions = {
   // Solo permite peticiones desde tu frontend de desarrollo
-  origin: 'http://localhost:5173', 
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  origin: "http://localhost:5173",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true, // Esto es crucial si usas cookies o sesiones
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 // Permite acceder a archivos subidos mediante la URL /uploads
@@ -60,20 +59,31 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const { sequelize } = require("./config/database");
 
 // --- Configuración básica de Multer para la subida de archivos ---
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+
+// 🎯 FIX CRÍTICO: Definición del directorio de imágenes para Multer
+const IMAGENES_DIR_PUBLIC = path.join(__dirname, "uploads", "imagenes");
+
+// Asegurar que el directorio de subida existe.
+if (!fs.existsSync(IMAGENES_DIR_PUBLIC)) {
+  fs.mkdirSync(IMAGENES_DIR_PUBLIC, { recursive: true });
 }
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/");
+    // 🎯 FIX: El destino debe ser la carpeta 'uploads/imagenes/'
+    // para ser consistente con el controlador y la ruta pública.
+    cb(null, "uploads/imagenes/");
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname);
+    // Usamos la convención del middleware imageUpload: fieldname-timestamp-random.ext
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(
+      null,
+      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
+    );
   },
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage }); // Middleware de subida general (si aplica)
 
 // Importa todos los modelos para que Sequelize los conozca antes de configurar asociaciones
 const Usuario = require("./models/usuario");
@@ -194,7 +204,7 @@ async function synchronizeDatabase() {
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
     await SuscripcionProyecto.sync({ alter: true });
-    await SuscripcionCancelada.sync({ alter: true }); // ✅ Correcto
+    await SuscripcionCancelada.sync({ alter: true });
     await CuotaMensual.sync({ alter: true });
     await ResumenCuenta.sync({ alter: true });
     await Mensaje.sync({ alter: true });
@@ -219,7 +229,7 @@ async function synchronizeDatabase() {
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
     await SuscripcionProyecto.sync({ alter: true });
-    await SuscripcionCancelada.sync({ alter: true }); // ⬅️ Añadido para consistencia.
+    await SuscripcionCancelada.sync({ alter: true });
     await CuotaMensual.sync({ alter: true });
     await ResumenCuenta.sync({ alter: true });
     await Mensaje.sync({ alter: true });
@@ -230,7 +240,7 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
-     await Favorito.sync({ alter: true });
+    await Favorito.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
