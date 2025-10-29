@@ -58,18 +58,17 @@ async function expirarTransaccionesAntiguas() {
 }
 
 /**
- * Configura el cron job para ejecutarse cada 15 minutos
+ * Configura el cron job para ejecutarse cada 2 horas
  */
 function iniciarCronJobExpiracion() {
-  // Ejecuta cada 15 minutos: "*/15 * * * *"
-  // Para testing: cada 1 minuto: "* * * * *"
-  cron.schedule("*/15 * * * *", async () => {
+  // 🎯 CAMBIO CRÍTICO: Ejecuta cada 2 horas (a los 0 minutos de cada dos horas)
+  cron.schedule("0 */2 * * *", async () => {
     console.log("\n⏰ [CRON] Ejecutando job de expiración de transacciones...");
     await expirarTransaccionesAntiguas();
   });
 
   console.log(
-    "✅ Cron Job de expiración de transacciones iniciado (cada 15 min)"
+    "✅ Cron Job de expiración de transacciones iniciado (cada 2 horas)"
   );
 }
 
