@@ -30,16 +30,14 @@ const usuarioController = {
       // Maneja errores del servicio (ej: validación, email/DNI duplicado)
       res.status(400).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function confirmEmail
    * @description Maneja la ruta de confirmación de correo electrónico usando el token URL.
    * @param {object} req - Contiene el token en `req.params`.
    * @param {object} res - Objeto de respuesta de Express.
-   */,
-
-  async confirmEmail(req, res) {
+   */ async confirmEmail(req, res) {
     try {
       const { token } = req.params; // Llama al servicio que verifica y actualiza la BD
       await usuarioService.confirmEmail(token); // Respuesta de éxito (en un entorno real, podría redirigir al login)
@@ -52,56 +50,48 @@ const usuarioController = {
       // Si el token es inválido o expiró
       res.status(400).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findAll
    * @description Obtiene todos los usuarios (incluidos inactivos). Generalmente para administradores.
-   */,
-
-  async findAll(req, res) {
+   */ async findAll(req, res) {
     try {
       const usuarios = await usuarioService.findAll();
       res.status(200).json(usuarios);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findAllActivo
    * @description Obtiene solo los usuarios activos.
-   */,
-
-  async findAllActivo(req, res) {
+   */ async findAllActivo(req, res) {
     try {
       const usuariosActivos = await usuarioService.findAllActivos();
       res.status(200).json(usuariosActivos);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findAllAdmins
    * @description 🆕 Obtiene todos los usuarios con rol de administrador activos.
-   */,
-
-  async findAllAdmins(req, res) {
+   */ async findAllAdmins(req, res) {
     try {
       const administradores = await usuarioService.findAllAdmins();
       res.status(200).json(administradores);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findById
    * @description Encuentra un usuario por ID. Versión para administradores (accede a cualquier ID).
-   */,
-
-  async findById(req, res) {
+   */ async findById(req, res) {
     try {
       const usuario = await usuarioService.findById(req.params.id);
       if (!usuario) {
@@ -111,14 +101,12 @@ const usuarioController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findMe
    * @description Obtiene los datos del usuario autenticado a través de `req.user.id`.
-   */,
-
-  async findMe(req, res) {
+   */ async findMe(req, res) {
     try {
       // req.user.id es inyectado por el middleware de autenticación (JWT)
       const usuario = await usuarioService.findById(req.user.id);
@@ -130,18 +118,42 @@ const usuarioController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
-  /**
-   * @async
-   * @function update
-   * @description Actualiza un usuario por ID. Versión para administradores (actualiza cualquier ID).
-   */,
+  },
 
   async update(req, res) {
     try {
+      // 🛑 Definimos los campos que *un administrador* PUEDE cambiar.
+      // Se asume que un administrador puede cambiar más cosas que un usuario normal,
+      // PERO aún queremos evitar que campos como DNI o ID se modifiquen accidentalmente.
+      // Si el administrador necesita cambiar el DNI o rol, debería ser a través de una ruta más específica y controlada.
+      // Por defecto, permitimos cambiar nombre, email, teléfono y el estado `activo`.
+      const allowedAdminFields = [
+        "nombre",
+        "apellido",
+        "email",
+        "telefono",
+        "activo",
+        "rol", // Permitimos que el ADMIN cambie el rol en esta ruta por simplicidad del ejemplo.
+        "nombre_usuario", // Agregado el campo de nombre de usuario
+      ];
+
+      // Creamos un nuevo objeto solo con las propiedades permitidas.
+      const filteredData = Object.keys(req.body).reduce((acc, key) => {
+        if (allowedAdminFields.includes(key)) {
+          acc[key] = req.body[key];
+        }
+        return acc;
+      }, {});
+
+      if (Object.keys(filteredData).length === 0) {
+        return res.status(400).json({
+          error: "No se proporcionaron campos válidos para la actualización.",
+        });
+      }
+
       const usuarioActualizado = await usuarioService.update(
         req.params.id,
-        req.body
+        filteredData // <-- Usamos los datos filtrados
       );
       if (!usuarioActualizado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
@@ -150,19 +162,42 @@ const usuarioController = {
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function updateMe
    * @description Actualiza el perfil del usuario autenticado. Solo actualiza su propio registro.
-   */,
-
+   */
   async updateMe(req, res) {
     try {
+      // 🛑 Definimos los campos que un USUARIO NORMAL PUEDE cambiar.
+      const allowedUserFields = [
+        "nombre",
+        "apellido",
+        "email",
+        "telefono",
+        "nombre_usuario", // Agregado el campo de nombre de usuario
+      ];
+
+      // Creamos un nuevo objeto solo con las propiedades permitidas.
+      const filteredData = Object.keys(req.body).reduce((acc, key) => {
+        // Aseguramos que NO se puedan cambiar campos sensibles como 'rol', 'DNI', 'activo', etc.
+        if (allowedUserFields.includes(key)) {
+          acc[key] = req.body[key];
+        }
+        return acc;
+      }, {});
+
+      if (Object.keys(filteredData).length === 0) {
+        return res.status(400).json({
+          error: "No se proporcionaron campos válidos para la actualización.",
+        });
+      }
+
       // Usa req.user.id para asegurar que solo actualiza su propio perfil
       const usuarioActualizado = await usuarioService.update(
         req.user.id,
-        req.body
+        filteredData // <-- Usamos los datos filtrados
       );
       if (!usuarioActualizado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
@@ -171,12 +206,12 @@ const usuarioController = {
     } catch (error) {
       res.status(400).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function softDelete
    * @description "Elimina" lógicamente (soft delete) un usuario por ID. Versión para administradores.
-   */,
+   */
 
   async softDelete(req, res) {
     try {
@@ -188,12 +223,12 @@ const usuarioController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function softDeleteMe
    * @description "Elimina" lógicamente (soft delete) el perfil del usuario autenticado.
-   */,
+   */
 
   async softDeleteMe(req, res) {
     try {
