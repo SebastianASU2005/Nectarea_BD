@@ -7,11 +7,11 @@ const cron = require("node-cron");
 const PagoService = require("../services/pago.service");
 const MensajeService = require("../services/mensaje.service");
 const emailService = require("../services/email.service"); // Importado
+const SuscripcionProyectoService = require("../services/suscripcion_proyecto.service");
 
 // Configuración y Modelos
 const { email_empresa } = require("../config/config");
 const Proyecto = require("../models/proyecto");
-const SuscripcionProyectoService = require("../services/suscripcion_proyecto.service");
 const { Op, Sequelize } = require("sequelize");
 
 const paymentReminderScheduler = {
@@ -20,12 +20,14 @@ const paymentReminderScheduler = {
    * @description Configura y programa las tareas CRON.
    */
   scheduleJobs() {
-    // Tarea de recordatorios: Se ejecuta a las 9:20 AM (9:20). AJUSTA ESTO A TU HORARIO DE PRUEBA
+    // Tarea de recordatorios: Se ejecuta el DÍA 6 de cada mes a las 9:28 AM.
+    // Esto proporciona un aviso de 4 días antes del vencimiento común del día 10.
     cron.schedule(
-      "28 09 * * *", // CRON ACTUAL: 9:27 AM. Por favor, ajústalo al próximo minuto para probar.
+      "28 09 6 * *", // CRON MODIFICADO: Minuto 28, Hora 09, Día 6 del Mes
       async () => {
         console.log("--- Ejecutando tarea de recordatorios de pago ---");
         await this.sendPaymentReminders();
+        await this.notifyProjectGoalMet();
       }
       // { timezone: "America/Argentina/Mendoza" } // Descomentar si necesitas una zona horaria específica
     );
@@ -37,7 +39,6 @@ const paymentReminderScheduler = {
    * @description Busca proyectos que han alcanzado su objetivo de suscripciones y notifica a los suscriptores.
    */
   async notifyProjectGoalMet() {
-    // ... (Esta función no usa emailService, se mantiene igual)
     try {
       // Busca proyectos donde: suscripciones_actuales >= obj_suscripciones y objetivo_notificado es falso.
       const proyectosConObjetivoCumplido = await Proyecto.findAll({
@@ -82,7 +83,7 @@ const paymentReminderScheduler = {
    */
   async sendPaymentReminders() {
     try {
-      // Obtiene los pagos que cumplen el criterio de "próximos a vencer" (definido en PagoService).
+      // Obtiene los pagos que cumplen el criterio de "próximos a vencer" (entre hoy y dentro de 3 días).
       const pagosProximosAVencer = await PagoService.findPaymentsDueSoon();
       const remitente_id = 1;
 
@@ -90,12 +91,12 @@ const paymentReminderScheduler = {
         // Verifica que todos los datos necesarios (suscripción, proyecto, usuario) estén cargados.
         if (
           pago.suscripcion &&
-          pago.suscripcion.proyectoAsociado && // ✅ CORREGIDO: Usar proyectoAsociado
+          pago.suscripcion.proyectoAsociado &&
           pago.suscripcion.usuario
         ) {
           const nombreProyecto =
             pago.suscripcion.proyectoAsociado.nombre_proyecto;
-          const montoCuota = pago.monto; // Ya usa el getter y está formateado
+          const montoCuota = pago.monto;
           const fechaVencimientoObj = new Date(pago.fecha_vencimiento);
 
           // Contenido para el mensaje interno (simplificado)
@@ -110,15 +111,13 @@ const paymentReminderScheduler = {
             contenido: contenidoInterno,
           });
 
-          // 🟢 CAMBIO: 2. Envía correo al cliente (suscriptor) y a la empresa con una sola función
+          // 2. Envía correo al cliente (suscriptor) y a la empresa.
           await emailService.notificarRecordatorioPago(
-            // ⬅️ FUNCIÓN ESPECÍFICA
             pago.suscripcion.usuario,
             pago.suscripcion.proyectoAsociado,
             pago,
             email_empresa
           );
-          // 🟢 FIN CAMBIO
         }
       }
     } catch (error) {

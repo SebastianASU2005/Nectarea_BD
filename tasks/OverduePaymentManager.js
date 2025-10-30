@@ -15,7 +15,7 @@ const resumenCuentaService = require("../services/resumen_cuenta.service");
  * y limpia pagos iniciales que quedaron pendientes/atascados.
  */
 const overduePaymentManager = {
-  // Nota: La expresión CRON 31 12 * * * se ejecuta a las 12:31 PM (hora del servidor).
+  // La expresión CRON 35 09 * * * se ejecuta a las 9:35 AM (hora del servidor).
   job: cron.schedule(
     "35 09 * * *",
     async () => {
@@ -156,14 +156,24 @@ const overduePaymentManager = {
       scheduled: false,
     }
   ),
-  // ... (Resto de las funciones start() y runManual() se mantienen igual)
+
+  /**
+   * @function start
+   * @description Inicia la tarea CRON programada.
+   */
   start() {
     this.job.start();
+    // 🟢 MENSAJE CORREGIDO PARA MOSTRAR LA HORA REAL (9:35 AM)
     console.log(
-      "Cron job de pagos vencidos programado para ejecutarse a las 12:31 PM (hora de tu servidor). 🌅"
+      "Cron job de pagos vencidos programado para ejecutarse diariamente a las 9:35 AM (hora de tu servidor). 🌅"
     );
   },
 
+  /**
+   * @async
+   * @function runManual
+   * @description Ejecuta la lógica central del cron job de forma manual.
+   */
   async runManual() {
     console.log("--- EJECUCIÓN MANUAL DE TAREA DE VENCIMIENTO INICIADA ---");
     await this.job._task();

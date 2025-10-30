@@ -9,7 +9,8 @@ const loteService = require("../services/lote.service");
  */
 const initAuctionScheduler = () => {
   // Tarea 1: INICIAR SUBASTAS
-  cron.schedule("*/10 * * * *", async () => {
+  // Se ejecutará una vez al día a medianoche (00:00).
+  cron.schedule("0 0 * * *", async () => {
     console.log("🤖 CRON: Buscando lotes para iniciar subasta...");
     try {
       const lotesToStart = await loteService.findLotesToStart();
@@ -32,7 +33,8 @@ const initAuctionScheduler = () => {
   });
 
   // Tarea 2: FINALIZAR SUBASTAS
-  cron.schedule("*/10 * * * *", async () => {
+  // Se ejecutará una vez al día a medianoche (00:00).
+  cron.schedule("0 0 * * *", async () => {
     console.log("🤖 CRON: Buscando lotes para finalizar subasta...");
     try {
       const lotesToEnd = await loteService.findLotesToEnd();

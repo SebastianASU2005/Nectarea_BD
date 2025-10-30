@@ -92,9 +92,9 @@ const generatePaymentsCore = async () => {
 
 // Objeto que contiene el job y los métodos para iniciar/ejecutar
 const monthlyPaymentGenerationTask = {
-  // 🗓️ CRON MODIFICADO para ejecutarse el DÍA 1 de cada mes a las 13:24
+  // 🗓️ CRON MODIFICADO: Se ejecuta el DÍA 1 de cada mes a las 7:24 AM
   job: cron.schedule(
-    "24 13 1 * *", // MINUTO 24, HORA 13 (1:24 PM), DÍA 1
+    "24 7 1 * *", // MINUTO 24, HORA 7 (7:24 AM), DÍA 1
     generatePaymentsCore,
     {
       scheduled: false,
@@ -104,7 +104,7 @@ const monthlyPaymentGenerationTask = {
   start() {
     this.job.start();
     console.log(
-      "Cron job de generación de pagos mensuales programado para ejecutarse a la 1:24 PM (hora de tu servidor) el DÍA 1 de cada mes. 🗓️"
+      "Cron job de generación de pagos mensuales programado para ejecutarse a las 7:24 AM (hora de tu servidor) el DÍA 1 de cada mes. 🗓️"
     );
   },
 
