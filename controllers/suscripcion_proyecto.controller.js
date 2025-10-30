@@ -11,6 +11,7 @@ const UsuarioService = require("../services/usuario.service");
 
 // Importación de modelos y utilidades
 const Proyecto = require("../models/proyecto");
+const CuotaMensual = require("../models/CuotaMensual"); // 🛑 IMPORTACIÓN NECESARIA PARA VALIDAR LA CUOTA
 const { sequelize } = require("../config/database");
 
 /**
@@ -59,21 +60,55 @@ const suscripcionProyectoController = {
         return res.status(404).json({ error: "Proyecto no encontrado." });
       }
 
-      if (proyecto.estado_proyecto === "Finalizado") {
+      // -------------------------------------------------------------
+      // 🛑 VALIDACIONES TRASLADADAS Y LA NUEVA VALIDACIÓN DE CUOTA MENSUAL 🛑
+      // -------------------------------------------------------------
+
+      // 2a. Validación: Proyecto Cancelado o Finalizado
+      if (
+        proyecto.estado_proyecto === "Finalizado" ||
+        proyecto.estado_proyecto === "Cancelado"
+      ) {
         await t.rollback();
         return res.status(400).json({
-          error:
-            "No se puede suscribir a un proyecto que ya ha sido finalizado.",
+          error: `❌ No se puede iniciar una suscripción. El proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`,
         });
       }
-
-      // 🛑 NUEVA VALIDACIÓN CLAVE: Bloquear si el límite ya fue alcanzado. 🛑
+      
+      // 2b. Validación: Límite de Suscriptores alcanzado
       if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
         await t.rollback();
         return res.status(400).json({
           error: `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores. No se puede iniciar el pago.`,
         });
       }
+      
+      // 2c. VALIDACIÓN CRÍTICA: Cuota mensual requerida para el resumen de cuenta
+      if (proyecto.tipo_inversion === 'mensual') {
+        const cuotaMensual = await CuotaMensual.findOne({
+            where: { id_proyecto },
+            transaction: t, 
+        });
+
+        if (!cuotaMensual) {
+            await t.rollback();
+            return res.status(400).json({
+                error: `❌ El proyecto "${proyecto.nombre_proyecto}" es mensual, pero no tiene una Cuota Mensual definida. La suscripción no puede continuar.`,
+            });
+        }
+        
+        // Verificamos el valor final de la cuota (asumiendo que es el monto usado para el ResumenCuenta)
+        const valorMensualFinal = parseFloat(cuotaMensual.valor_mensual_final); 
+        if (valorMensualFinal <= 0 || isNaN(valorMensualFinal)) {
+            await t.rollback();
+            return res.status(400).json({
+                error: `❌ El proyecto "${proyecto.nombre_proyecto}" tiene un plan mensual con un valor inválido ($${cuotaMensual.valor_mensual_final}). La suscripción no puede continuar.`,
+            });
+        }
+      }
+
+      // -------------------------------------------------------------
+      // -------------------------------------------------------------
 
       const monto = parseFloat(proyecto.monto_inversion);
 
@@ -166,7 +201,9 @@ const suscripcionProyectoController = {
     } catch (error) {
       await t.rollback();
       console.error("Error al iniciar suscripción/pago:", error.message);
-      res.status(500).json({ error: error.message });
+      // Devuelve 400 si el error es de negocio (tus validaciones), 500 para errores inesperados
+      const statusCode = error.message.startsWith("❌") ? 400 : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   },
 
@@ -269,6 +306,7 @@ const suscripcionProyectoController = {
         .json({ message: "Suscripción confirmada y creada exitosamente." });
     } catch (error) {
       console.error("Error al confirmar la suscripción:", error);
+      // Asumimos que los errores del servicio ya vienen formateados
       res.status(500).json({ error: error.message });
     }
   },
@@ -373,20 +411,11 @@ const suscripcionProyectoController = {
       const { id } = req.params;
       const userId = req.user.id;
 
-      // 1. Verificar la propiedad antes de eliminar
-      const suscripcion = await suscripcionProyectoService.findByIdAndUserId(
-        id,
-        userId
-      );
-      if (!suscripcion) {
-        return res
-          .status(404)
-          .json({ error: "Suscripción no encontrada o no te pertenece." });
-      }
-
-      // 2. Ejecutar el soft delete
+      // 1. Ejecutar el soft delete con validación de propiedad dentro del servicio
+      // NOTA: El servicio softDelete DEBE recibir el userId para validar la propiedad.
       const suscripcionCancelada = await suscripcionProyectoService.softDelete(
-        id
+        id,
+        userId // 🛑 Paso el ID de usuario para que el servicio valide la propiedad
       );
 
       res.status(200).json({
@@ -394,7 +423,9 @@ const suscripcionProyectoController = {
         suscripcion: suscripcionCancelada,
       });
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      // 400 para errores de negocio (ej. no se puede cancelar por puja pagada)
+      const statusCode = error.message.startsWith("❌") ? 400 : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   },
 
@@ -405,17 +436,22 @@ const suscripcionProyectoController = {
    */
   async softDelete(req, res) {
     try {
+      // NOTA: Asumiendo que el usuario es un administrador y puede saltarse la validación de propiedad
       const suscripcionEliminada = await suscripcionProyectoService.softDelete(
-        req.params.id
+        req.params.id,
+        null // Se pasa null o un ID especial para indicar que es un admin
       );
       if (!suscripcionEliminada) {
         return res.status(404).json({ error: "Suscripción no encontrada" });
       }
       res.status(200).json({ message: "Suscripción eliminada correctamente." });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      // 400 para errores de negocio (ej. no se puede cancelar por puja pagada)
+      const statusCode = error.message.startsWith("❌") ? 400 : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   },
+  
   /**
    * @async
    * @function findActiveByProjectId

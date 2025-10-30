@@ -2,6 +2,7 @@
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
+const CuotaMensual = require("../models/CuotaMensual"); // 🛑 NUEVA IMPORTACIÓN REQUERIDA
 const Pago = require("../models/pago");
 const SuscripcionCancelada = require("../models/suscripcion_cancelada"); // Necesario para registrar la cancelación
 const MensajeService = require("./mensaje.service");
@@ -125,14 +126,123 @@ const suscripcionProyectoService = {
       }
     } // Devuelve la nueva suscripción y el proyecto (esencial para el servicio de Transacción).
     return { nuevaSuscripcion, proyecto };
-  }  // <-- COMA AÑADIDA
+  },
+
+  // -------------------------------------------------------------------
+  // 🚀 FUNCIÓN CLAVE: CONFIRMACIÓN DE SUSCRIPCIÓN TRAS PAGO EXITOSO
+  // -------------------------------------------------------------------
+
+  /**
+   * @async
+   * @function confirmarSuscripcion
+   * @description Procesa la confirmación final de la suscripción después de un pago exitoso.
+   * Se encarga de actualizar el estado del pago/transacción y crear el registro final de la suscripción.
+   * @param {number} transaccionId - ID de la Transacción que acaba de ser pagada.
+   * @returns {Promise<SuscripcionProyecto>} La nueva instancia de SuscripcionProyecto.
+   * @throws {Error} Si la transacción no es válida o ya fue procesada.
+   */
+  async confirmarSuscripcion(transaccionId) {
+    const t = await sequelize.transaction(); // Inicia la transacción
+    try {
+      // 1. VALIDACIÓN DE TRANSACCIÓN Y ESTADOS
+      const transaccion = await Transaccion.findByPk(transaccionId, {
+        transaction: t,
+      });
+
+      if (!transaccion) {
+        throw new Error(`Transacción con ID ${transaccionId} no encontrada.`);
+      }
+
+      // **VALIDACIÓN CRÍTICA DE FLUJO:** Solo se puede confirmar una transacción en estado 'pendiente'
+      if (transaccion.estado_transaccion !== "pendiente") {
+        throw new Error(
+          `❌ La Transacción ${transaccionId} ya fue procesada o está en estado no elegible: ${transaccion.estado_transaccion}.`
+        );
+      }
+
+      // 2. ACTUALIZACIÓN DEL PAGO Y TRANSACCIÓN (Marcarlos como exitosos)
+      const pago = await Pago.findByPk(transaccion.id_pago_mensual, {
+        transaction: t,
+      });
+
+      if (!pago) {
+        throw new Error(
+          `Pago mensual asociado a la transacción ${transaccionId} no encontrado.`
+        );
+      }
+
+      await transaccion.update(
+        { estado_transaccion: "pagado", fecha_pago: new Date() },
+        { transaction: t }
+      );
+      await pago.update({ estado_pago: "pagado" }, { transaction: t });
+
+      // 3. CREACIÓN DEL REGISTRO DE SUSCRIPCIÓN
+      const { nuevaSuscripcion, proyecto } =
+        await this._createSubscriptionRecord(
+          {
+            id_usuario: transaccion.id_usuario,
+            id_proyecto: transaccion.id_proyecto,
+            monto_total_pagado: transaccion.monto, // Registra el monto del primer pago
+            // otros campos por defecto
+          },
+          t
+        );
+
+      // 4. CREACIÓN DEL RESUMEN DE CUENTA (CRUCIAL para proyectos mensuales)
+      if (proyecto.tipo_inversion === "mensual") {
+        // Obtenemos la CuotaMensual dentro de la transacción
+        const cuotaMensual = await CuotaMensual.findOne({
+          where: { id_proyecto: proyecto.id },
+          transaction: t,
+        });
+
+        // Este servicio utiliza la CuotaMensual para crear el registro en ResumenCuenta.
+        await resumenCuentaService.crearResumenInicial(
+          {
+            id_suscripcion: nuevaSuscripcion.id,
+            id_proyecto: proyecto.id,
+            id_usuario: nuevaSuscripcion.id_usuario,
+            detalle_cuota: cuotaMensual, // Se pasa el objeto cuota para el detalle
+          },
+          t
+        );
+      }
+
+      await t.commit(); // Confirma todas las operaciones
+
+      // 5. Envío de email de confirmación (Post-Commit)
+      try {
+        const usuario = await UsuarioService.findById(
+          nuevaSuscripcion.id_usuario
+        );
+        if (usuario && usuario.email) {
+          await emailService.notificarSuscripcionExitosa(
+            usuario.email,
+            proyecto
+          );
+        }
+      } catch (error) {
+        console.error(
+          `Error al enviar email de suscripción exitosa al usuario ${nuevaSuscripcion.id_usuario}:`,
+          error.message
+        );
+      }
+
+      return nuevaSuscripcion;
+    } catch (error) {
+      await t.rollback(); // Revierte si algo falla
+      throw error;
+    }
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findUsersByProjectId
    * @description Obtiene los objetos de Usuario asociados a las suscripciones activas de un proyecto.
    * @param {number} projectId - ID del proyecto.
    * @returns {Promise<Usuario[]>} Lista de usuarios suscriptores activos.
-   */,
+   */
   async findUsersByProjectId(projectId) {
     const suscripciones = await SuscripcionProyecto.findAll({
       where: {
@@ -148,17 +258,37 @@ const suscripcionProyectoService = {
       ],
     }); // Mapea y devuelve solo las instancias del modelo Usuario.
     return suscripciones.map((suscripcion) => suscripcion.usuario);
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findById
    * @description Busca una suscripción por su clave primaria (ID).
    * @param {number} id - ID de la suscripción.
    * @returns {Promise<SuscripcionProyecto|null>}
-   */,
+   */
   async findById(id) {
     return SuscripcionProyecto.findByPk(id);
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
+  /**
+   * @async
+   * @function findByIdAndUserId
+   * @description Busca una suscripción por ID y verifica que pertenezca al usuario.
+   * @param {number} id - ID de la suscripción.
+   * @param {number} userId - ID del usuario.
+   * @returns {Promise<SuscripcionProyecto|null>}
+   */
+  async findByIdAndUserId(id, userId) {
+    return SuscripcionProyecto.findOne({
+      where: {
+        id,
+        id_usuario: userId,
+        activo: true, // Asumimos que solo buscan suscripciones activas
+      },
+    });
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findByUserAndProjectId
@@ -166,7 +296,7 @@ const suscripcionProyectoService = {
    * @param {number} userId - ID del usuario.
    * @param {number} projectId - ID del proyecto.
    * @returns {Promise<SuscripcionProyecto|null>}
-   */,
+   */
   async findByUserAndProjectId(userId, projectId) {
     return SuscripcionProyecto.findOne({
       where: {
@@ -175,22 +305,24 @@ const suscripcionProyectoService = {
         activo: true,
       },
     });
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findAll
    * @description Obtiene todas las suscripciones (activas e inactivas).
    * @returns {Promise<SuscripcionProyecto[]>}
-   */,
+   */
   async findAll() {
     return SuscripcionProyecto.findAll();
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findAllActivo
    * @description Obtiene todas las suscripciones activas (activo: true).
    * @returns {Promise<SuscripcionProyecto[]>}
-   */,
+   */
   async findAllActivo() {
     return SuscripcionProyecto.findAll({
       where: { activo: true },
@@ -205,14 +337,15 @@ const suscripcionProyectoService = {
         },
       ],
     });
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findByUserId
    * @description Busca todas las suscripciones activas de un usuario, incluyendo el Proyecto asociado.
    * @param {number} userId - ID del usuario.
    * @returns {Promise<SuscripcionProyecto[]>}
-   */,
+   */
   async findByUserId(userId) {
     return SuscripcionProyecto.findAll({
       where: { id_usuario: userId, activo: true },
@@ -224,13 +357,14 @@ const suscripcionProyectoService = {
         },
       ],
     });
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findSubscriptionsReadyForPayments
    * @description Busca suscripciones activas donde el pago aún no se ha generado (`pago_generado: false`) y cuyo proyecto ya cumplió el objetivo.
    * @returns {Promise<SuscripcionProyecto[]>}
-   */,
+   */
   async findSubscriptionsReadyForPayments() {
     return SuscripcionProyecto.findAll({
       where: {
@@ -245,7 +379,8 @@ const suscripcionProyectoService = {
         Usuario, // Incluye el modelo Usuario (asumiendo que tiene un alias por defecto o está correctamente configurado).
       ],
     });
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function update
@@ -253,14 +388,15 @@ const suscripcionProyectoService = {
    * @param {number} id - ID de la suscripción.
    * @param {Object} data - Datos a actualizar.
    * @returns {Promise<SuscripcionProyecto|null>} La instancia actualizada o null.
-   */,
+   */
   async update(id, data) {
     const suscripcion = await this.findById(id);
     if (!suscripcion) {
       return null;
     }
     return suscripcion.update(data);
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function softDelete
@@ -269,7 +405,7 @@ const suscripcionProyectoService = {
    * @param {number} userId - ID del usuario que intenta cancelar (para validación de propiedad).
    * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
    * @throws {Error} Si la suscripción no existe, ya está cancelada o tiene pujas pagadas asociadas.
-   */, // =================================================================== // LÓGICA DE CANCELACIÓN (FUNCIÓN CENTRAL CON VALIDACIÓN DE PUJA Y REGISTRO) // ===================================================================
+   */ // =================================================================== // LÓGICA DE CANCELACIÓN (FUNCIÓN CENTRAL CON VALIDACIÓN DE PUJA Y REGISTRO) // ===================================================================
   async softDelete(suscripcionId, userId) {
     const t = await sequelize.transaction(); // Inicia la transacción de BD.
     try {
@@ -354,18 +490,20 @@ const suscripcionProyectoService = {
       await t.rollback(); // Revierte si algo falla.
       throw error;
     }
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findAllCanceladas
    * @description Busca todas las suscripciones canceladas. (Para uso de Administradores)
    * @returns {Promise<SuscripcionCancelada[]>}
-   */, // =================================================================== // FUNCIONES DE CONSULTA DE CANCELACIONES // ===================================================================
+   */ // =================================================================== // FUNCIONES DE CONSULTA DE CANCELACIONES // ===================================================================
   async findAllCanceladas() {
     return SuscripcionCancelada.findAll({
       order: [["fecha_cancelacion", "DESC"]],
     });
   },
+
   /**
    * @async
    * @function findActiveByProjectId
@@ -401,6 +539,7 @@ const suscripcionProyectoService = {
       transaction: t,
     });
   },
+
   /**
    * @async
    * @function findMyCanceladas
@@ -415,14 +554,15 @@ const suscripcionProyectoService = {
       },
       order: [["fecha_cancelacion", "DESC"]],
     });
-  }  // <-- COMA AÑADIDA
+  }, // <-- COMA AÑADIDA
+
   /**
    * @async
    * @function findByProjectCanceladas
    * @description Busca todas las suscripciones canceladas de un proyecto específico.
    * @param {number} projectId - ID del proyecto.
    * @returns {Promise<SuscripcionCancelada[]>}
-   */,
+   */
   async findByProjectCanceladas(projectId) {
     return SuscripcionCancelada.findAll({
       where: {
@@ -430,7 +570,7 @@ const suscripcionProyectoService = {
       },
       order: [["fecha_cancelacion", "DESC"]], // Puedes incluir el Proyecto y el Usuario si lo necesitas para el reporte // include: [{ model: Proyecto, as: 'proyectoCancelado' }, { model: Usuario, as: 'usuarioCancelador' }]
     });
-  }, // <-- COMA AÑADIDA
+  },
 };
 
 module.exports = suscripcionProyectoService;
