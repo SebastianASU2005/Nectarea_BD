@@ -1,7 +1,7 @@
 const Puja = require("../models/puja");
 const Lote = require("../models/lote");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
-const Pago = require("../models/pago");
+const Pago = require("../models/Pago");
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const ProyectoService = require("./proyecto.service");

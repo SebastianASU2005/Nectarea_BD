@@ -5,7 +5,7 @@ const Proyecto = require("../models/proyecto");
 const CuotaMensual = require("../models/CuotaMensual");
 const ResumenCuenta = require("../models/resumen_cuenta");
 const moment = require("moment"); // Librería para manejo de fechas
-const Pago = require("../models/pago");
+const Pago = require("../models/Pago");
 const { Op } = require("sequelize"); // Operadores de Sequelize
 
 /**

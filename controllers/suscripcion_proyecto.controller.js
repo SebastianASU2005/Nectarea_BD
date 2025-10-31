@@ -74,7 +74,7 @@ const suscripcionProyectoController = {
           error: `❌ No se puede iniciar una suscripción. El proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`,
         });
       }
-      
+
       // 2b. Validación: Límite de Suscriptores alcanzado
       if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
         await t.rollback();
@@ -82,28 +82,28 @@ const suscripcionProyectoController = {
           error: `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores. No se puede iniciar el pago.`,
         });
       }
-      
+
       // 2c. VALIDACIÓN CRÍTICA: Cuota mensual requerida para el resumen de cuenta
-      if (proyecto.tipo_inversion === 'mensual') {
+      if (proyecto.tipo_inversion === "mensual") {
         const cuotaMensual = await CuotaMensual.findOne({
-            where: { id_proyecto },
-            transaction: t, 
+          where: { id_proyecto },
+          transaction: t,
         });
 
         if (!cuotaMensual) {
-            await t.rollback();
-            return res.status(400).json({
-                error: `❌ El proyecto "${proyecto.nombre_proyecto}" es mensual, pero no tiene una Cuota Mensual definida. La suscripción no puede continuar.`,
-            });
+          await t.rollback();
+          return res.status(400).json({
+            error: `❌ El proyecto "${proyecto.nombre_proyecto}" es mensual, pero no tiene una Cuota Mensual definida. La suscripción no puede continuar.`,
+          });
         }
-        
+
         // Verificamos el valor final de la cuota (asumiendo que es el monto usado para el ResumenCuenta)
-        const valorMensualFinal = parseFloat(cuotaMensual.valor_mensual_final); 
+        const valorMensualFinal = parseFloat(cuotaMensual.valor_mensual_final);
         if (valorMensualFinal <= 0 || isNaN(valorMensualFinal)) {
-            await t.rollback();
-            return res.status(400).json({
-                error: `❌ El proyecto "${proyecto.nombre_proyecto}" tiene un plan mensual con un valor inválido ($${cuotaMensual.valor_mensual_final}). La suscripción no puede continuar.`,
-            });
+          await t.rollback();
+          return res.status(400).json({
+            error: `❌ El proyecto "${proyecto.nombre_proyecto}" tiene un plan mensual con un valor inválido ($${cuotaMensual.valor_mensual_final}). La suscripción no puede continuar.`,
+          });
         }
       }
 
@@ -451,7 +451,7 @@ const suscripcionProyectoController = {
       res.status(statusCode).json({ error: error.message });
     }
   },
-  
+
   /**
    * @async
    * @function findActiveByProjectId
@@ -482,6 +482,55 @@ const suscripcionProyectoController = {
       res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  },
+  // =======================================================
+  // 📊 NUEVAS FUNCIONES DE MÉTRICAS (KPIs)
+  // =======================================================
+
+  /**
+   * @async
+   * @function getMorosityMetrics
+   * @description Obtiene las métricas de morosidad (Tasa de Morosidad, Monto en Riesgo) (KPI 4).
+   * (ACCESO SÓLO ADMIN)
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getMorosityMetrics(req, res) {
+    try {
+      const metricas = await suscripcionProyectoService.getMorosityMetrics();
+      res.status(200).json({
+        kpi_name: "Tasa y Monto de Morosidad",
+        ...metricas,
+      });
+    } catch (error) {
+      console.error("Error al obtener métricas de morosidad:", error.message);
+      res
+        .status(500)
+        .json({ error: "Error interno al calcular la morosidad." });
+    }
+  },
+
+  /**
+   * @async
+   * @function getCancellationRate
+   * @description Obtiene la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5).
+   * (ACCESO SÓLO ADMIN)
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getCancellationRate(req, res) {
+    try {
+      const metricas = await suscripcionProyectoService.getCancellationRate();
+      res.status(200).json({
+        kpi_name: "Tasa de Cancelación (Churn Rate)",
+        ...metricas,
+      });
+    } catch (error) {
+      console.error("Error al obtener la tasa de cancelación:", error.message);
+      res
+        .status(500)
+        .json({ error: "Error interno al calcular la tasa de cancelación." });
     }
   },
 };

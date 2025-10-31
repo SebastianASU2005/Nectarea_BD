@@ -58,6 +58,22 @@ router.post(
 // =======================================================
 
 // Obtener todas las suscripciones
+// 📊 NUEVAS RUTAS DE MÉTRICAS 📊
+// KPI 4: Morosidad
+router.get(
+  "/metrics/morosidad",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.getMorosityMetrics
+);
+
+// KPI 5: Tasa de Cancelación
+router.get(
+  "/metrics/cancelacion",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.getCancellationRate
+);
 router.get(
   "/",
   authMiddleware.authenticate,

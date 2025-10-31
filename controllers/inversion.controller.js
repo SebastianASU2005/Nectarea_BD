@@ -348,6 +348,62 @@ const inversionController = {
       res.status(500).json({ error: error.message });
     }
   },
+  // -------------------------------------------------------------------
+  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS (ADMIN)
+  // -------------------------------------------------------------------
+
+  /**
+   * @async
+   * @function getLiquidityRate
+   * @description Obtiene la Tasa de Liquidez de Inversiones (KPI 6).
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getLiquidityRate(req, res) {
+    try {
+      const metrics = await inversionService.getInvestmentLiquidityRate();
+      res.status(200).json({
+        mensaje:
+          "Tasa de Liquidez de Inversiones (Total Pagado vs. Total Registrado).",
+        data: metrics,
+      });
+    } catch (error) {
+      console.error("Error al obtener Tasa de Liquidez:", error.message);
+      res
+        .status(500)
+        .json({
+          error: "Error interno al procesar las métricas de inversión.",
+        });
+    }
+  },
+
+  /**
+   * @async
+   * @function getAggregatedByUser
+   * @description Obtiene el monto total invertido (pagado) por cada usuario.
+   * (Base para KPI 7: Rendimiento del Inversor).
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getAggregatedByUser(req, res) {
+    try {
+      const aggregated = await inversionService.getAggregatedInvestmentByUser();
+      res.status(200).json({
+        mensaje: "Monto total invertido (pagado) por cada usuario.",
+        data: aggregated,
+      });
+    } catch (error) {
+      console.error(
+        "Error al obtener inversión agregada por usuario:",
+        error.message
+      );
+      res
+        .status(500)
+        .json({
+          error: "Error interno al procesar la agregación de inversiones.",
+        });
+    }
+  },
 };
 
 module.exports = inversionController;

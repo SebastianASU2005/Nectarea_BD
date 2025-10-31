@@ -8,7 +8,6 @@ const authMiddleware = require("../middleware/auth.middleware");
 // Estas van ANTES de cualquier /:id genérico.
 // =================================================================
 
-
 // [GET /mis_pagos] Permite que un usuario autenticado vea solo sus pagos.
 router.get(
   "/mis_pagos",
@@ -24,6 +23,21 @@ router.post(
 );
 
 // Rutas de Administración (Estáticas)
+// [GET /metricas/mensuales?mes=X&anio=Y] Obtiene Recaudo, Vencidos y Tasa de Morosidad (Admin)
+router.get(
+  "/metricas/mensuales",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.getMonthlyMetrics
+);
+
+// [GET /metricas/a-tiempo?mes=X&anio=Y] Obtiene Tasa de Pagos a Tiempo (Admin)
+router.get(
+  "/metricas/a-tiempo",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.getOnTimeRate
+);
 // [GET /] Obtiene todos los pagos (Admin).
 router.get(
   "/",

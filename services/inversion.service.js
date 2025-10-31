@@ -1,6 +1,9 @@
+// Archivo: services/inversion.service.js
+
 const Inversion = require("../models/inversion");
 const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
+const { Op } = require("sequelize"); // Asegúrate de tener Op importado para las agregaciones
 
 /**
  * Servicio de lógica de negocio para la gestión de Inversiones Directas en Proyectos.
@@ -210,6 +213,80 @@ const inversionService = {
     return await inversion.update({
       activo: false,
     });
+  },
+
+  // -------------------------------------------------------------------
+  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS
+  // -------------------------------------------------------------------
+
+  /**
+   * @async
+   * @function getInvestmentLiquidityRate
+   * @description Calcula la Tasa de Liquidez de Inversiones: (Total Pagado / Total Registrado). (KPI 6)
+   * Mide la eficiencia con la que los proyectos de inversión directa se concretan.
+   * @returns {Promise<object>} Objeto con las métricas de liquidez.
+   */
+  async getInvestmentLiquidityRate() {
+    // 1. Calcular el monto total de todas las inversiones registradas
+    const totalInvertidoResult = await Inversion.sum("monto", {
+      where: { activo: true },
+    });
+    const totalInvertido = Number(totalInvertidoResult) || 0;
+
+    if (totalInvertido === 0) {
+      return {
+        total_invertido_registrado: 0,
+        total_pagado: 0,
+        tasa_liquidez: 0.0,
+      };
+    }
+
+    // 2. Calcular el monto total de inversiones efectivamente pagadas
+    const totalPagadoResult = await Inversion.sum("monto", {
+      where: { estado: "pagado", activo: true },
+    });
+    const totalPagado = Number(totalPagadoResult) || 0;
+
+    // 3. Calcular la Tasa de Liquidez (KPI 6)
+    const tasaLiquidez = (totalPagado / totalInvertido) * 100;
+
+    return {
+      total_invertido_registrado: totalInvertido.toFixed(2),
+      total_pagado: totalPagado.toFixed(2),
+      tasa_liquidez: tasaLiquidez.toFixed(2), // Porcentaje
+    };
+  },
+
+  /**
+   * @async
+   * @function getAggregatedInvestmentByUser
+   * @description Agrega el monto total invertido (pagado) por cada usuario.
+   * Base para el cálculo del Rendimiento del Inversor (KPI 7).
+   * @returns {Promise<object[]>} Lista de usuarios y su monto total invertido pagado.
+   */
+  async getAggregatedInvestmentByUser() {
+    // Usamos el método `findAll` con las opciones de `group` y `attributes` para agregar
+    const aggregatedInvestments = await Inversion.findAll({
+      attributes: [
+        "id_usuario",
+        [sequelize.fn("SUM", sequelize.col("monto")), "monto_total_invertido"],
+      ],
+      where: {
+        estado: "pagado", // Solo inversiones que fueron efectivamente pagadas
+        activo: true,
+      },
+      group: ["id_usuario"], // Agrupa por el ID del usuario
+      order: [
+        [sequelize.literal("monto_total_invertido"), "DESC"], // Ordenar por el monto total invertido
+      ],
+      raw: true,
+    });
+
+    // Formatear a números flotantes
+    return aggregatedInvestments.map((item) => ({
+      id_usuario: item.id_usuario,
+      monto_total_invertido: parseFloat(item.monto_total_invertido).toFixed(2),
+    }));
   },
 };
 

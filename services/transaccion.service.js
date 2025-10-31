@@ -1,7 +1,7 @@
 const { sequelize } = require("../config/database");
 const { Op } = require("sequelize");
 const Transaccion = require("../models/transaccion");
-const Pago = require("../models/pago");
+const Pago = require("../models/Pago");
 const PagoMercado = require("../models/pagoMercado");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");

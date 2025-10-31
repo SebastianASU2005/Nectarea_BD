@@ -236,18 +236,56 @@ const usuarioService = {
   /**
    * @async
    * @function update
-   * @description Actualiza los datos de un usuario por ID.
+   * @description Actualiza los datos de un usuario por ID, validando unicidad en email y nombre_usuario.
    * @param {number} id - ID del usuario a actualizar.
    * @param {Object} data - Nuevos datos.
    * @returns {Promise<Usuario|null>} El usuario actualizado o null si no existe.
+   * @throws {Error} Si el email o nombre_usuario ya están en uso por otra cuenta activa.
    */
   async update(id, data) {
     const usuario = await this.findById(id);
+
     if (!usuario) {
       return null;
     }
+
+    // ------------------------------------------------------------------
+    // 🛑 VALIDACIÓN DE UNICIDAD PARA EMAIL Y NOMBRE DE USUARIO (CUENTAS ACTIVAS)
+    // ------------------------------------------------------------------
+
+    const { email, nombre_usuario } = data;
+
+    // 1. Validar Email
+    if (email && email !== usuario.email) {
+      const existingEmailUser = await Usuario.findOne({
+        where: {
+          email: email,
+          activo: true, // Solo cuentas activas
+          id: { [Op.ne]: id }, // Que no sea el usuario actual
+        },
+      });
+      if (existingEmailUser) {
+        throw new Error("❌ El email ya está en uso por otra cuenta activa.");
+      }
+    }
+
+    // 2. Validar Nombre de Usuario
+    if (nombre_usuario && nombre_usuario !== usuario.nombre_usuario) {
+      const existingUsernameUser = await Usuario.findOne({
+        where: {
+          nombre_usuario: nombre_usuario,
+          activo: true, // Solo cuentas activas
+          id: { [Op.ne]: id }, // Que no sea el usuario actual
+        },
+      });
+      if (existingUsernameUser) {
+        throw new Error(
+          "❌ El nombre de usuario ya está tomado por otra cuenta activa."
+        );
+      }
+    }
     return usuario.update(data);
-  }, // 🚨 COMA AGREGADA AQUÍ
+  }, 
   /**
    * @async
    * @function softDelete
@@ -323,7 +361,39 @@ const usuarioService = {
     });
 
     return resultado;
-  }, // La última propiedad no necesita coma
+  },
+  /**
+   * @async
+   * @function searchByUsername
+   * @description Busca usuarios activos por una coincidencia parcial en el nombre_usuario o email.
+   * @param {string} searchTerm - El término de búsqueda (ej. 'juan' o 'juan@').
+   * @returns {Promise<Usuario[]>} Lista de usuarios activos que coinciden con el término.
+   */
+  async searchByUsername(searchTerm) {
+    // Usamos ILIKE (o LIKE + LOWER en bases de datos sensibles a mayúsculas) para búsqueda insensible.
+    const searchPattern = `%${searchTerm}%`;
+
+    return Usuario.findAll({
+      where: {
+        activo: true, // Solo usuarios activos
+        [Op.or]: [
+          {
+            nombre_usuario: {
+              [Op.iLike]: searchPattern,
+            },
+          },
+          {
+            email: {
+              [Op.iLike]: searchPattern,
+            },
+          },
+        ],
+      },
+      // Opcional: Limitar resultados u ordenar
+      order: [["nombre_usuario", "ASC"]],
+      limit: 50,
+    });
+  },
 };
 
 module.exports = usuarioService;

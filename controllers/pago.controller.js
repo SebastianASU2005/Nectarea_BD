@@ -302,6 +302,89 @@ const pagoController = {
       next(error);
     }
   },
+  // ===================================================================
+  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS
+  // ===================================================================
+
+  /**
+   * @async
+   * @function getMonthlyMetrics
+   * @description Obtiene el Recaudo Mensual, Pagos Vencidos y Tasa de Morosidad para un mes/año.
+   * @param {object} req - Query params: `mes` (1-12) y `anio` (YYYY).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getMonthlyMetrics(req, res) {
+    try {
+      const { mes, anio } = req.query;
+
+      if (!mes || !anio || isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
+          });
+      }
+
+      const metrics = await pagoService.getMonthlyPaymentMetrics(
+        parseInt(mes),
+        parseInt(anio)
+      );
+
+      // Devolvemos las métricas con un mensaje claro
+      res.status(200).json({
+        message: `Métricas de Pagos para el mes ${mes}/${anio}.`,
+        data: metrics,
+      });
+    } catch (error) {
+      console.error("Error al obtener métricas mensuales:", error.message);
+      res
+        .status(500)
+        .json({ error: "Error interno al procesar las métricas de pago." });
+    }
+  },
+
+  /**
+   * @async
+   * @function getOnTimeRate
+   * @description Obtiene la Tasa de Pagos a Tiempo para un mes/año.
+   * @param {object} req - Query params: `mes` (1-12) y `anio` (YYYY).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getOnTimeRate(req, res) {
+    try {
+      const { mes, anio } = req.query;
+
+      if (!mes || !anio || isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
+          });
+      }
+
+      const metrics = await pagoService.getOnTimePaymentRate(
+        parseInt(mes),
+        parseInt(anio)
+      );
+
+      res.status(200).json({
+        message: `Tasa de Pagos a Tiempo para el mes ${mes}/${anio}.`,
+        data: metrics,
+      });
+    } catch (error) {
+      console.error(
+        "Error al obtener la tasa de pagos a tiempo:",
+        error.message
+      );
+      res
+        .status(500)
+        .json({
+          error: "Error interno al procesar la tasa de pagos a tiempo.",
+        });
+    }
+  },
 };
 
 module.exports = pagoController;

@@ -1,18 +1,19 @@
+// Archivo: services/suscripcion_proyecto.service.js
+
 // Importar los modelos y servicios necesarios
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
-const CuotaMensual = require("../models/CuotaMensual"); // 🛑 NUEVA IMPORTACIÓN REQUERIDA
-const Pago = require("../models/pago");
-const SuscripcionCancelada = require("../models/suscripcion_cancelada"); // Necesario para registrar la cancelación
+const CuotaMensual = require("../models/CuotaMensual");
+const Pago = require("../models/Pago");
+const SuscripcionCancelada = require("../models/suscripcion_cancelada");
 const MensajeService = require("./mensaje.service");
-const UsuarioService = require("./usuario.service"); // Necesario para buscar al admin
+const UsuarioService = require("./usuario.service");
 const Transaccion = require("../models/transaccion");
-const { sequelize, Op } = require("../config/database"); // Op necesario para búsquedas complejas
-const pujaService = require("./puja.service"); // Servicio clave para la validación de cancelación
-// Servicio de resumen de cuenta
+const { sequelize, Op } = require("../config/database");
+const pujaService = require("./puja.service");
 const resumenCuentaService = require("./resumen_cuenta.service");
-const emailService = require("./email.service"); // <--- ¡NUEVA IMPORTACIÓN!
+const emailService = require("./email.service");
 
 /**
  * Servicio de lógica de negocio para la gestión de Suscripciones a Proyectos (SuscripcionProyecto).
@@ -570,6 +571,94 @@ const suscripcionProyectoService = {
       },
       order: [["fecha_cancelacion", "DESC"]], // Puedes incluir el Proyecto y el Usuario si lo necesitas para el reporte // include: [{ model: Proyecto, as: 'proyectoCancelado' }, { model: Usuario, as: 'usuarioCancelador' }]
     });
+  },
+
+  // -------------------------------------------------------------------
+  // 🗓️ FUNCIONES CRON JOB / CICLO MENSUAL
+  // -------------------------------------------------------------------
+  // [La lógica de finalizarMes y findProjectsToRevert iría aquí, si la hubieras aceptado]
+
+  // Si has conservado las funciones de la respuesta anterior, deberías copiarlas aquí.
+  // Por simplicidad, asumo que las funciones están ahí.
+
+  // -------------------------------------------------------------------
+  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS
+  // -------------------------------------------------------------------
+
+  /**
+   * @async
+   * @function getMorosityMetrics
+   * @description Calcula la Tasa de Morosidad y el monto total de pagos pendientes/atrasados (KPI 4).
+   * @returns {Promise<object>} Objeto con las métricas de morosidad.
+   */
+  async getMorosityMetrics() {
+    // 1. Calcular el monto total de todos los pagos generados (para la base)
+    const totalGeneradoResult = await Pago.sum("monto", {
+      where: {
+        estado_pago: {
+          [Op.in]: ["pagado", "pendiente", "vencido", "cubierto_por_puja","cancelado"],
+        },
+      },
+    });
+    const totalGenerado = Number(totalGeneradoResult) || 0;
+
+    // 2. Calcular el monto total pendiente y atrasado (en riesgo)
+    const totalEnRiesgoResult = await Pago.sum("monto", {
+      where: {
+        estado_pago: { [Op.in]: ["pendiente", "vencido"] },
+      },
+    });
+    const totalEnRiesgo = Number(totalEnRiesgoResult) || 0;
+
+    if (totalGenerado === 0) {
+      return {
+        total_pagos_generados: 0,
+        total_en_riesgo: 0,
+        tasa_morosidad: 0.0,
+      };
+    }
+
+    // 3. Calcular la Tasa de Morosidad (Monto en Riesgo / Monto Total Generado)
+    const tasaMorosidad = (totalEnRiesgo / totalGenerado) * 100;
+
+    return {
+      total_pagos_generados: totalGenerado.toFixed(2),
+      total_en_riesgo: totalEnRiesgo.toFixed(2),
+      tasa_morosidad: tasaMorosidad.toFixed(2), // Porcentaje
+    };
+  },
+
+  /**
+   * @async
+   * @function getCancellationRate
+   * @description Calcula la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5).
+   * @returns {Promise<object>} Objeto con la tasa de cancelación.
+   */
+  async getCancellationRate() {
+    // 1. Contar el total de suscripciones (Activas + Canceladas)
+    const totalSuscripciones = await SuscripcionProyecto.count();
+
+    if (totalSuscripciones === 0) {
+      return {
+        total_suscripciones: 0,
+        total_canceladas: 0,
+        tasa_cancelacion: 0.0,
+      };
+    }
+
+    // 2. Contar el total de suscripciones canceladas (activo: false)
+    const totalCanceladas = await SuscripcionProyecto.count({
+      where: { activo: false },
+    });
+
+    // 3. Calcular la Tasa de Cancelación (Total Canceladas / Total Suscripciones)
+    const tasaCancelacion = (totalCanceladas / totalSuscripciones) * 100;
+
+    return {
+      total_suscripciones: totalSuscripciones,
+      total_canceladas: totalCanceladas,
+      tasa_cancelacion: tasaCancelacion.toFixed(2), // Porcentaje
+    };
   },
 };
 

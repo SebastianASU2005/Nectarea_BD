@@ -35,6 +35,20 @@ router.get(
   authMiddleware.authorizeAdmin,
   inversionController.findAll
 );
+router.get(
+  "/metricas/liquidez",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  inversionController.getLiquidityRate
+);
+
+// 🎯 NUEVA RUTA: Inversión Agregada por Usuario (Base para KPI 7)
+router.get(
+  "/metricas/agregado-por-usuario",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  inversionController.getAggregatedByUser
+);
 
 // **NUEVA RUTA**: Ver sus propias inversiones (Estática con prefijo, ¡va antes de /:id!)
 router.get(

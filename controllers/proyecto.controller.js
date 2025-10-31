@@ -278,16 +278,14 @@ const proyectoController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
   /**
    * @async
    * @function findAllActivoInversionistas
    * @description Obtiene todos los proyectos activos con inversión de tipo 'directo'.
    * @param {object} req - Objeto de solicitud de Express.
    * @param {object} res - Objeto de respuesta de Express.
-   */,
-
-  // 🎯 NUEVO CONTROLADOR: Proyectos de Inversionistas (Tipo Directo)
+   */ // 🎯 NUEVO CONTROLADOR: Proyectos de Inversionistas (Tipo Directo)
   async findAllActivoInversionistas(req, res) {
     try {
       // Llama a la nueva función del servicio que filtra por 'directo'
@@ -296,7 +294,7 @@ const proyectoController = {
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  },  
+  },
 
   /**
    * @async
@@ -358,6 +356,50 @@ const proyectoController = {
 
       res.status(200).json(proyectosUnicos);
     } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+  // -------------------------------------------------------------------
+  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS (ADMIN)
+  // -------------------------------------------------------------------
+
+  /**
+   * @async
+   * @function getCompletionRate
+   * @description Obtiene la Tasa de Culminación de Proyectos (KPI 4).
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getCompletionRate(req, res) {
+    try {
+      const metrics = await proyectoService.getProjectCompletionRate();
+      res.status(200).json({
+        mensaje: "Tasa de Culminación de Proyectos (KPI 4).",
+        data: metrics,
+      });
+    } catch (error) {
+      console.error("Error al obtener Tasa de Culminación:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  /**
+   * @async
+   * @function getMonthlyProgress
+   * @description Obtiene el Porcentaje de Avance de Suscripciones para proyectos mensuales (KPI 5).
+   * @param {object} req - Objeto de solicitud de Express.
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getMonthlyProgress(req, res) {
+    try {
+      const projectsProgress =
+        await proyectoService.getMonthlyProjectProgress();
+      res.status(200).json({
+        mensaje: "Porcentaje de Avance (Suscripciones) de Proyectos Mensuales.",
+        data: projectsProgress,
+      });
+    } catch (error) {
+      console.error("Error al obtener avance mensual:", error.message);
       res.status(500).json({ error: error.message });
     }
   },

@@ -545,6 +545,91 @@ const proyectoService = {
       },
     });
   },
+  /**
+   * @async
+   * @function getProjectCompletionRate
+   * @description Calcula la Tasa de Culminación de Proyectos (número de proyectos Finalizados vs. total iniciado/activo).
+   * @returns {Promise<object>} Objeto con las métricas agregadas.
+   */
+  async getProjectCompletionRate() {
+    // 1. Contar el total de proyectos que han pasado de "En Espera" (Iniciado o Activo).
+    // Consideramos todos los que NO están en 'En Espera' como "Proyectos Iniciados".
+    const totalProyectosIniciados = await Proyecto.count({
+      where: {
+        // No incluimos 'En Espera' o 'Finalizado'. Los que están en 'En proceso' o 'Pausado' son Iniciados.
+        estado_proyecto: {
+          [Op.ne]: "En Espera", // Total de proyectos que han sido activados al menos una vez
+        },
+      },
+    });
+
+    if (totalProyectosIniciados === 0) {
+      return {
+        tasa_culminacion: 0.0,
+        total_iniciados: 0,
+        total_finalizados: 0,
+      };
+    }
+
+    // 2. Contar el total de proyectos 'Finalizado' (Numerador del KPI 4).
+    const totalProyectosFinalizados = await Proyecto.count({
+      where: {
+        estado_proyecto: "Finalizado",
+      },
+    });
+
+    const tasaCulminacion =
+      (totalProyectosFinalizados / totalProyectosIniciados) * 100;
+
+    return {
+      total_iniciados: totalProyectosIniciados,
+      total_finalizados: totalProyectosFinalizados,
+      tasa_culminacion: tasaCulminacion.toFixed(2), // KPI 4
+    };
+  },
+  /**
+   * @async
+   * @function getMonthlyProjectProgress
+   * @description Obtiene el porcentaje de avance (suscripciones_actuales / obj_suscripciones)
+   * para todos los proyectos activos de tipo 'mensual'.
+   * @returns {Promise<object[]>} Lista de proyectos con su porcentaje de avance.
+   */
+  async getMonthlyProjectProgress() {
+    // 1. Obtener todos los proyectos activos y de tipo 'mensual'
+    const proyectosMensuales = await Proyecto.findAll({
+      where: {
+        activo: true,
+        tipo_inversion: "mensual",
+        obj_suscripciones: { [Op.gt]: 0 }, // Asegurar que el objetivo sea mayor a cero
+      },
+      attributes: [
+        "id",
+        "nombre_proyecto",
+        "obj_suscripciones",
+        "suscripciones_actuales",
+        "estado_proyecto",
+        // Agregamos el campo calculado para el avance
+        [
+          sequelize.literal(
+            `(suscripciones_actuales * 100.0) / obj_suscripciones`
+          ),
+          "porcentaje_avance", // KPI 5 - Progreso
+        ],
+      ],
+      order: [["id", "ASC"]],
+      raw: true, // Devuelve un array de objetos planos para un acceso más sencillo
+    });
+
+    // 2. Formatear la salida
+    return proyectosMensuales.map((p) => ({
+      id: p.id,
+      nombre: p.nombre_proyecto,
+      estado: p.estado_proyecto,
+      meta_suscripciones: parseInt(p.obj_suscripciones),
+      suscripciones_actuales: parseInt(p.suscripciones_actuales),
+      porcentaje_avance: parseFloat(p.porcentaje_avance).toFixed(2),
+    }));
+  },
 };
 
 module.exports = proyectoService;

@@ -28,6 +28,12 @@ router.get(
   authMiddleware.authorizeAdmin,
   usuarioController.findAllAdmins
 );
+router.get(
+  "/search",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  usuarioController.search
+);
 
 // ===========================================
 // Rutas de Usuario Propio y Verificación (CON PREFIJO)

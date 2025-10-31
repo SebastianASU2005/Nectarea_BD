@@ -242,6 +242,36 @@ const usuarioController = {
       res.status(500).json({ error: error.message });
     }
   },
+  /**
+   * @async
+   * @function search
+   * @description Busca usuarios por coincidencia parcial en nombre_usuario o email.
+   * (ACCESO SÓLO ADMIN)
+   * @param {object} req - Objeto de solicitud de Express (contiene `req.query.q`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async search(req, res) {
+    try {
+      // El término de búsqueda se espera en el query parameter 'q'
+      const searchTerm = req.query.q;
+
+      if (!searchTerm || searchTerm.length < 3) {
+        return res.status(400).json({
+          error: "El término de búsqueda debe tener al menos 3 caracteres.",
+        });
+      }
+
+      // Llama a la nueva función del servicio
+      const usuariosEncontrados = await usuarioService.searchByUsername(
+        searchTerm
+      );
+
+      res.status(200).json(usuariosEncontrados);
+    } catch (error) {
+      console.error("Error al buscar usuarios:", error.message);
+      res.status(500).json({ error: "Error interno al realizar la búsqueda." });
+    }
+  },
 };
 
 module.exports = usuarioController;

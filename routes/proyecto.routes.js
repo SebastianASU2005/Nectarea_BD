@@ -35,6 +35,21 @@ router.get(
 );
 
 // Rutas de Administrador (Estáticas)
+// 📊 NUEVA RUTA: Tasa de Culminación (KPI 4)
+router.get(
+  "/metricas/culminacion",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.getCompletionRate
+);
+
+// 📊 NUEVA RUTA: Avance Mensual de Suscripciones (KPI 5)
+router.get(
+  "/metricas/avance-mensual",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  proyectoController.getMonthlyProgress
+);
 router.post(
   "/",
   authMiddleware.authenticate,
