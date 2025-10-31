@@ -1147,6 +1147,28 @@
 						"header": []
 					},
 					"response": []
+				},
+				{
+					"name": "AgregadoPorUsuarioMetrcia(Admin)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/inversiones/metricas/agregado-por-usuario",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"inversiones",
+								"metricas",
+								"agregado-por-usuario"
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
@@ -1912,6 +1934,14 @@
 						"header": []
 					},
 					"response": []
+				},
+				{
+					"name": "PagosATiempoMetricas (Admin)",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
 				}
 			]
 		},
@@ -2250,6 +2280,14 @@
 				},
 				{
 					"name": "TasaCulminacionMetrica(Admin)",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				},
+				{
+					"name": "AvanceMensualMetrica(Admin)",
 					"request": {
 						"method": "GET",
 						"header": []
@@ -2931,6 +2969,38 @@
 					"request": {
 						"method": "GET",
 						"header": []
+					},
+					"response": []
+				},
+				{
+					"name": "CancelacionMetricas (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripciones/metrics/cancelacion",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripciones",
+								"metrics",
+								"cancelacion"
+							]
+						}
 					},
 					"response": []
 				}
