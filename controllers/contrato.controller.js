@@ -29,14 +29,6 @@ const contratoController = {
   async upload(req, res) {
     // La subida del archivo ya ocurrió si llegamos aquí (gracias al middleware de Multer)
     try {
-      // 1. Verificación de rol para subir plantillas
-      if (!req.user || req.user.role !== "admin") {
-        return res.status(403).json({
-          error:
-            "Acceso denegado. Solo administradores pueden subir contratos base.",
-        });
-      }
-
       if (!req.file) {
         return res
           .status(400)

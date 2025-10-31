@@ -3,7 +3,8 @@
 		"_postman_id": "b7625763-fced-4f8f-8795-a4d8a0b119fd",
 		"name": "Nectarea_BD - Colección Completa",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "34924260"
+		"_exporter_id": "34924260",
+		"_collection_link": "https://loteplanapi.postman.co/workspace/LoteplanAPI-Workspace~fe58d033-b977-4803-8e71-975506b214f8/collection/34924260-b7625763-fced-4f8f-8795-a4d8a0b119fd?action=share&source=collection_link&creator=34924260"
 	},
 	"item": [
 		{
@@ -16,7 +17,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"nombre\": \"cliente_prueba\",\n  \"apellido\": \"Apellido\",\n  \"email\": \"astudillo5677@gmail.com\",\n  \"dni\": \"5487333\",\n  \"nombre_usuario\": \"Cliente_1\",\n  \"contraseña\": \"password123\",\n  \"numero_telefono\": \"555-123456\",\n  \"rol\":\"admin\"\n}",
+							"raw": "{\n  \"nombre\": \"cliente_prueba\",\n  \"apellido\": \"Apellido\",\n  \"email\": \"juna@gmail.com\",\n  \"dni\": \"5487233\",\n  \"nombre_usuario\": \"cliente_2\",\n  \"contraseña\": \"password123\",\n  \"numero_telefono\": \"555-123456\",\n  \"rol\":\"admin\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -46,7 +47,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"nombre\": \"cliente_prueba1\",\n  \"apellido\": \"Apellido\",\n  \"email\": \"astudillo@gmail.com\",\n  \"dni\": \"123422\",\n  \"nombre_usuario\": \"cliente_2\",\n  \"contraseña\": \"password123\",\n  \"numero_telefono\": \"555-123456\",\n  \"rol\":\"cliente\"\n}",
+							"raw": "{\n  \"nombre\": \"cliente_prueba1\",\n  \"apellido\": \"Apellido\",\n  \"email\": \"astudillo5677@gmail.com\",\n  \"dni\": \"123422\",\n  \"nombre_usuario\": \"cliente_1\",\n  \"contraseña\": \"password123\",\n  \"numero_telefono\": \"555-123456\",\n  \"rol\":\"cliente\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -156,7 +157,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiaWF0IjoxNzYwNTQ1MTc2LCJleHAiOjE3NjA1NDU0NzZ9.5F11YcDNTjlYCc-DUnCLUfrc3-Lfn1uCOO6JjTBYnMA\",\n  \"token\": \"689546\"\n}",
+							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiaWF0IjoxNzYxNjU4NzIzLCJleHAiOjE3NjE2NTkwMjN9.ER5S3fjMhQnO6aSrKMmotEcSYhN1m18UlZyqwIh-h8c\",\n  \"token\": \"472262\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -197,7 +198,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"token\":119651\n}",
+							"raw": "{\n    \"token\":744244\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -297,7 +298,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"email\": \"lulopatuculo2@gmail.com\"\r\n}",
+							"raw": "{\r\n    \"email\": \"elneppon2005@gmail.com\"\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -672,16 +673,32 @@
 				{
 					"name": "Crear Imagen (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"ruta_imagen\": \"/uploads/imagen1.jpg\",\n    \"id_proyecto\": 1\n}",
-							"options": {
-								"raw": {
-									"language": "json"
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": "/C:/Users/astud/OneDrive/Pictures/image_3.jpg"
+								},
+								{
+									"key": "id_proyecto",
+									"value": "1",
+									"type": "text"
 								}
-							}
+							]
 						},
 						"url": {
 							"raw": "http://localhost:3000/api/imagenes",
@@ -903,6 +920,16 @@
 				{
 					"name": "Obtener Todas las Inversiones (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -923,6 +950,16 @@
 				{
 					"name": "Obtener Mis Inversiones (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -944,6 +981,16 @@
 				{
 					"name": "Obtener Inversiones Activas (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1143,14 +1190,48 @@
 				{
 					"name": "LiquidezMetrica(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/inversiones/metricas/liquidez",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"inversiones",
+								"metricas",
+								"liquidez"
+							]
+						}
 					},
 					"response": []
 				},
 				{
 					"name": "AgregadoPorUsuarioMetrcia(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1178,6 +1259,16 @@
 				{
 					"name": "Iniciar Subasta de Lote (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"url": {
@@ -1196,7 +1287,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "3"
 								}
 							]
 						}
@@ -1253,6 +1344,16 @@
 				{
 					"name": "Obtener Lotes Activos (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1274,6 +1375,16 @@
 				{
 					"name": "Obtener Lote Activo por ID (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1302,6 +1413,16 @@
 				{
 					"name": "Obtener Todos los Lotes (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1322,6 +1443,16 @@
 				{
 					"name": "Obtener Lote por ID (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1434,6 +1565,16 @@
 				{
 					"name": "Eliminar Lote (Soft Delete) (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "DELETE",
 						"header": [],
 						"url": {
@@ -1451,7 +1592,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "3"
 								}
 							]
 						}
@@ -1461,6 +1602,16 @@
 				{
 					"name": "LotesSinProyecto(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1482,8 +1633,38 @@
 				{
 					"name": "LotesPorProyectyo(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/lotes/proyecto/:idProyecto",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"lotes",
+								"proyecto",
+								":idProyecto"
+							],
+							"variable": [
+								{
+									"key": "idProyecto",
+									"value": "3"
+								}
+							]
+						}
 					},
 					"response": []
 				}
@@ -1495,6 +1676,16 @@
 				{
 					"name": "Obtener Mis Mensajes (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1625,6 +1816,16 @@
 				{
 					"name": "Crear Pago (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "POST",
 						"header": [],
 						"body": {
@@ -1654,6 +1855,16 @@
 				{
 					"name": "Obtener Todos los Pagos (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -1837,7 +2048,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"id_suscripcion\": 1\r\n}",
+							"raw": "{\r\n    \"id_suscripcion\": 6\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1929,17 +2140,109 @@
 				},
 				{
 					"name": "MensualesMetricas (Admin)",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/pagos/metricas/mensuales?mes=10&anio=2025",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"pagos",
+								"metricas",
+								"mensuales"
+							],
+							"query": [
+								{
+									"key": "mes",
+									"value": "10"
+								},
+								{
+									"key": "anio",
+									"value": "2025"
+								}
+							]
+						}
 					},
 					"response": []
 				},
 				{
 					"name": "PagosATiempoMetricas (Admin)",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"mes\": 10,\r\n    \"anio\":2025\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/pagos/metricas/a-tiempo?mes=10&anio=2025",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"pagos",
+								"metricas",
+								"a-tiempo"
+							],
+							"query": [
+								{
+									"key": "mes",
+									"value": "10"
+								},
+								{
+									"key": "anio",
+									"value": "2025"
+								}
+							]
+						}
 					},
 					"response": []
 				}
@@ -1990,6 +2293,16 @@
 				{
 					"name": "Obtener Todos los Proyectos (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2010,6 +2323,16 @@
 				{
 					"name": "Obtener Proyecto por ID (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2073,6 +2396,16 @@
 				{
 					"name": "Eliminar Proyecto (Soft Delete) (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "DELETE",
 						"header": [],
 						"url": {
@@ -2090,7 +2423,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "2"
 								}
 							]
 						}
@@ -2100,6 +2433,16 @@
 				{
 					"name": "Obtener Proyectos Activos (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2121,6 +2464,16 @@
 				{
 					"name": "Obtener Mis Proyectos (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2178,7 +2531,7 @@
 					"response": []
 				},
 				{
-					"name": "AsignarLotesAProyecto (Admin)",
+					"name": "AsignarLotesAProyectos (Admin)",
 					"request": {
 						"method": "PUT",
 						"header": [],
@@ -2262,7 +2615,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/proyectos/activos/inversionistas",
+							"raw": "http://localhost:3000/api/proyectos/activos/ahorristas",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2272,7 +2625,7 @@
 								"api",
 								"proyectos",
 								"activos",
-								"inversionistas"
+								"ahorristas"
 							]
 						}
 					},
@@ -2281,16 +2634,64 @@
 				{
 					"name": "TasaCulminacionMetrica(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/proyectos/metricas/culminacion",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"proyectos",
+								"metricas",
+								"culminacion"
+							]
+						}
 					},
 					"response": []
 				},
 				{
 					"name": "AvanceMensualMetrica(Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/proyectos/metricas/avance-mensual",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"proyectos",
+								"metricas",
+								"avance-mensual"
+							]
+						}
 					},
 					"response": []
 				}
@@ -2341,6 +2742,16 @@
 				{
 					"name": "Obtener Todas las Pujas (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2712,7 +3123,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto",
+							"raw": "http://localhost:3000/api/suscripciones/iniciar-pago",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2720,7 +3131,8 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto"
+								"suscripciones",
+								"iniciar-pago"
 							]
 						}
 					},
@@ -2729,10 +3141,20 @@
 				{
 					"name": "Obtener Todas las Suscripciones (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto",
+							"raw": "http://localhost:3000/api/suscripciones",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2740,7 +3162,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto"
+								"suscripciones"
 							]
 						}
 					},
@@ -2749,6 +3171,16 @@
 				{
 					"name": "Obtener Suscripciones Activas (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -2801,10 +3233,20 @@
 				{
 					"name": "Obtener Suscripción por ID (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/:id",
+							"raw": "http://localhost:3000/api/suscripciones/:id",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2812,7 +3254,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								":id"
 							],
 							"variable": [
@@ -2828,10 +3270,20 @@
 				{
 					"name": "Obtener Mi Suscripción por ID (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/mis_suscripciones/:id",
+							"raw": "http://localhost:3000/api/suscripciones/mis_suscripciones/:id",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2839,7 +3291,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								"mis_suscripciones",
 								":id"
 							],
@@ -2856,10 +3308,20 @@
 				{
 					"name": "Eliminar Suscripción (Soft Delete) (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/:id",
+							"raw": "http://localhost:3000/api/suscripciones/:id",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2867,13 +3329,13 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								":id"
 							],
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "2"
 								}
 							]
 						}
@@ -2883,10 +3345,20 @@
 				{
 					"name": "Eliminar Mi Suscripción (Soft Delete) (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "DELETE",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones_proyecto/mis_suscripciones/:id",
+							"raw": "http://localhost:3000/api/suscripciones/mis_suscripciones/:id",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2894,7 +3366,7 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones_proyecto",
+								"suscripciones",
 								"mis_suscripciones",
 								":id"
 							],
@@ -2909,7 +3381,7 @@
 					"response": []
 				},
 				{
-					"name": "ConfirmarSuscripcion",
+					"name": "ConfirmarSuscripcion2FA",
 					"request": {
 						"auth": {
 							"type": "bearer",
@@ -2925,7 +3397,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"transaccionId\": 1\r\n}",
+							"raw": "{\r\n    \"transaccionId\": 1,\r\n    \"codigo_2fa\": \"977566\"\r\n\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -2933,7 +3405,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones/confirmar-pago",
+							"raw": "http://localhost:3000/api/suscripciones/confirmar-2fa",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2942,7 +3414,7 @@
 							"path": [
 								"api",
 								"suscripciones",
-								"confirmar-pago"
+								"confirmar-2fa"
 							]
 						}
 					},
@@ -2950,25 +3422,117 @@
 				},
 				{
 					"name": "SuscripcionesActivas Por Proyecto",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"nombre_proyecto\": \"EcoGranja Innovadora\",\n  \"descripcion\": \"Un proyecto para financiar una granja autosostenible.\",\n  \"tipo_inversion\": \"mensual\",\n  \"plazo_inversion\": 3,\n  \"forma_juridica\": \"Sociedad de Responsabilidad Limitada\",\n  \"monto_inversion\": 1000,\n  \"entrega_anticipada\": true,\n  \"suscripciones\": true,\n  \"obj_suscripciones\":84,\n  \"fecha_inicio\": \"2025-10-01\",\n  \"fecha_cierre\": \"2028-10-01\",\n  \"pack_de_lotes\": true,\n  \"lotesIds\": [2]\n}"
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/suscripciones/proyecto/:idProyecto",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripciones",
+								"proyecto",
+								":idProyecto"
+							],
+							"variable": [
+								{
+									"key": "idProyecto",
+									"value": "5"
+								}
+							]
+						}
 					},
 					"response": []
 				},
 				{
 					"name": "TodasSuscripciones Por Proyecto",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripciones/proyecto/:idProyecto/all",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripciones",
+								"proyecto",
+								":idProyecto",
+								"all"
+							],
+							"variable": [
+								{
+									"key": "idProyecto",
+									"value": "3"
+								}
+							]
+						}
 					},
 					"response": []
 				},
 				{
 					"name": "MorosidadMetricas (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/suscripciones/metrics/morosidad",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"suscripciones",
+								"metrics",
+								"morosidad"
+							]
+						}
 					},
 					"response": []
 				},
@@ -3025,7 +3589,7 @@
 						"method": "PUT",
 						"header": [],
 						"url": {
-							"raw": "http://localhost:3000/api/suscripciones/:id/cancelar",
+							"raw": "http://localhost:3000/api/suscripcionesCanceladas/:id/cancelar",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -3033,14 +3597,14 @@
 							"port": "3000",
 							"path": [
 								"api",
-								"suscripciones",
+								"suscripcionesCanceladas",
 								":id",
 								"cancelar"
 							],
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "36"
 								}
 							]
 						}
@@ -3175,6 +3739,16 @@
 				{
 					"name": "Obtener Todas las Transacciones (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -3195,6 +3769,16 @@
 				{
 					"name": "Obtener Mis Transacciones (Usuario)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -3237,6 +3821,16 @@
 				{
 					"name": "Obtener Transacción por ID (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
 						"header": [],
 						"url": {
@@ -3254,7 +3848,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "123"
 								}
 							]
 						}
@@ -3537,11 +4131,21 @@
 				{
 					"name": "Actualizar Usuario por ID (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "PUT",
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"nombre\": \"Usuario Actualizado\"\n}",
+							"raw": "{\n    \"rol\": \"admin\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3635,7 +4239,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"nombre_usuario\": \"cliente_2.0\"\n}",
+							"raw": "{\n    \"nombre\": \"cliente\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3682,8 +4286,37 @@
 				{
 					"name": "BuscarPorNombreDeUsuario (Admin)",
 					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
 						"method": "GET",
-						"header": []
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/usuarios/search?q=cliente_2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"usuarios",
+								"search"
+							],
+							"query": [
+								{
+									"key": "q",
+									"value": "cliente_2"
+								}
+							]
+						}
 					},
 					"response": []
 				}
