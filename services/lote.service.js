@@ -17,12 +17,13 @@ const loteService = {
    * @async
    * @function create
    * @description Crea un nuevo lote, validando opcionalmente si el proyecto asociado existe.
-   * @param {object} data - Datos del lote a crear.
+   * Ahora soporta campos de ubicación geográfica (latitud y longitud).
+   * @param {object} data - Datos del lote a crear (puede incluir latitud y longitud).
    * @returns {Promise<Lote>} El lote creado.
-   * @throws {Error} Si el `id_proyecto` especificado no existe.
+   * @throws {Error} Si el `id_proyecto` especificado no existe o las coordenadas son inválidas.
    */
   async create(data) {
-    const { id_proyecto } = data;
+    const { id_proyecto, latitud, longitud } = data;
 
     if (id_proyecto) {
       // 1. Validar la existencia del Proyecto (se requiere el modelo localmente)
@@ -33,10 +34,23 @@ const loteService = {
         throw new Error(`El proyecto con ID ${id_proyecto} no fue encontrado.`);
       }
     }
+
+    // 🆕 VALIDACIÓN OPCIONAL: Si se proporciona una coordenada, la otra también debe estar presente
+    if ((latitud && !longitud) || (!latitud && longitud)) {
+      throw new Error(
+        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+      );
+    }
+
+    // 🆕 Convertir coordenadas a números si están presentes
+    if (latitud && longitud) {
+      data.latitud = parseFloat(latitud);
+      data.longitud = parseFloat(longitud);
+    }
+
     // 2. Crear el lote
     return await Lote.create(data);
   },
-
   /**
    * @async
    * @function findAll
@@ -96,14 +110,29 @@ const loteService = {
    * @async
    * @function update
    * @description Actualiza un lote. Si el estado cambia a 'activa', notifica a los usuarios relevantes.
+   * Ahora soporta actualización de coordenadas geográficas.
    * @param {number} id - ID del lote.
-   * @param {object} data - Datos a actualizar.
+   * @param {object} data - Datos a actualizar (puede incluir latitud y longitud).
    * @returns {Promise<Lote|null>} El lote actualizado o null.
    */
   async update(id, data) {
     const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
+    }
+
+    // 🆕 VALIDACIÓN: Si se actualiza una coordenada, ambas deben estar presentes
+    const { latitud, longitud } = data;
+    if ((latitud && !longitud) || (!latitud && longitud)) {
+      throw new Error(
+        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+      );
+    }
+
+    // 🆕 Convertir coordenadas a números si están presentes
+    if (latitud && longitud) {
+      data.latitud = parseFloat(latitud);
+      data.longitud = parseFloat(longitud);
     }
 
     const estadoOriginal = lote.estado_subasta;

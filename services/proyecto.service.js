@@ -26,22 +26,40 @@ const proyectoService = {
    * @async
    * @function crearProyecto
    * @description Crea un nuevo proyecto, aplica reglas de negocio y asocia lotes iniciales (si se proporcionan).
-   * La creación del proyecto NO es transaccional con la asignación de lotes, permitiendo que el proyecto se cree
-   * aunque falle la asignación inicial de lotes.
-   * @param {object} projectData - Datos del proyecto a crear.
+   * Ahora soporta campos de ubicación geográfica (latitud y longitud).
+   * @param {object} projectData - Datos del proyecto a crear (puede incluir latitud y longitud).
    * @param {number[]} lotesIds - IDs de los lotes a asociar inicialmente.
    * @returns {Promise<Proyecto>} El proyecto recién creado.
    * @throws {Error} Si faltan campos obligatorios, el tipo de inversión es inválido o los lotes ya están asignados a otro proyecto.
    */
   async crearProyecto(projectData, lotesIds) {
-    const { tipo_inversion, obj_suscripciones, monto_inversion, ...rest } =
-      projectData;
+    const {
+      tipo_inversion,
+      obj_suscripciones,
+      monto_inversion,
+      latitud,
+      longitud,
+      ...rest
+    } = projectData;
 
     if (!tipo_inversion) {
       throw new Error("El tipo de inversión es obligatorio.");
     }
 
-    let dataFinal = { ...rest, tipo_inversion }; // 1. Aplicar reglas de negocio basadas en el tipo de inversión
+    // 🆕 VALIDACIÓN OPCIONAL: Si se proporciona una coordenada, la otra también debe estar presente
+    if ((latitud && !longitud) || (!latitud && longitud)) {
+      throw new Error(
+        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+      );
+    }
+
+    let dataFinal = { ...rest, tipo_inversion };
+
+    // 🆕 Agregar coordenadas si están presentes
+    if (latitud && longitud) {
+      dataFinal.latitud = parseFloat(latitud);
+      dataFinal.longitud = parseFloat(longitud);
+    }
 
     switch (tipo_inversion) {
       case "directo":
@@ -87,16 +105,17 @@ const proyectoService = {
         throw new Error(
           "Tipo de inversión no válido. Use 'directo' o 'mensual'."
         );
-    } // 2. Establecer valores por defecto si no se proporcionaron
+    }
 
     dataFinal.suscripciones_actuales = dataFinal.suscripciones_actuales || 0;
     dataFinal.estado_proyecto = dataFinal.estado_proyecto || "En Espera";
-    dataFinal.activo = dataFinal.activo !== undefined ? dataFinal.activo : true; // 3. VALIDACIÓN DE UNICIDAD DE LOTES (Se valida antes de crear el proyecto)
+    dataFinal.activo = dataFinal.activo !== undefined ? dataFinal.activo : true;
 
+    // Validación de unicidad de lotes
     if (lotesIds && lotesIds.length > 0) {
       const lotesAsignados = await Lote.findAll({
         where: {
-          id: lotesIds, // Busca lotes que ya tienen un proyecto asociado (cualquier proyecto)
+          id: lotesIds,
           id_proyecto: { [Op.ne]: null },
         },
       });
@@ -113,8 +132,7 @@ const proyectoService = {
 
     let nuevoProyecto;
     try {
-      // 4. Crear el proyecto en la base de datos (Operación crítica y NO transaccional con lotes)
-      nuevoProyecto = await Proyecto.create(dataFinal); // 5. Asociar lotes y actualizar el campo idProyecto en el modelo Lote // Si esta parte falla, el proyecto ya estará creado, tal como se solicitó.
+      nuevoProyecto = await Proyecto.create(dataFinal);
 
       if (lotesIds && lotesIds.length > 0) {
         const lotes = await Lote.findAll({ where: { id: lotesIds } });
@@ -123,7 +141,7 @@ const proyectoService = {
 
       return nuevoProyecto;
     } catch (error) {
-      console.error("Error al crear el proyecto o asociar lotes:", error); // Se lanza el error para que el controller lo maneje, independientemente de si falló la creación // o la asociación de lotes.
+      console.error("Error al crear el proyecto o asociar lotes:", error);
       throw error;
     }
   }, // ------------------------------------------------------------------- // FUNCIONES DE CONSULTA Y BÚSQUEDA // -------------------------------------------------------------------

@@ -39,7 +39,7 @@ const Proyecto = sequelize.define(
     suscripciones_minimas: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      defaultValue: 0, 
+      defaultValue: 0,
     },
     obj_suscripciones: {
       type: DataTypes.INTEGER,
@@ -75,6 +75,25 @@ const Proyecto = sequelize.define(
       type: DataTypes.INTEGER, // Contador para el plazo de inversión
       allowNull: true,
       defaultValue: null,
+    },
+    // 🆕 NUEVOS CAMPOS PARA UBICACIÓN GEOGRÁFICA
+    latitud: {
+      type: DataTypes.DECIMAL(10, 8), // Precisión suficiente para coordenadas
+      allowNull: true,
+      comment: "Latitud de la ubicación del proyecto (ej: -32.889459)",
+      validate: {
+        min: -90,
+        max: 90,
+      },
+    },
+    longitud: {
+      type: DataTypes.DECIMAL(11, 8), // Precisión suficiente para coordenadas
+      allowNull: true,
+      comment: "Longitud de la ubicación del proyecto (ej: -68.845839)",
+      validate: {
+        min: -180,
+        max: 180,
+      },
     },
   },
   {

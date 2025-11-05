@@ -303,7 +303,7 @@ const paymentController = {
     const { metodo } = req.params;
     let transaccionId = null; // Variable para rastrear la ID en caso de error
 
-    // 🚨 DECLARACIÓN DE VARIABLES FUERA DEL TRY PARA ALCANCE EN EL BLOQUE CATCH (CORRECCIÓN CRÍTICA)
+    // 🚨 DECLARACIÓN DE VARIABLES FUERA DEL TRY PARA ALCANCE EN EL BLOQUE CATCH
     let transaccion = null;
     let pagoMercado = null;
 
@@ -358,7 +358,6 @@ const paymentController = {
 
     try {
       // 1. Bloquear la Transacción para evitar procesamiento múltiple
-      // Asignación a la variable declarada con 'let' fuera del try
       transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -379,7 +378,6 @@ const paymentController = {
       }
 
       // 2. Actualizar/Crear registro de PagoMercado
-      // Asignación a la variable declarada con 'let' fuera del try
       pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         transaction: t,
@@ -515,19 +513,16 @@ const paymentController = {
             const user = await User.findByPk(transaccion.id_usuario);
 
             if (user) {
-              // 2a. Email al usuario (solo si el reembolso fue exitoso)
-              if (reembolsoExitoso) {
-                try {
-                  await emailService.notificarReembolsoUsuario(
-                    user,
-                    transaccion,
-                    errorMsg
-                  );
-                } catch (e) {
-                  console.error(
-                    `Error al enviar email al usuario: ${e.message}`
-                  );
-                }
+              // 2a. Email al usuario (SIEMPRE se notifica, éxito o fallo del reembolso)
+              try {
+                await emailService.notificarReembolsoUsuario(
+                  user,
+                  transaccion,
+                  errorMsg, // Razón del fallo de negocio
+                  reembolsoExitoso // <--- NUEVO ARGUMENTO
+                );
+              } catch (e) {
+                console.error(`Error al enviar email al usuario: ${e.message}`);
               }
 
               // 2b. Email a TODOS los administradores (siempre, éxito o fallo)
@@ -537,7 +532,7 @@ const paymentController = {
                 for (const admin of admins) {
                   if (admin.email) {
                     try {
-                      await emailService.notificarReembolsoAdmin(
+                      await emailService.notificarReembolsoAdminMejorada(
                         admin.email,
                         user,
                         transaccion,
@@ -555,40 +550,7 @@ const paymentController = {
                     }
                   }
                 }
-
-                // 2c. Mensaje interno al sistema para todos los admins
-                const tipoTransaccion =
-                  transaccion.tipo_transaccion || "desconocida";
-                const estadoReembolso = reembolsoExitoso
-                  ? "✅ REEMBOLSO EXITOSO"
-                  : `⚠️ FALLO EN REEMBOLSO: ${errorReembolso}`;
-
-                const contenidoMensaje = `🚨 ROLLBACK CRÍTICO - Transacción #${
-                  transaccion.id
-                }
-
-Usuario: ${user.nombre} (${user.email})
-Tipo: ${tipoTransaccion}
-Monto: $${parseFloat(transaccion.monto).toFixed(2)}
-ID Pago MP: ${pagoMercado.id_transaccion_pasarela}
-
-Razón del fallo: ${errorMsg}
-
-${estadoReembolso}
-
-${
-  reembolsoExitoso
-    ? "El usuario recibirá el reembolso en su medio de pago."
-    : "⚠️ ACCIÓN REQUERIDA: Debe realizarse el reembolso MANUAL en Mercado Pago."
-}`;
-
-                for (const admin of admins) {
-                  await mensajeService.crear({
-                    id_remitente: process.env.ID_SISTEMA || null,
-                    id_receptor: admin.id,
-                    contenido: contenidoMensaje,
-                  });
-                }
+                // ❌ SE ELIMINA LA LÓGICA DE mensajeService.crear() AQUÍ
               } catch (adminError) {
                 console.error(
                   `Error al notificar a administradores: ${adminError.message}`
@@ -605,27 +567,7 @@ ${
             );
 
             // Notificar a admins sobre este caso crítico
-            try {
-              const admins = await usuarioService.findAllAdmins();
-              const contenidoCritico = `🚨 FALLO CRÍTICO: Transacción #${transaccionId}
-
-No se pudo intentar el reembolso porque faltan datos del pago de Mercado Pago.
-
-Estado: ${transaccion?.estado_transaccion || "desconocido"}
-Monto: $${parseFloat(transaccion?.monto || 0).toFixed(2)}
-
-⚠️ ACCIÓN REQUERIDA INMEDIATA: Revisar manualmente en el panel de MP.`;
-
-              for (const admin of admins) {
-                await mensajeService.crear({
-                  id_remitente: process.env.ID_SISTEMA || null,
-                  id_receptor: admin.id,
-                  contenido: contenidoCritico,
-                });
-              }
-            } catch (e) {
-              console.error(`Error al notificar falta de datos: ${e.message}`);
-            }
+            // ❌ SE ELIMINA LA LÓGICA DE mensajeService.crear() AQUÍ
           }
         } catch (reembolsoError) {
           console.error(

@@ -298,9 +298,9 @@ const pagoService = {
    * @param {object} t - Objeto de transacción de Sequelize.
    * @returns {Promise<Pago>} El pago confirmado.
    * @throws {Error} Si el pago, usuario o proyecto no son encontrados.
-   */ async markAsPaid(pagoId, t) {
+   */
+  async markAsPaid(pagoId, t) {
     try {
-      // 1. Obtener el Pago con todas las relaciones anidadas necesarias (Suscripcion, Proyecto, Usuario)
       const pago = await Pago.findByPk(pagoId, {
         transaction: t,
         include: [
@@ -319,7 +319,7 @@ const pagoService = {
         throw new Error("Pago no encontrado.");
       }
       if (pago.estado_pago === "pagado") {
-        return pago; // Idempotencia: ya pagado
+        return pago;
       }
 
       const usuario = pago.suscripcion?.usuario;
@@ -329,7 +329,7 @@ const pagoService = {
         throw new Error(
           "No se pudo determinar el Usuario o Proyecto asociado al pago para enviar notificaciones."
         );
-      } // 2. Actualizar el estado del Pago
+      }
 
       await pago.update(
         {
@@ -337,20 +337,23 @@ const pagoService = {
           fecha_pago: new Date(),
         },
         { transaction: t }
-      ); // 🚀 3. LLAMADA CLAVE: Actualizar el resumen de cuenta. // Esto recalcula 'cuotas_pagadas' (ahora +1) y 'cuotas_vencidas' (ahora -1 si aplica).
+      );
 
       await resumenCuentaService.updateAccountSummaryOnPayment(
         pago.id_suscripcion,
-        { transaction: t } // Mantiene la atomicidad
-      ); // 4. Enviar notificaciones // Notificación por Email
+        { transaction: t }
+      );
 
-      const subject = `Confirmación de Pago Recibido: ${proyecto.nombre_proyecto}`;
-      const text = `Hola ${usuario.nombre},\n\nHemos recibido tu pago de $${pago.monto} para la cuota de la suscripción al proyecto "${proyecto.nombre_proyecto}".\n\n¡Gracias por tu apoyo!`;
-
-      await emailService.sendEmail(usuario.email, subject, text); // Notificación por Mensaje Interno (asumiendo ID 1 es el remitente del sistema)
+      // 🔧 CORRECCIÓN: Usar función específica de emailService
+      await emailService.notificarPagoRecibido(
+        usuario,
+        proyecto,
+        pago.monto,
+        pago.mes
+      );
 
       const remitente_id = 1;
-      const contenido = `Tu pago de $${pago.monto} para la cuota del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
+      const contenido = `Tu pago de $${pago.monto} para la cuota #${pago.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
       await mensajeService.crear(
         {
           id_remitente: remitente_id,
@@ -631,7 +634,7 @@ const pagoService = {
       pagos_a_tiempo: pagosATiempo,
       tasa_pagos_a_tiempo: tasaATiempo.toFixed(2), // KPI 3
     };
-  },  
+  },
 };
 
 module.exports = pagoService;

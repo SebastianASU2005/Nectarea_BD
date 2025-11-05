@@ -36,7 +36,7 @@ const suscripcionProyectoService = {
     });
     if (!proyecto) {
       throw new Error("Proyecto asociado no encontrado.");
-    } // Validación clave: Previene suscripciones si el proyecto no está activo.
+    }
 
     if (
       proyecto.estado_proyecto === "Finalizado" ||
@@ -45,42 +45,46 @@ const suscripcionProyectoService = {
       throw new Error(
         `❌ No se puede iniciar una suscripción, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`
       );
-    } // 🛑 VALIDACIÓN AÑADIDA: Bloquea si ya se alcanzó el límite de suscripciones (capacidad máxima).
+    }
 
     if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
       throw new Error(
         `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores.`
       );
-    } // Inicializa `meses_a_pagar` con el plazo total del proyecto.
+    }
 
     data.meses_a_pagar = proyecto.plazo_inversion;
 
     const nuevaSuscripcion = await SuscripcionProyecto.create(data, {
       transaction: t,
-    }); // Lógica para incrementar el contador de suscriptores y recargar el proyecto.
+    });
 
     await proyecto.increment("suscripciones_actuales", {
       by: 1,
       transaction: t,
     });
-    await proyecto.reload({ transaction: t }); // Comprueba si se ha alcanzado el objetivo y notifica a todos los usuarios.
+    await proyecto.reload({ transaction: t });
 
     if (
       proyecto.suscripciones_actuales >= proyecto.obj_suscripciones &&
       !proyecto.objetivo_notificado
     ) {
-      // Actualiza el estado del proyecto y marca la notificación.
       await proyecto.update(
         {
           objetivo_notificado: true,
           estado_proyecto: "En proceso",
-          fecha_inicio_proceso: new Date(), // Registra el inicio del proceso
-          meses_restantes: proyecto.plazo_inversion, // Inicializa el contador de meses
+          fecha_inicio_proceso: new Date(),
+          meses_restantes: proyecto.plazo_inversion,
         },
         { transaction: t }
-      ); // Envía mensajes masivos de notificación (se excluye el remitente hardcodeado).
+      );
 
-      const todosLosUsuarios = await UsuarioService.findAllActivos();
+      // 🔧 CORRECCIÓN: Usar Usuario.findAll directamente
+      const todosLosUsuarios = await Usuario.findAll({
+        where: { activo: true },
+        transaction: t,
+      });
+
       const remitente_id = 1;
       const contenido = `¡Objetivo alcanzado! El proyecto "${proyecto.nombre_proyecto}" ha alcanzado el número de suscripciones necesarias y ahora está en proceso.`;
 
@@ -95,8 +99,9 @@ const suscripcionProyectoService = {
             { transaction: t }
           );
         }
-      } // 📧 LÓGICA DE ENVÍO MASIVO DE EMAIL A USUARIOS // Se utiliza try...catch ya que el email NO debe bloquear la lógica de la BD.
+      }
 
+      // 📧 Email masivo a usuarios
       try {
         await emailService.notificarInicioProyectoMasivo(
           proyecto,
@@ -107,16 +112,22 @@ const suscripcionProyectoService = {
           `Error al enviar emails masivos de inicio de proyecto ${proyecto.nombre_proyecto}:`,
           error.message
         );
-      } // 📧 LÓGICA DE ENVÍO DE EMAIL AL ADMINISTRADOR 🆕
+      }
 
+      // 📧 Email al administrador - 🔧 CORRECCIÓN: Usar UsuarioService.findAllAdmins()
       try {
-        // Asumiendo que el administrador principal tiene un correo específico o se busca por rol.
-        const adminEmail = await UsuarioService.getAdminEmail();
-        if (adminEmail) {
-          await emailService.notificarInicioProyectoAdmin(adminEmail, proyecto);
+        const admins = await UsuarioService.findAllAdmins(); // ✅ CORREGIDO: Usar UsuarioService con mayúscula
+        if (admins && admins.length > 0) {
+          const adminPrincipal = admins[0];
+          if (adminPrincipal.email) {
+            await emailService.notificarInicioProyectoAdmin(
+              adminPrincipal.email,
+              proyecto
+            );
+          }
         } else {
           console.warn(
-            "No se pudo obtener el correo del administrador para notificar el inicio del proyecto."
+            "No se encontraron administradores para notificar el inicio del proyecto."
           );
         }
       } catch (error) {
@@ -125,7 +136,8 @@ const suscripcionProyectoService = {
           error.message
         );
       }
-    } // Devuelve la nueva suscripción y el proyecto (esencial para el servicio de Transacción).
+    }
+
     return { nuevaSuscripcion, proyecto };
   },
 
@@ -161,7 +173,7 @@ const suscripcionProyectoService = {
         );
       }
 
-      // 2. ACTUALIZACIÓN DEL PAGO Y TRANSACCIÓN (Marcarlos como exitosos)
+      // 2. OBTENER EL PAGO ASOCIADO
       const pago = await Pago.findByPk(transaccion.id_pago_mensual, {
         transaction: t,
       });
@@ -171,12 +183,6 @@ const suscripcionProyectoService = {
           `Pago mensual asociado a la transacción ${transaccionId} no encontrado.`
         );
       }
-
-      await transaccion.update(
-        { estado_transaccion: "pagado", fecha_pago: new Date() },
-        { transaction: t }
-      );
-      await pago.update({ estado_pago: "pagado" }, { transaction: t });
 
       // 3. CREACIÓN DEL REGISTRO DE SUSCRIPCIÓN
       const { nuevaSuscripcion, proyecto } =
@@ -190,7 +196,22 @@ const suscripcionProyectoService = {
           t
         );
 
-      // 4. CREACIÓN DEL RESUMEN DE CUENTA (CRUCIAL para proyectos mensuales)
+      // 🔧 SOLUCIÓN: Actualizar el Pago para asociarlo con la nueva Suscripción
+      await pago.update(
+        {
+          id_suscripcion: nuevaSuscripcion.id, // ✅ Asocia el pago con la suscripción
+          estado_pago: "pagado",
+        },
+        { transaction: t }
+      );
+
+      // 4. ACTUALIZAR LA TRANSACCIÓN
+      await transaccion.update(
+        { estado_transaccion: "pagado", fecha_pago: new Date() },
+        { transaction: t }
+      );
+
+      // 5. CREACIÓN DEL RESUMEN DE CUENTA (CRUCIAL para proyectos mensuales)
       if (proyecto.tipo_inversion === "mensual") {
         // Obtenemos la CuotaMensual dentro de la transacción
         const cuotaMensual = await CuotaMensual.findOne({
@@ -212,7 +233,7 @@ const suscripcionProyectoService = {
 
       await t.commit(); // Confirma todas las operaciones
 
-      // 5. Envío de email de confirmación (Post-Commit)
+      // 6. Envío de email de confirmación (Post-Commit)
       try {
         const usuario = await UsuarioService.findById(
           nuevaSuscripcion.id_usuario
@@ -596,7 +617,13 @@ const suscripcionProyectoService = {
     const totalGeneradoResult = await Pago.sum("monto", {
       where: {
         estado_pago: {
-          [Op.in]: ["pagado", "pendiente", "vencido", "cubierto_por_puja","cancelado"],
+          [Op.in]: [
+            "pagado",
+            "pendiente",
+            "vencido",
+            "cubierto_por_puja",
+            "cancelado",
+          ],
         },
       },
     });
