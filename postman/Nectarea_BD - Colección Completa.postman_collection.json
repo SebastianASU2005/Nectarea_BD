@@ -157,7 +157,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiaWF0IjoxNzYxNjU4NzIzLCJleHAiOjE3NjE2NTkwMjN9.ER5S3fjMhQnO6aSrKMmotEcSYhN1m18UlZyqwIh-h8c\",\n  \"token\": \"472262\"\n}",
+							"raw": "{\n  \"twoFaToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzYyNDM2OTMzLCJleHAiOjE3NjI0MzcyMzN9.rDZ2WdXt-vTSHKB4Rm1cXBEWhuGNxDflP8AR3yY7JVw\",\n  \"token\": \"260181\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -198,7 +198,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"token\":744244\n}",
+							"raw": "{\n    \"token\":111199\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -239,7 +239,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"astudillo5677@gmail.com\",\n  \"nombre_usuario\": \"cliente_1\",\n  \"contraseña\": \"password123\"\n}",
+							"raw": "",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -480,6 +480,506 @@
 		{
 			"name": "Contratos",
 			"item": [
+				{
+					"name": "ContratoPlantilla",
+					"item": [
+						{
+							"name": "SubirContratoPlantilla(Admin)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "plantillaFile",
+											"type": "file",
+											"src": "/C:/Users/astud/OneDrive/Datos adjuntos/Solcitud de titulo DDJJ Sysacad.pdf"
+										},
+										{
+											"key": "id_proyecto",
+											"value": "2",
+											"type": "text"
+										},
+										{
+											"key": "version",
+											"value": "1",
+											"type": "text"
+										},
+										{
+											"key": "nombre_archivo",
+											"value": "ContratoBaseV1",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/upload",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"upload"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "ActualizarContratoPlantilla(Admin)",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/update-pdf/:id",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"update-pdf",
+										":id"
+									],
+									"variable": [
+										{
+											"key": "id",
+											"value": ""
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "EliminarLogicamenteContratolantilla(Admin)",
+							"request": {
+								"method": "PUT",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/soft-delete/:id",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"soft-delete",
+										":id"
+									],
+									"variable": [
+										{
+											"key": "id",
+											"value": ""
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "TodasLasPlantillas(Admin)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/all",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"all"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "TodasLasPlantillasSinProyecto(Admin)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/unassociated",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"unassociated"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "TodasLasPlantillasSinProyecto(Admin)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantilla/:idProyecto/:version",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantilla",
+										":idProyecto",
+										":version"
+									],
+									"variable": [
+										{
+											"key": "idProyecto",
+											"value": ""
+										},
+										{
+											"key": "version",
+											"value": ""
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "TodasLasVersionesDePlantillaDeUnProyecto(Usuario)",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/project/:idProyecto",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										"project",
+										":idProyecto"
+									],
+									"variable": [
+										{
+											"key": "idProyecto",
+											"value": ""
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "TodasLasPlantillasDeUnProyecto(Usuario)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/plantillas/:idProyecto",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"plantillas",
+										":idProyecto"
+									],
+									"variable": [
+										{
+											"key": "idProyecto",
+											"value": "2"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "FirmarContrato (Usuario)",
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "pdfFile",
+											"type": "file",
+											"src": "/C:/Users/astud/OneDrive/Datos adjuntos/Solcitud de titulo DDJJ Sysacad.pdf"
+										},
+										{
+											"key": "id_contrato_plantilla",
+											"value": "4",
+											"type": "text"
+										},
+										{
+											"key": "id_usuario_firmante",
+											"value": "1",
+											"type": "text"
+										},
+										{
+											"key": "codigo_2fa",
+											"value": "223875",
+											"type": "text"
+										},
+										{
+											"key": "hash_archivo_firmado",
+											"value": "02c29dd4f3c9dab16ec482cf02e4535fad07db8128b0701178cadd4f4ad3c7d5",
+											"type": "text"
+										},
+										{
+											"key": "id_proyecto",
+											"value": "2",
+											"type": "text"
+										}
+									]
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/firmar",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"firmar"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "ContratoFirmado",
+					"item": [
+						{
+							"name": "TodosLosContratosFirmados (Admin)",
+							"protocolProfileBehavior": {
+								"disableBodyPruning": true
+							},
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"id_proyecto\": 5\n}"
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										""
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "ContratosFirmadosPorUsuario(Usuario)",
+							"protocolProfileBehavior": {
+								"disableBodyPruning": true
+							},
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"id_proyecto\": 5\n}"
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/mis_contratos",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"mis_contratos"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "DescargarContratoFirmadoPorUsuario (Usuario)",
+							"protocolProfileBehavior": {
+								"disableBodyPruning": true
+							},
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"id_proyecto\": 5\n}"
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/descargar/:idContratoFirmado",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										"descargar",
+										":idContratoFirmado"
+									],
+									"variable": [
+										{
+											"key": "idContratoFirmado",
+											"value": "5"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "ObtenerContratoFirmadoPorId (Admin)",
+							"protocolProfileBehavior": {
+								"disableBodyPruning": true
+							},
+							"request": {
+								"auth": {
+									"type": "bearer",
+									"bearer": [
+										{
+											"key": "token",
+											"value": "{{Token}}",
+											"type": "string"
+										}
+									]
+								},
+								"method": "GET",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"id_proyecto\": 5\n}"
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/contratos/:id",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"contratos",
+										":id"
+									],
+									"variable": [
+										{
+											"key": "id",
+											"value": ""
+										}
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
 				{
 					"name": "Subir Contrato (Admin)",
 					"request": {
@@ -895,7 +1395,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"id_proyecto\": 1\n}",
+							"raw": "{\n    \"id_proyecto\": 8\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -2268,7 +2768,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"nombre_proyecto\": \"EcoGranja Innovadora\",\n  \"descripcion\": \"Un proyecto para financiar una granja autosostenible.\",\n  \"tipo_inversion\": \"mensual\",\n  \"plazo_inversion\": 3,\n  \"forma_juridica\": \"Sociedad de Responsabilidad Limitada\",\n  \"monto_inversion\": 1000,\n  \"entrega_anticipada\": true,\n  \"suscripciones\": true,\n  \"obj_suscripciones\":84,\n  \"fecha_inicio\": \"2025-10-01\",\n  \"fecha_cierre\": \"2028-10-01\",\n  \"pack_de_lotes\": true,\n  \"lotesIds\": [2]\n}",
+							"raw": "{\n  \"nombre_proyecto\": \"EcoGranja Innovadora\",\n  \"descripcion\": \"Un proyecto para financiar una granja autosostenible.\",\n  \"tipo_inversion\": \"directo\",\n  \"plazo_inversion\": 3,\n  \"forma_juridica\": \"Sociedad de Responsabilidad Limitada\",\n  \"monto_inversion\": 1000,\n  \"entrega_anticipada\": true,\n  \"suscripciones\": false,\n  \"obj_suscripciones\":0,\n  \"moneda\": \"ARS\",\n  \"fecha_inicio\": \"2025-10-01\",\n  \"fecha_cierre\": \"2028-10-01\",\n  \"pack_de_lotes\": true,\n  \"lotesIds\": [],\n  \"suscripciones_minimas\": 0\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -2350,7 +2850,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "5"
 								}
 							]
 						}
@@ -3115,7 +3615,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"id_proyecto\": 1,\n    \"id_usuario\": 1\n}",
+							"raw": "{\n    \"id_proyecto\": 2\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3373,7 +3873,7 @@
 							"variable": [
 								{
 									"key": "id",
-									"value": "1"
+									"value": "62"
 								}
 							]
 						}
@@ -3397,7 +3897,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n    \"transaccionId\": 1,\r\n    \"codigo_2fa\": \"977566\"\r\n\r\n}",
+							"raw": "{\r\n    \"transaccionId\": 162,\r\n    \"codigo_2fa\": \"377877\"\r\n\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -3440,7 +3940,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"nombre_proyecto\": \"EcoGranja Innovadora\",\n  \"descripcion\": \"Un proyecto para financiar una granja autosostenible.\",\n  \"tipo_inversion\": \"mensual\",\n  \"plazo_inversion\": 3,\n  \"forma_juridica\": \"Sociedad de Responsabilidad Limitada\",\n  \"monto_inversion\": 1000,\n  \"entrega_anticipada\": true,\n  \"suscripciones\": true,\n  \"obj_suscripciones\":84,\n  \"fecha_inicio\": \"2025-10-01\",\n  \"fecha_cierre\": \"2028-10-01\",\n  \"pack_de_lotes\": true,\n  \"lotesIds\": [2]\n}"
+							"raw": ""
 						},
 						"url": {
 							"raw": "http://localhost:3000/api/suscripciones/proyecto/:idProyecto",
@@ -3458,7 +3958,7 @@
 							"variable": [
 								{
 									"key": "idProyecto",
-									"value": "5"
+									"value": "2"
 								}
 							]
 						}
@@ -4319,6 +4819,38 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "reseteoDe2FA (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/usuarios/1/reset-2fa",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"usuarios",
+								"1",
+								"reset-2fa"
+							]
+						}
+					},
+					"response": []
 				}
 			]
 		},
@@ -4382,7 +4914,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\r\n   \"valor_cemento\": 10000\r\n}",
+							"raw": "{\r\n   \"valor_cemento\": 0.01\r\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -4390,7 +4922,7 @@
 							}
 						},
 						"url": {
-							"raw": "http://localhost:3000/api/cuotas_mensuales/1",
+							"raw": "http://localhost:3000/api/cuotas_mensuales/3",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -4399,7 +4931,7 @@
 							"path": [
 								"api",
 								"cuotas_mensuales",
-								"1"
+								"3"
 							]
 						}
 					},
@@ -4587,6 +5119,239 @@
 					"request": {
 						"method": "GET",
 						"header": []
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "VerificacionDeIdentidad",
+			"item": [
+				{
+					"name": "SubirArchivos (Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "documento_frente",
+									"type": "file",
+									"src": "/C:/Users/astud/OneDrive/Pictures/image_3.jpg"
+								},
+								{
+									"key": "selfie_con_documento",
+									"type": "file",
+									"src": "/C:/Users/astud/OneDrive/Pictures/image_3.jpg"
+								},
+								{
+									"key": "documento_dorso",
+									"type": "file",
+									"src": "/C:/Users/astud/OneDrive/Pictures/image_3.jpg"
+								},
+								{
+									"key": "tipo_documento",
+									"value": "DNI",
+									"type": "text"
+								},
+								{
+									"key": "numero_documento",
+									"value": "784889465",
+									"type": "text"
+								},
+								{
+									"key": "nombre_completo",
+									"value": "Juan Perez",
+									"type": "text"
+								},
+								{
+									"key": "fecha_nacimiento",
+									"value": "1990-01-20",
+									"type": "text"
+								},
+								{
+									"key": "latitud_verificacion",
+									"value": "-34.6037",
+									"type": "text"
+								},
+								{
+									"key": "longitud_verificacion",
+									"value": "-58.3816",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/kyc/submit",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"kyc",
+								"submit"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "ConsultarEstadoVerificacion (Usuario)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/kyc/status",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"kyc",
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "ConsultarverificacionesPendientes (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/kyc/pending",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"kyc",
+								"pending"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "ConfirmarVerificacionDeUsuario (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3000/api/kyc/approve/:idUsuario",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"kyc",
+								"approve",
+								":idUsuario"
+							],
+							"variable": [
+								{
+									"key": "idUsuario",
+									"value": "1"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "RechazarVerificacionDeUsuario (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{Token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"motivo_rechazo\": \"La selfie con el documento está borrosa e ilegible.\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/kyc/reject/:idUsuario",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"kyc",
+								"reject",
+								":idUsuario"
+							],
+							"variable": [
+								{
+									"key": "idUsuario",
+									"value": "1"
+								}
+							]
+						}
 					},
 					"response": []
 				}

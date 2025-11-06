@@ -285,7 +285,7 @@ const usuarioService = {
       }
     }
     return usuario.update(data);
-  }, 
+  },
   /**
    * @async
    * @function softDelete
@@ -361,6 +361,35 @@ const usuarioService = {
     });
 
     return resultado;
+  },
+  /**
+   * @async
+   * @function adminReset2FA
+   * @description Permite a un administrador deshabilitar el 2FA de un usuario forzosamente,
+   * eliminando el secreto y marcando is_2fa_enabled como false.
+   * (Solo para uso interno por el controlador Admin).
+   * @param {number} userIdToReset - ID del usuario a quien se le reinicia el 2FA.
+   * @returns {Promise<boolean>} True si el usuario fue encontrado y actualizado.
+   * @throws {Error} Si el usuario no existe.
+   */
+  async adminReset2FA(userIdToReset) {
+    const user = await Usuario.findByPk(userIdToReset);
+    if (!user) {
+      throw new Error("Usuario no encontrado.");
+    }
+
+    if (!user.is_2fa_enabled) {
+      // Opcional: Si ya está deshabilitado, se considera exitoso o se lanza un error específico.
+      // Optamos por el éxito (idempotencia).
+      return true;
+    }
+
+    await user.update({
+      is_2fa_enabled: false,
+      twofa_secret: null, // CRÍTICO: Eliminar el secreto
+    });
+
+    return true;
   },
   /**
    * @async

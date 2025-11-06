@@ -272,6 +272,37 @@ const usuarioController = {
       res.status(500).json({ error: "Error interno al realizar la búsqueda." });
     }
   },
+  /**
+   * @async
+   * @function adminReset2FA
+   * @description ⚠️ CRÍTICO: Permite a un administrador deshabilitar el 2FA de otro usuario.
+   * DEBE estar protegida por un middleware de SOLO ADMINISTRADORES.
+   * @param {object} req - Objeto de solicitud de Express (con `req.params.id`).
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async adminReset2FA(req, res) {
+    try {
+      const userIdToReset = parseInt(req.params.id);
+
+      if (isNaN(userIdToReset)) {
+        return res.status(400).json({ error: "ID de usuario inválido." });
+      } // Llama a la nueva función del servicio
+
+      await usuarioService.adminReset2FA(userIdToReset);
+
+      res.status(200).json({
+        message: `✅ 2FA deshabilitado para el usuario ID ${userIdToReset}. El usuario deberá volver a activarlo.`,
+      });
+    } catch (error) {
+      // Maneja el error específico de "Usuario no encontrado" (404)
+      const statusCode = error.message.includes("Usuario no encontrado")
+        ? 404
+        : 500;
+
+      console.error("Error al resetear 2FA por admin:", error.message);
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = usuarioController;

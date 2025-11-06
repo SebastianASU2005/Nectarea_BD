@@ -55,6 +55,13 @@ router.delete(
 // Rutas de administración (DINÁMICAS /:id)
 // Estas DEBEN ir al final.
 // ===========================================
+router.patch(
+    "/:id/reset-2fa",
+    authMiddleware.authenticate,
+    authMiddleware.authorizeAdmin, // 🛡️ CRÍTICO: SOLO ADMIN
+    usuarioController.adminReset2FA // Controlador que creamos
+);
+
 router.get(
   "/:id",
   authMiddleware.authenticate,
