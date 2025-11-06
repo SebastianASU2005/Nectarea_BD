@@ -1,5 +1,4 @@
 // Archivo: models/Usuario.js
-
 const { sequelize, DataTypes } = require("../config/database");
 const baseAttributes = require("./base");
 
@@ -8,10 +7,9 @@ const Usuario = sequelize.define(
   {
     ...baseAttributes,
     activo: {
-      // <<-- AÑADE ESTO
       type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: false, // <<-- ESTO ASEGURA QUE LA CUENTA EMPIEZA INACTIVA
+      defaultValue: false, // La cuenta inicia inactiva hasta confirmar email
     },
     nombre: {
       type: DataTypes.STRING(100),
@@ -54,7 +52,7 @@ const Usuario = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
-    // 🚀 CAMBIOS PARA 2FA 🚀
+    // 🚀 CAMPOS PARA 2FA OBLIGATORIO 🚀
     is_2fa_enabled: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -86,7 +84,6 @@ const Usuario = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
-
   },
   {
     tableName: "usuario",

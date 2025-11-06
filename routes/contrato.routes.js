@@ -1,71 +1,149 @@
+// routes/contratoRoutes.js
+
 const express = require("express");
 const router = express.Router();
-const multer = require("multer");
-const path = require("path");
-const contratoController = require("../controllers/contrato.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
 
-// Configuración de Multer (Mantenida)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname.replace(/ /g, "_"));
-  },
-});
-const upload = multer({ storage: storage });
+// --- Controladores ---
+const contratoPlantillaController = require("../controllers/contratoPlantilla.controller");
+const contratoFirmaController = require("../controllers/contratoFirmado.controller");
+const contratoGeneralController = require("../controllers/contratoGeneral.controller");
+
+// --- Middlewares ---
+const {
+  uploadSignedContract,
+  uploadPlantilla,
+} = require("../middleware/imageUpload.middleware");
 
 // ===============================================
-// 1. RUTAS ESTÁTICAS Y CON PREFIJO (TODAS)
+// 1. RUTAS DE GESTIÓN DE PLANTILLAS (ADMINISTRACIÓN)
 // ===============================================
 
-// Rutas POST (Estáticas y Semi-Dinámicas)
+// POST /api/contratos/plantillas/upload
+// Sube un nuevo archivo PDF y crea una nueva Plantilla (Solo Admin)
 router.post(
-  "/upload",
+  "/plantillas/upload",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  upload.single("contrato"),
-  contratoController.upload
+  uploadPlantilla,
+  contratoPlantillaController.createPlantilla
 );
 
+// POST /api/contratos/plantillas/update-pdf/:id
+// Actualiza el archivo PDF de una plantilla existente (Solo Admin)
+router.post(
+  "/plantillas/update-pdf/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  uploadPlantilla,
+  contratoPlantillaController.updatePlantillaPdf
+);
+
+// PUT /api/contratos/plantillas/soft-delete/:id
+// Borrado lógico de una plantilla (Solo Admin)
+router.put(
+  "/plantillas/soft-delete/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.softDeletePlantilla
+);
+
+// GET /api/contratos/plantillas/all
+// Lista TODAS las plantillas (activas e inactivas) (Solo Admin)
+router.get(
+  "/plantillas/all",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.findAllPlantillas
+);
+
+// GET /api/contratos/plantillas/unassociated
+// Lista plantillas activas sin proyecto asignado (Solo Admin)
+router.get(
+  "/plantillas/unassociated",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.findUnassociatedPlantillas
+);
+
+// GET /api/contratos/plantilla/:idProyecto/:version
+// Obtener una plantilla específica con verificación de integridad (Usuario/Admin)
+router.get(
+  "/plantilla/:idProyecto/:version",
+  authMiddleware.authenticate,
+  contratoPlantillaController.getPlantillaByProjectVersion
+);
+
+// GET /api/contratos/plantillas/project/:idProyecto
+// Lista todas las versiones de plantillas para un proyecto (Usuario/Admin)
+router.get(
+  "/plantillas/project/:idProyecto",
+  authMiddleware.authenticate,
+  contratoPlantillaController.findPlantillasByProject
+);
+
+// GET /api/contratos/plantillas/:idProyecto (Por compatibilidad)
+router.get(
+  "/plantillas/:idProyecto",
+  authMiddleware.authenticate,
+  contratoPlantillaController.getAllPlantillasByProject
+);
+
+// ===============================================
+// 2. RUTAS DE PROCESO DE FIRMA (ContratoFirmado)
+// ===============================================
+
+// POST /api/contratos/firmar
+// 🔒 OPERACIÓN CRÍTICA: Requiere KYC aprobado + 2FA activo
 router.post(
   "/firmar",
   authMiddleware.authenticate,
-  upload.single("contrato_firmado"),
-  contratoController.sign
+  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  uploadSignedContract,
+  contratoFirmaController.registrarFirma
 );
 
-// Rutas GET Estáticas y con Prefijo Fijo (¡CRÍTICO!)
+// ===============================================
+// 3. RUTAS DE GESTIÓN DE CONTRATOS FIRMADOS (Generales)
+// ===============================================
 
-// Ruta protegida para administradores: Ver TODOS los contratos (GET estático)
+// GET /api/contratos/
+// Ver TODOS los contratos firmados (Solo Admin)
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  contratoController.findAll
+  contratoGeneralController.findAllSigned
 );
 
-// **NUEVA RUTA**: Ver sus propios contratos (Estática con prefijo, ¡va antes de /:id!)
+// GET /api/contratos/mis_contratos
+// Ver sus propios contratos firmados
 router.get(
   "/mis_contratos",
   authMiddleware.authenticate,
-  contratoController.findMyContracts
+  contratoGeneralController.findMyContracts
 );
 
-// 🚨 NUEVA RUTA DE DESCARGA SEGURA (Dinámica con prefijo fijo, ¡va antes de /:id!)
+// GET /api/contratos/descargar/:idContratoFirmado
+// 🔒 DESCARGA SEGURA: Requiere KYC + 2FA para descargar contratos
 router.get(
-  "/descargar/:id",
+  "/descargar/:idContratoFirmado",
   authMiddleware.authenticate,
-  contratoController.download
+  checkKYCandTwoFA, // 🚨 PROTECCIÓN ADICIONAL
+  contratoGeneralController.download
 );
 
 // ===============================================
-// 2. RUTAS DINÁMICAS GENÉRICAS (DEBEN IR AL FINAL)
+// 4. RUTAS DINÁMICAS GENÉRICAS (DEBEN IR AL FINAL)
 // ===============================================
 
-// Ruta protegida: Solo usuarios autenticados pueden obtener un contrato específico por ID
-// ⚠️ ESTA DEBE IR AL FINAL DE TODOS LOS GET
-router.get("/:id", authMiddleware.authenticate, contratoController.findById);
+// GET /api/contratos/:id
+// Obtener un registro de ContratoFirmado específico por ID
+router.get(
+  "/:id",
+  authMiddleware.authenticate,
+  contratoGeneralController.findById
+);
 
 module.exports = router;

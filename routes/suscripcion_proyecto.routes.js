@@ -4,50 +4,61 @@ const express = require("express");
 const router = express.Router();
 const suscripcionProyectoController = require("../controllers/suscripcion_proyecto.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
 
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas y Semidinámicas Primero)
 // =======================================================
 
-// Inicia el proceso de pago/suscripción.
+// POST /iniciar-pago
+// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de suscripción (requiere KYC + 2FA)
 router.post(
   "/iniciar-pago",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
   suscripcionProyectoController.iniciarSuscripcion
 );
 
-// Verifica el código 2FA y genera la URL de checkout
+// POST /confirmar-2fa
+// 🔒 OPERACIÓN CRÍTICA: Verifica el código 2FA y genera la URL de checkout
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 DOBLE VERIFICACIÓN
   suscripcionProyectoController.confirmarSuscripcionCon2FA
 );
 
+// GET /activas
 router.get(
   "/activas",
   authMiddleware.authenticate,
   suscripcionProyectoController.findAllActivo
 );
 
-// ✅ RUTA CORREGIDA: Va antes que /:id para evitar el conflicto
+// GET /mis_suscripciones
 router.get(
   "/mis_suscripciones",
   authMiddleware.authenticate,
   suscripcionProyectoController.findMySubscriptions
 );
 
+// GET /mis_suscripciones/:id
 router.get(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
   suscripcionProyectoController.findMySubscriptionById
 );
+
+// DELETE /mis_suscripciones/:id
+// 🔒 OPERACIÓN SENSIBLE: Cancelar suscripción (requiere KYC + 2FA)
 router.delete(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 PROTECCIÓN CONTRA CANCELACIONES NO AUTORIZADAS
   suscripcionProyectoController.softDeleteMySubscription
 );
 
-// Webhook que debe ser pública (Estática, puede ir aquí o al final)
+// POST /confirmar-pago (Webhook público)
 router.post(
   "/confirmar-pago",
   suscripcionProyectoController.confirmarSuscripcion
@@ -57,9 +68,7 @@ router.post(
 // RUTAS PARA ADMINISTRADORES (Generales y Dinámicas al final)
 // =======================================================
 
-// Obtener todas las suscripciones
-// 📊 NUEVAS RUTAS DE MÉTRICAS 📊
-// KPI 4: Morosidad
+// GET /metrics/morosidad (KPI 4)
 router.get(
   "/metrics/morosidad",
   authMiddleware.authenticate,
@@ -67,41 +76,46 @@ router.get(
   suscripcionProyectoController.getMorosityMetrics
 );
 
-// KPI 5: Tasa de Cancelación
+// GET /metrics/cancelacion (KPI 5)
 router.get(
   "/metrics/cancelacion",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.getCancellationRate
 );
+
+// GET /
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findAll
 );
+
+// GET /proyecto/:id_proyecto/all
 router.get(
-  "/proyecto/:id_proyecto/all", // ⬅️ Nuevo endpoint más explícito
+  "/proyecto/:id_proyecto/all",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findAllByProjectId
 );
 
-// Ruta 2: Trae solo las ACTIVAS (Recomendado para la mayoría de reportes)
+// GET /proyecto/:id_proyecto (Solo activas)
 router.get(
-  "/proyecto/:id_proyecto", // ⬅️ Usamos el endpoint más limpio para la versión activa (por defecto)
+  "/proyecto/:id_proyecto",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findActiveByProjectId
 );
 
-// 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final de este nivel para no colisionar)
+// 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final)
 router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findById
 );
+
 router.delete(
   "/:id",
   authMiddleware.authenticate,

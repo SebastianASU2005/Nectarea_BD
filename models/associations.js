@@ -8,15 +8,18 @@ const Proyecto = require("./proyecto");
 const Puja = require("./puja");
 const Transaccion = require("./transaccion");
 const Imagen = require("./imagen");
-const Contrato = require("./contrato");
+const Contrato = require("./contrato"); // Modelo antiguo, se mantiene la importación si otras asociaciones lo usan
 const SuscripcionProyecto = require("./suscripcion_proyecto");
-const SuscripcionCancelada = require("./suscripcion_cancelada"); // 🆕 ¡MODELO AÑADIDO!
+const SuscripcionCancelada = require("./suscripcion_cancelada");
 const Pago = require("./Pago"); // Pagos de mensualidad
 const PagoMercado = require("./pagoMercado"); // Pagos de pasarela (Mercado Pago)
 const Mensaje = require("./mensaje");
 const CuotaMensual = require("./CuotaMensual");
 const ResumenCuenta = require("./resumen_cuenta");
 const Favorito = require("./Favorito");
+const ContratoPlantilla = require("./ContratoPlantilla");
+const ContratoFirmado = require("./ContratoFirmado "); // El modelo que usamos para las firmas
+const VerificacionIdentidad = require("./verificacion_identidad");
 
 const configureAssociations = () => {
   // -------------------------------------------------------------------
@@ -46,19 +49,14 @@ const configureAssociations = () => {
     foreignKey: "id_usuario",
     as: "transacciones",
     onDelete: "RESTRICT",
-  });
-  Usuario.hasMany(Contrato, {
-    foreignKey: "id_usuario_firmante",
-    as: "contratos_firmados",
-    onDelete: "RESTRICT",
-  });
+  }); // 🚨 RELACIÓN CON MODELO ANTIGUO 'Contrato' ELIMINADA para evitar conflicto de alias. // Usuario.hasMany(Contrato, { foreignKey: "id_usuario_firmante", as: "contratos_firmados", onDelete: "RESTRICT" });
+
   Usuario.hasMany(SuscripcionProyecto, {
     foreignKey: "id_usuario",
     as: "suscripciones",
     onDelete: "RESTRICT",
   });
   Usuario.hasMany(SuscripcionCancelada, {
-    // 🆕 Relación con el nuevo modelo
     foreignKey: "id_usuario",
     as: "suscripciones_canceladas",
     onDelete: "RESTRICT",
@@ -73,7 +71,6 @@ const configureAssociations = () => {
     as: "mensajesRecibidos",
     onDelete: "RESTRICT",
   }); // ------------------------------------------------------------------- // --- Relaciones de Inversion --- // -------------------------------------------------------------------
-
   Inversion.belongsTo(Usuario, { foreignKey: "id_inversor", as: "inversor" });
   Inversion.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
@@ -87,7 +84,6 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
   }); // ------------------------------------------------------------------- // --- Relaciones de Proyecto --- // -------------------------------------------------------------------
-
   Proyecto.belongsTo(Usuario, {
     foreignKey: "id_creador_proyecto",
     as: "creador",
@@ -108,6 +104,7 @@ const configureAssociations = () => {
     onDelete: "RESTRICT",
   });
   Proyecto.hasOne(Contrato, {
+    // Se mantiene si es necesario para el antiguo modelo Contrato
     foreignKey: "id_proyecto",
     as: "contrato",
     onDelete: "RESTRICT",
@@ -118,7 +115,6 @@ const configureAssociations = () => {
     onDelete: "RESTRICT",
   });
   Proyecto.hasMany(SuscripcionCancelada, {
-    // 🆕 Relación con el nuevo modelo
     foreignKey: "id_proyecto",
     as: "cancelaciones",
     onDelete: "RESTRICT",
@@ -128,7 +124,6 @@ const configureAssociations = () => {
     foreignKey: "id_proyecto",
     as: "cuotas_mensuales",
   }); // ------------------------------------------------------------------- // --- Relaciones de Lote --- // -------------------------------------------------------------------
-
   Lote.belongsTo(Usuario, { foreignKey: "id_ganador", as: "ganador" });
   Lote.hasMany(Puja, {
     foreignKey: "id_lote",
@@ -141,7 +136,6 @@ const configureAssociations = () => {
     as: "imagenes",
     onDelete: "RESTRICT",
   }); // ------------------------------------------------------------------- // --- Relaciones de Puja --- // -------------------------------------------------------------------
-
   Puja.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
   Puja.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
   Puja.hasOne(Transaccion, {
@@ -153,7 +147,6 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
   }); // ------------------------------------------------------------------- // --- Relaciones de Transaccion --- // -------------------------------------------------------------------
-
   Transaccion.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
   Transaccion.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
@@ -172,19 +165,16 @@ const configureAssociations = () => {
     foreignKey: "id_inversion",
     as: "inversion",
   }); // ------------------------------------------------------------------- // --- Relaciones de Imagen --- // -------------------------------------------------------------------
-
   Imagen.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
     as: "proyectoImagen",
   });
   Imagen.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" }); // ------------------------------------------------------------------- // --- Relaciones de Contrato --- // -------------------------------------------------------------------
-
   Contrato.belongsTo(Proyecto, { foreignKey: "id_proyecto", as: "proyecto" });
   Contrato.belongsTo(Usuario, {
     foreignKey: "id_usuario_firmante",
     as: "usuario_firmante",
   }); // ------------------------------------------------------------------- // --- Relaciones de SuscripcionProyecto --- // -------------------------------------------------------------------
-
   SuscripcionProyecto.belongsTo(Usuario, {
     foreignKey: "id_usuario",
     as: "usuario",
@@ -211,11 +201,9 @@ const configureAssociations = () => {
     as: "resumen_cuenta",
   });
   SuscripcionProyecto.hasOne(SuscripcionCancelada, {
-    // 🆕 Relación con el nuevo modelo
     foreignKey: "id_suscripcion_original",
     as: "registroCancelacion",
   }); // ------------------------------------------------------------------- // --- Relaciones de SuscripcionCancelada (NUEVAS) --- // -------------------------------------------------------------------
-
   SuscripcionCancelada.belongsTo(Usuario, {
     foreignKey: "id_usuario",
     as: "usuarioCancelador",
@@ -228,7 +216,6 @@ const configureAssociations = () => {
     foreignKey: "id_suscripcion_original",
     as: "suscripcionOriginal",
   }); // ------------------------------------------------------------------- // --- Relaciones de Pago (Mensualidad) --- // -------------------------------------------------------------------
-
   Pago.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuarioDirecto" });
   Pago.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
@@ -242,7 +229,6 @@ const configureAssociations = () => {
     foreignKey: "id_pago_mensual",
     as: "transaccionMensual",
   }); // ------------------------------------------------------------------- // --- Relaciones de PagoMercado (Pasarela) --- // -------------------------------------------------------------------
-
   PagoMercado.belongsTo(Transaccion, {
     foreignKey: "id_transaccion",
     as: "transaccionAsociada",
@@ -251,25 +237,77 @@ const configureAssociations = () => {
     foreignKey: "id_pago_pasarela",
     as: "transaccionDePasarela",
   }); // ------------------------------------------------------------------- // --- Relaciones de Mensaje --- // -------------------------------------------------------------------
-
   Mensaje.belongsTo(Usuario, { foreignKey: "id_remitente", as: "remitente" });
   Mensaje.belongsTo(Usuario, { foreignKey: "id_receptor", as: "receptor" }); // ------------------------------------------------------------------- // --- Relaciones de CuotaMensual --- // -------------------------------------------------------------------
-
   CuotaMensual.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
     as: "proyectoCuota",
   }); // ------------------------------------------------------------------- // --- Relaciones de ResumenCuenta --- // -------------------------------------------------------------------
-
   ResumenCuenta.belongsTo(SuscripcionProyecto, {
     foreignKey: "id_suscripcion",
     as: "suscripcion",
-  });
-  // Relaciones de Favorito
+  }); // Relaciones de Favorito
   Favorito.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
   Favorito.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
 
   Usuario.hasMany(Favorito, { foreignKey: "id_usuario", as: "favoritos" });
-  Lote.hasMany(Favorito, { foreignKey: "id_lote", as: "favoritos" });
+  Lote.hasMany(Favorito, { foreignKey: "id_lote", as: "favoritos" }); // Relaciones de ContratoPlantilla
+  ContratoPlantilla.belongsTo(Proyecto, {
+    foreignKey: "id_proyecto",
+    as: "proyecto",
+  });
+  ContratoPlantilla.hasMany(ContratoFirmado, {
+    foreignKey: "id_contrato_plantilla",
+    as: "contratos_firmados_en_plantilla", // Alias corregido para evitar conflicto global
+    onDelete: "RESTRICT",
+  });
+
+  Proyecto.hasMany(ContratoPlantilla, {
+    foreignKey: "id_proyecto",
+    as: "plantillas_contrato",
+    onDelete: "RESTRICT",
+  }); // Relaciones de ContratoFirmado
+
+  ContratoFirmado.belongsTo(ContratoPlantilla, {
+    foreignKey: "id_contrato_plantilla",
+    as: "plantilla",
+  });
+  ContratoFirmado.belongsTo(Usuario, {
+    foreignKey: "id_usuario_firmante",
+    as: "firmante",
+  });
+  ContratoFirmado.belongsTo(Proyecto, {
+    foreignKey: "id_proyecto",
+    as: "proyecto",
+  });
+  ContratoFirmado.belongsTo(Inversion, {
+    foreignKey: "id_inversion_asociada",
+    as: "inversion",
+  });
+  ContratoFirmado.belongsTo(SuscripcionProyecto, {
+    foreignKey: "id_suscripcion_asociada",
+    as: "suscripcion",
+  }); // ✅ ESTA ES LA ASOCIACIÓN CLAVE MANTENIDA: Contratos Firmados por el usuario
+
+  Usuario.hasMany(ContratoFirmado, {
+    foreignKey: "id_usuario_firmante",
+    as: "contratos_firmados", // Único uso de este alias en el Usuario
+    onDelete: "RESTRICT",
+  }); // Relaciones de VerificacionIdentidad
+  VerificacionIdentidad.belongsTo(Usuario, {
+    foreignKey: "id_usuario",
+    as: "usuario",
+  });
+  VerificacionIdentidad.belongsTo(Usuario, {
+    foreignKey: "id_verificador",
+    as: "verificador",
+  });
+
+  Usuario.hasOne(VerificacionIdentidad, {
+    foreignKey: "id_usuario",
+    as: "verificacion_identidad",
+    onDelete: "RESTRICT",
+  });
 };
 
 module.exports = configureAssociations;

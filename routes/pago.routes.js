@@ -1,29 +1,32 @@
+// routes/pago.routes.js
+
 const express = require("express");
 const router = express.Router();
 const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
 
 // =================================================================
 // 1. RUTAS ESTÁTICAS Y SEMI-DINÁMICAS (USUARIO y ADMIN)
-// Estas van ANTES de cualquier /:id genérico.
 // =================================================================
 
-// [GET /mis_pagos] Permite que un usuario autenticado vea solo sus pagos.
+// GET /mis_pagos
 router.get(
   "/mis_pagos",
   authMiddleware.authenticate,
   pagoController.findMyPayments
 );
 
-// [POST /confirmar-pago-2fa] Va antes de cualquier POST dinámico.
+// POST /confirmar-pago-2fa
+// 🔒 OPERACIÓN CRÍTICA: Confirma pago con verificación 2FA
 router.post(
   "/confirmar-pago-2fa",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
   pagoController.confirmarPagoYContinuar
 );
 
-// Rutas de Administración (Estáticas)
-// [GET /metricas/mensuales?mes=X&anio=Y] Obtiene Recaudo, Vencidos y Tasa de Morosidad (Admin)
+// GET /metricas/mensuales (Admin)
 router.get(
   "/metricas/mensuales",
   authMiddleware.authenticate,
@@ -31,14 +34,15 @@ router.get(
   pagoController.getMonthlyMetrics
 );
 
-// [GET /metricas/a-tiempo?mes=X&anio=Y] Obtiene Tasa de Pagos a Tiempo (Admin)
+// GET /metricas/a-tiempo (Admin)
 router.get(
   "/metricas/a-tiempo",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   pagoController.getOnTimeRate
 );
-// [GET /] Obtiene todos los pagos (Admin).
+
+// GET /
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -46,7 +50,7 @@ router.get(
   pagoController.findAll
 );
 
-// [POST /trigger-manual-payment] Ruta de Prueba/Manual (Admin, estática)
+// POST /trigger-manual-payment (Admin, prueba)
 router.post(
   "/trigger-manual-payment",
   authMiddleware.authenticate,
@@ -58,19 +62,20 @@ router.post(
 // 2. RUTAS DINÁMICAS CON PREFIJO (Semi-Dinámicas)
 // =================================================================
 
-// [POST /pagar-mes/:id] **NUEVO FLUJO DE PAGO**: Tiene un prefijo fijo, va aquí.
+// POST /pagar-mes/:id
+// 🔒 OPERACIÓN CRÍTICA: Inicia el pago de una mensualidad (requiere KYC + 2FA)
 router.post(
   "/pagar-mes/:id",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 PROTECCIÓN DE PAGO
   pagoController.requestCheckout
 );
 
 // =================================================================
 // 3. RUTAS DINÁMICAS GENÉRICAS (ADMIN)
-// Estas DEBEN ir al final.
 // =================================================================
 
-// [GET /:id] Obtiene un pago específico por ID.
+// GET /:id
 router.get(
   "/:id",
   authMiddleware.authenticate,
@@ -78,7 +83,7 @@ router.get(
   pagoController.findById
 );
 
-// [PUT /:id] Actualiza un pago.
+// PUT /:id
 router.put(
   "/:id",
   authMiddleware.authenticate,
@@ -86,7 +91,7 @@ router.put(
   pagoController.update
 );
 
-// [DELETE /:id] "Elimina" un pago (soft delete).
+// DELETE /:id
 router.delete(
   "/:id",
   authMiddleware.authenticate,

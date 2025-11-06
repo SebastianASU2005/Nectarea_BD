@@ -48,7 +48,6 @@ router.post(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  imageUpload.single("image"), // <-- El nombre del campo del formulario es 'image'
   imagenController.create
 );
 

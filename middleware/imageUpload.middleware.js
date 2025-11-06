@@ -1,35 +1,27 @@
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
+// No es estrictamente necesaria aquí, pero la mantenemos si es una utilidad común
+// Asumimos que esta importación ya funciona gracias al paso anterior.
+const { formatErrorResponse } = require("../utils/responseUtils");
 
-// Directorio específico para imágenes: './uploads/imagenes' en la raíz del proyecto
-const uploadDir = path.join(__dirname, "..", "uploads", "imagenes");
+// ===================================================================
+// 1. 💾 Configuración de Almacenamiento
+// ===================================================================
 
-// Asegurar que el directorio de subida existe. ¡Crítico para evitar errores de escritura!
-if (!fs.existsSync(uploadDir)) {
-  // Si no existe, se crea el directorio y todos los subdirectorios necesarios (recursive: true).
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// A. ALMACENAMIENTO EN MEMORIA (Para Contratos y KYC)
+// Almacena el archivo como un Buffer en req.file.buffer
+const memoryStorage = multer.memoryStorage();
 
-/**
- * Configuración del almacenamiento en disco para Multer.
- * Define dónde guardar el archivo y cómo nombrarlo.
- */
-const storage = multer.diskStorage({
-  /**
-   * @description Define el directorio de destino para los archivos subidos.
-   */
-  destination: (req, file, cb) => {
-    // Guarda los archivos en la carpeta 'uploads/imagenes'
-    cb(null, uploadDir);
+// B. ALMACENAMIENTO EN DISCO (Para Imágenes de Proyectos/Lotes)
+// Debe ser consistente con la configuración de /uploads/imagenes en app.js
+const diskStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Usa la ruta de subida de imágenes definida globalmente
+    cb(null, "uploads/imagenes/");
   },
-  /**
-   * @description Define la función para generar el nombre único del archivo.
-   */
-  filename: (req, file, cb) => {
-    // Genera un sufijo único (timestamp + número aleatorio) para evitar colisiones.
+  filename: function (req, file, cb) {
+    // Genera un nombre de archivo único
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    // Usa el nombre del campo (ej: 'avatar') + sufijo único + extensión original del archivo.
     cb(
       null,
       file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
@@ -37,36 +29,91 @@ const storage = multer.diskStorage({
   },
 });
 
-/**
- * @description Filtro estricto para aceptar solo archivos que comiencen con 'image/'.
- * @param {object} req - Objeto de solicitud.
- * @param {object} file - Objeto del archivo que se está subiendo.
- * @param {function} cb - Callback de Multer.
- */
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) {
-    // Aceptar el archivo
+// ===================================================================
+// 2. 📝 Filtros de Archivo
+// ===================================================================
+
+/** Filtro para archivos de Contrato (Solo PDF). */
+const pdfFilter = (req, file, cb) => {
+  if (file.mimetype === "application/pdf") {
     cb(null, true);
   } else {
-    // Rechazar archivos no imagen, devolviendo un error.
     cb(
-      new Error("Solo se permiten archivos de imagen (JPEG, PNG, etc.)."),
+      new Error("Solo se permiten archivos PDF para contratos y plantillas."),
       false
     );
   }
 };
 
-/**
- * Configuración final de Multer para la subida de imágenes.
- * Define el almacenamiento, el filtro de tipo de archivo y el límite de tamaño.
- */
-const imageUpload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // Limita el tamaño de cada archivo a 5 Megabytes (5MB).
-  },
+/** Filtro para archivos KYC (Imágenes y PDF). */
+const kycFilter = (req, file, cb) => {
+  if (
+    file.mimetype.startsWith("image/") ||
+    file.mimetype === "application/pdf" ||
+    file.mimetype.startsWith("video/")
+  ) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Tipo de archivo no permitido para Verificación de Identidad (KYC)."
+      ),
+      false
+    );
+  }
+};
+
+/** Filtro para imágenes de Proyectos/Lotes (Solo imágenes). */
+const imageFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Solo se permiten archivos de imagen."), false);
+  }
+};
+
+// ===================================================================
+// 3. 📦 Configuraciones de Subida Base
+// ===================================================================
+
+// Limite de tamaño: 15MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
+
+// Base para la subida de PDF (Contratos Firmados y Plantillas) -> USA MEMORIA
+const pdfUploadBase = multer({
+  storage: memoryStorage,
+  fileFilter: pdfFilter,
+  limits: { fileSize: MAX_FILE_SIZE },
 });
 
-// Exportamos el middleware configurado para ser usado en las rutas.
-module.exports = imageUpload;
+// Base para la subida de archivos KYC -> USA MEMORIA
+const kycUploadBase = multer({
+  storage: memoryStorage,
+  fileFilter: kycFilter,
+  limits: { fileSize: MAX_FILE_SIZE },
+});
+
+// Base para la subida de IMAGENES -> USA DISCO
+const imageUploadBase = multer({
+  storage: diskStorage,
+  fileFilter: imageFilter,
+  limits: { fileSize: MAX_FILE_SIZE },
+});
+
+// ===================================================================
+// 4. Exportamos los middlewares específicos
+// ===================================================================
+
+module.exports = {
+  // SUBIDAS EN MEMORIA (CONTRATOS/KYC)
+  uploadSignedContract: pdfUploadBase.single("pdfFile"),
+  uploadPlantilla: pdfUploadBase.single("plantillaFile"),
+  uploadKYCData: kycUploadBase.fields([
+    { name: "documento_frente", maxCount: 1 },
+    { name: "documento_dorso", maxCount: 1 },
+    { name: "selfie_con_documento", maxCount: 1 },
+    { name: "video_verificacion", maxCount: 1 },
+  ]), // 🚨 NUEVA FUNCIÓN: SUBIDA EN DISCO (IMAGENES) // Campo esperado en el formulario: 'image'
+
+  uploadImage: imageUploadBase.single("image"),
+};

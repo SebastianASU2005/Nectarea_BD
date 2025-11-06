@@ -1,40 +1,55 @@
+// routes/inversion.routes.js
+
 const express = require("express");
 const router = express.Router();
 const inversionController = require("../controllers/inversion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
 
 // ===============================================
 // 1. RUTAS POST (Estáticas y Semi-Dinámicas)
 // ===============================================
 
-// Ruta protegida: Solo usuarios autenticados pueden crear una inversión (Estática)
-router.post("/", authMiddleware.authenticate, inversionController.create);
+// POST /
+// 🔒 OPERACIÓN CRÍTICA: Crear inversión (requiere KYC + 2FA)
+router.post(
+  "/",
+  authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  inversionController.create
+);
 
-// 🚀 NUEVA RUTA: Verifica el 2FA (Estática con prefijo fijo)
+// POST /confirmar-2fa
+// 🔒 OPERACIÓN CRÍTICA: Verifica el 2FA para continuar con el pago
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 DOBLE VERIFICACIÓN
   inversionController.confirmarInversionCon2FA
 );
 
-// 🚀 RUTA DINÁMICA POST: Inicia el proceso de pago. Va al final de los POST.
+// POST /iniciar-pago/:idInversion
+// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de pago (requiere KYC + 2FA)
 router.post(
   "/iniciar-pago/:idInversion",
   authMiddleware.authenticate,
+  checkKYCandTwoFA, // 🚨 PROTECCIÓN DE TRANSACCIÓN
   inversionController.requestCheckoutInversion
 );
 
 // ===============================================
-// 2. RUTAS GET (Estáticas y Con Prefijo - ¡CRÍTICO!)
+// 2. RUTAS GET (Estáticas y Con Prefijo)
 // ===============================================
 
-// Ruta protegida para administradores: Ver TODAS las inversiones (GET estático)
+// GET /
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   inversionController.findAll
 );
+
+// GET /metricas/liquidez (KPI 6)
 router.get(
   "/metricas/liquidez",
   authMiddleware.authenticate,
@@ -42,7 +57,7 @@ router.get(
   inversionController.getLiquidityRate
 );
 
-// 🎯 NUEVA RUTA: Inversión Agregada por Usuario (Base para KPI 7)
+// GET /metricas/agregado-por-usuario (KPI 7)
 router.get(
   "/metricas/agregado-por-usuario",
   authMiddleware.authenticate,
@@ -50,14 +65,14 @@ router.get(
   inversionController.getAggregatedByUser
 );
 
-// **NUEVA RUTA**: Ver sus propias inversiones (Estática con prefijo, ¡va antes de /:id!)
+// GET /mis_inversiones
 router.get(
   "/mis_inversiones",
   authMiddleware.authenticate,
   inversionController.findMyInversions
 );
 
-// Ruta protegida para administradores: Ver inversiones activas (Estática con prefijo, ¡va antes de /:id!)
+// GET /activas
 router.get(
   "/activas",
   authMiddleware.authenticate,
@@ -65,16 +80,14 @@ router.get(
   inversionController.findAllActivo
 );
 
-// Ruta protegida: Solo usuarios autenticados pueden ver una inversión específica (GET DINÁMICO)
-// ⚠️ ESTA DEBE IR AL FINAL DE TODOS LOS GET
+// GET /:id (DINÁMICO - Va al final)
 router.get("/:id", authMiddleware.authenticate, inversionController.findById);
 
 // ===============================================
 // 3. RUTAS PUT/DELETE (DINÁMICAS GENÉRICAS)
-// Estas deben ir al final del archivo.
 // ===============================================
 
-// Rutas protegidas para administradores: Actualizar
+// PUT /:id
 router.put(
   "/:id",
   authMiddleware.authenticate,
@@ -82,7 +95,7 @@ router.put(
   inversionController.update
 );
 
-// Rutas protegidas para administradores: "Eliminar"
+// DELETE /:id
 router.delete(
   "/:id",
   authMiddleware.authenticate,

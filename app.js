@@ -22,9 +22,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("       El servicio de pagos NO funcionará.");
+  console.error("       El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -68,10 +68,10 @@ if (!fs.existsSync(IMAGENES_DIR_PUBLIC)) {
   fs.mkdirSync(IMAGENES_DIR_PUBLIC, { recursive: true });
 }
 
+// ⚠️ Este Multer se mantiene solo si se usa globalmente. De lo contrario, se puede eliminar.
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // 🎯 FIX: El destino debe ser la carpeta 'uploads/imagenes/'
-    // para ser consistente con el controlador y la ruta pública.
+    // El destino debe ser la carpeta 'uploads/imagenes/'
     cb(null, "uploads/imagenes/");
   },
   filename: function (req, file, cb) {
@@ -84,6 +84,10 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage: storage }); // Middleware de subida general (si aplica)
+
+// ====================================================================
+// 3. IMPORTACIÓN DE MODELOS (CRÍTICO)
+// ====================================================================
 
 // Importa todos los modelos para que Sequelize los conozca antes de configurar asociaciones
 const Usuario = require("./models/usuario");
@@ -102,11 +106,18 @@ const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 const SuscripcionCancelada = require("./models/suscripcion_cancelada");
 const Favorito = require("./models/Favorito");
+// 🚨 MODELO DE VERIFICACIÓN DE IDENTIDAD AÑADIDO
+const VerificacionIdentidad = require("./models/verificacion_identidad");
+const ContratoPlantilla = require("./models/ContratoPlantilla"); // 👈 DEBES IMPORTAR ESTE MODELO
+const ContratoFirmado = require("./models/ContratoFirmado "); // 👈 Y ESTE OTRO MODELO
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
 
-// Importa los archivos de rutas para cada módulo
+// ====================================================================
+// 4. IMPORTACIÓN DE RUTAS
+// ====================================================================
+
 const usuarioRoutes = require("./routes/usuario.routes");
 const inversionRoutes = require("./routes/inversion.routes");
 const loteRoutes = require("./routes/lote.routes");
@@ -126,6 +137,8 @@ const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
 const testRoutes = require("./routes/test.routes");
 const favoritoRoutes = require("./routes/favorito.routes");
+// 🚨 RUTA DE VERIFICACIÓN DE IDENTIDAD AÑADIDA
+const kycRoutes = require("./routes/kyc.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
@@ -141,7 +154,7 @@ const {
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 
 // ====================================================================
-// 3. RUTAS DEL WEBHOOK (USANDO ROUTER DEDICADO PARA MIDDLEWARE RAW) 🎯
+// 5. RUTAS DEL WEBHOOK (USANDO ROUTER DEDICADO PARA MIDDLEWARE RAW)
 // ====================================================================
 const webhookRouter = express.Router();
 
@@ -162,7 +175,7 @@ console.log(
 );
 
 // ====================================================================
-// 4. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
+// 6. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
 // ====================================================================
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
@@ -181,12 +194,18 @@ app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/favoritos", favoritoRoutes);
+// 🚨 RUTA DE VERIFICACIÓN DE IDENTIDAD AÑADIDA
+app.use("/api/kyc", kycRoutes);
 
-// 5. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
+// 7. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
 
-// 6. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
+// 8. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
 app.use(redireccionRoutes);
+
+// ====================================================================
+// 9. SINCRONIZACIÓN DE BASE DE DATOS E INICIO DEL SERVIDOR (CRÍTICO)
+// ====================================================================
 
 /**
  * @async
@@ -215,7 +234,11 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
+    await ContratoPlantilla.sync({ alter: true }); // 🟢 AÑADIDO: Sincroniza la tabla de Plantillas
+    await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
+    // 🚨 SINCRONIZACIÓN DE KYC AÑADIDA
+    await VerificacionIdentidad.sync({ alter: true });
 
     // ==========================================================
     // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ
@@ -240,7 +263,11 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
+    await ContratoPlantilla.sync({ alter: true }); // 🟢 AÑADIDO: Sincroniza la tabla de Plantillas
+    await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
+    // 🚨 SINCRONIZACIÓN DE KYC AÑADIDA
+    await VerificacionIdentidad.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
@@ -252,8 +279,8 @@ async function synchronizeDatabase() {
     overduePaymentManager.start();
     overduePaymentNotifier.start();
     cleanupUnconfirmedUsersTask.start();
-    initAuctionScheduler(); // ⬅️ Tu scheduler de inicio/fin de subastas
-    startCronJobs(); // ⬅️ El otro scheduler de manejo de impagos de pujas
+    initAuctionScheduler();
+    startCronJobs();
     iniciarCronJobExpiracion();
     subscriptionCheckScheduler.scheduleJobs();
 
