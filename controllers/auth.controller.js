@@ -25,16 +25,20 @@ const authController = {
    */
   async register(req, res) {
     try {
-      const { email, nombre_usuario, contraseña } = req.body; // 🎯 1. VALIDACIÓN DE UNICIDAD DE EMAIL Y NOMBRE DE USUARIO // A. Verificar Email
+      // 🛑 CAMBIO CLAVE: Incluir 'dni' en la desestructuración
+      const { email, nombre_usuario, contraseña, dni } = req.body;
 
+      // 🎯 1. VALIDACIÓN DE UNICIDAD DE EMAIL, NOMBRE DE USUARIO Y DNI
+
+      // A. Verificar Email
       const existingUserByEmail = await usuarioService.findByEmail(email);
       if (existingUserByEmail) {
         return res.status(409).json({
-          // 409 Conflict es un buen código para duplicados
           error: "El email ya está asociado a una cuenta activa.",
         });
-      } // B. Verificar Nombre de Usuario
+      }
 
+      // B. Verificar Nombre de Usuario
       const existingUserByUsername = await usuarioService.findByUsername(
         nombre_usuario
       );
@@ -42,16 +46,27 @@ const authController = {
         return res.status(409).json({
           error: "El nombre de usuario ya está en uso.",
         });
-      } // 2. Hashear la contraseña usando el servicio de autenticación
+      }
+
+      // 🚀 C. ¡NUEVA VERIFICACIÓN DE DNI! 🚀
+      const existingUserByDni = await usuarioService.findByDni(dni);
+      if (existingUserByDni) {
+        return res.status(409).json({
+          error: "El DNI proporcionado ya está asociado a una cuenta activa.",
+        });
+      }
+
+      // 2. Hashear la contraseña usando el servicio de autenticación
       const hashedPassword = await authService.hashPassword(contraseña);
+      // ... (resto del código igual)
 
       const userData = {
         ...req.body,
         contraseña_hash: hashedPassword,
-      }; // 3. Crear el usuario en la base de datos (si las validaciones pasan)
+      };
 
+      // 3. Crear el usuario en la base de datos (si las validaciones pasan)
       const newUser = await usuarioService.create(userData);
-
       res.status(201).json({
         message:
           "Usuario registrado exitosamente. Se ha enviado un enlace de confirmación a su correo.",
@@ -62,10 +77,10 @@ const authController = {
         },
       });
     } catch (error) {
+      // ... (manejo de error)
       res.status(400).json({ error: error.message });
     }
   },
-
   /**
    * @async
    * @function confirmarEmail

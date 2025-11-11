@@ -106,10 +106,9 @@ const Contrato = require("./models/contrato");
 const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 const SuscripcionCancelada = require("./models/suscripcion_cancelada");
 const Favorito = require("./models/Favorito");
-// 🚨 MODELO DE VERIFICACIÓN DE IDENTIDAD AÑADIDO
 const VerificacionIdentidad = require("./models/verificacion_identidad");
-const ContratoPlantilla = require("./models/ContratoPlantilla"); // 👈 DEBES IMPORTAR ESTE MODELO
-const ContratoFirmado = require("./models/ContratoFirmado "); // 👈 Y ESTE OTRO MODELO
+const ContratoPlantilla = require("./models/ContratoPlantilla"); 
+const ContratoFirmado = require("./models/ContratoFirmado ");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");

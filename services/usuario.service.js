@@ -392,6 +392,17 @@ const usuarioService = {
     return true;
   },
   /**
+   * @description Busca un usuario activo por DNI.
+   */
+  async findByDni(dni) {
+    return Usuario.findOne({
+      where: {
+        dni: dni,
+        activo: true, // Importante: Solo buscar entre cuentas activas
+      },
+    });
+  },
+  /**
    * @async
    * @function searchByUsername
    * @description Busca usuarios activos por una coincidencia parcial en el nombre_usuario o email.
