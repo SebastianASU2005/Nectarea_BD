@@ -3,31 +3,43 @@
 const Inversion = require("../models/inversion");
 const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
-const { Op } = require("sequelize"); // Asegúrate de tener Op importado para las agregaciones
+const { Op } = require("sequelize"); // Se mantiene para el uso potencial de operadores avanzados de Sequelize.
+
+/**
+ * @typedef {object} InversionData
+ * @property {number} id_proyecto - ID del proyecto.
+ * @property {number} id_usuario - ID del usuario.
+ * @property {number} [monto] - Monto de la inversión (opcional si se toma del proyecto).
+ */
 
 /**
  * Servicio de lógica de negocio para la gestión de Inversiones Directas en Proyectos.
+ * Se enfoca principalmente en proyectos de tipo 'directo' (inversión única para fondeo total).
  */
 const inversionService = {
   /**
    * @async
    * @function crearInversion
-   * @description Crea un registro de inversión directa con estado 'pendiente'.
-   * Valida que el proyecto exista, esté activo y sea de tipo 'directo'.
-   * @param {object} data - Datos de la inversión a crear, incluyendo id_proyecto y id_usuario.
-   * @returns {Promise<Inversion>} La inversión creada con estado 'pendiente'.
-   * @throws {Error} Si el proyecto no es encontrado, está inactivo, o no es de tipo 'directo'.
+   * @description Crea un registro de inversión directa en la BD con estado inicial 'pendiente'.
+   * Incluye validación del estado y tipo del proyecto, y se ejecuta en una transacción local.
+   * @param {InversionData} data - Datos esenciales de la inversión (id_proyecto, id_usuario).
+   * @returns {Promise<Inversion>} La nueva instancia de inversión creada.
+   * @throws {Error} Si el proyecto no es apto, no existe, o si hay un error en la transacción.
    */
   async crearInversion(data) {
-    const { id_proyecto, id_usuario } = data;
+    const { id_proyecto, id_usuario } = data; // 1. Validar que el Proyecto exista.
+    const usuario = await require("./usuario.service").findById(id_usuario);
+    if (usuario && usuario.rol === "admin") {
+      throw new Error(
+        "⛔ Los administradores no pueden crear inversiones como clientes."
+      );
+    }
 
-    // 1. Validar el Proyecto
     const proyecto = await Proyecto.findByPk(id_proyecto);
     if (!proyecto) {
       throw new Error("Proyecto no encontrado.");
-    }
+    } // 2. Restricciones de estado: No se permite invertir en proyectos finalizados o cancelados.
 
-    // 2. Restricciones de estado del proyecto
     if (
       proyecto.estado_proyecto === "Finalizado" ||
       proyecto.estado_proyecto === "Cancelado"
@@ -35,27 +47,25 @@ const inversionService = {
       throw new Error(
         `No se puede crear una inversión, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`
       );
-    }
+    } // 3. Restricción de tipo de inversión: Este servicio solo maneja el tipo "directo".
 
-    // 3. Restricción de tipo de inversión (solo "directo" para este servicio)
     if (proyecto.tipo_inversion !== "directo") {
       throw new Error(
         "Solo se pueden crear inversiones directas en proyectos de tipo 'directo'."
       );
-    }
+    } // 4. Validar el monto de inversión que debe venir del proyecto.
 
-    // 4. Validar el monto
     const montoInversion = proyecto.monto_inversion;
     if (montoInversion === null || typeof montoInversion === "undefined") {
       throw new Error(
         "El monto de inversión del proyecto es nulo. No se puede registrar la inversión."
       );
-    }
+    } // Iniciar una transacción local para asegurar la atomicidad de la creación.
 
     const t = await sequelize.transaction();
 
     try {
-      // 5. Crear la inversión con estado "pendiente" dentro de la transacción
+      // 5. Crear la inversión con el monto definido del proyecto y estado "pendiente".
       const nuevaInversion = await Inversion.create(
         {
           id_usuario: id_usuario,
@@ -65,28 +75,25 @@ const inversionService = {
         },
         { transaction: t }
       );
-      await t.commit();
+      await t.commit(); // Confirmar la creación.
 
       return nuevaInversion;
     } catch (error) {
-      await t.rollback();
+      await t.rollback(); // Deshacer si falla.
       throw new Error(`Error al crear inversión: ${error.message}`);
     }
   },
-
   /**
    * @async
    * @function confirmarInversion
-   * @description Confirma una inversión pendiente a 'pagado', actualiza el monto fondeado
+   * @description Confirma una inversión pendiente a 'pagado', agrega el monto al fondeo (`suscripciones_actuales`)
    * del proyecto, y finaliza el proyecto si es de tipo 'directo'.
-   * **Debe ejecutarse dentro de una transacción mayor** (por ejemplo, al confirmar el pago).
-   * @param {number} inversionId - ID de la inversión.
-   * @param {object} t - Objeto de transacción de Sequelize.
-   * @returns {Promise<Inversion>} La inversión actualizada.
-   * @throws {Error} Si la inversión o el proyecto no son encontrados.
-   */
-  async confirmarInversion(inversionId, t) {
-    // 1. Encontrar la inversión
+   * @param {number} inversionId - ID de la inversión a confirmar.
+   * @param {object} t - Objeto de transacción de Sequelize (requerido).
+   * @returns {Promise<Inversion>} La instancia de inversión actualizada.
+   * @throws {Error} Si la inversión o el proyecto no son encontrados, o si falla la actualización.
+   */ async confirmarInversion(inversionId, t) {
+    // 1. Encontrar la inversión y verificar estado.
     const inversion = await Inversion.findByPk(inversionId, {
       transaction: t,
     });
@@ -94,18 +101,16 @@ const inversionService = {
       throw new Error("Inversión asociada a la transacción no encontrada.");
     }
     if (inversion.estado === "pagado") {
-      return inversion; // Idempotencia: ya pagado
-    }
+      return inversion; // Idempotencia: No hacer nada si ya está pagada.
+    } // 2. Encontrar el proyecto asociado.
 
-    // 2. Encontrar el proyecto
     const proyecto = await Proyecto.findByPk(inversion.id_proyecto, {
       transaction: t,
     });
     if (!proyecto) {
       throw new Error("Proyecto asociado a la inversión no encontrado.");
-    }
+    } // 3. Actualizar el monto de fondeo del proyecto (`suscripciones_actuales`).
 
-    // 3. Actualizar el monto de fondeo (suscripciones_actuales)
     const montoInvertido = Number(inversion.monto);
     const montoActual = Number(proyecto.suscripciones_actuales || 0);
     const nuevoMontoTotal = montoActual + montoInvertido;
@@ -115,15 +120,13 @@ const inversionService = {
         suscripciones_actuales: nuevoMontoTotal,
       },
       { transaction: t }
-    );
+    ); // 4. Marcar la inversión como 'pagado'.
 
-    // 4. Marcar la inversión como 'pagado'
     inversion.estado = "pagado";
     await inversion.save({
       transaction: t,
-    });
+    }); // 5. Lógica para proyectos directos: Si es inversión única, se finaliza tras el pago.
 
-    // 5. Si el proyecto es de tipo "directo" (inversión única), finalizarlo
     if (proyecto.tipo_inversion === "directo") {
       proyecto.estado_proyecto = "Finalizado";
       await proyecto.save({
@@ -132,102 +135,83 @@ const inversionService = {
     }
 
     return inversion;
-  },
-
-  // --- Funciones CRUD básicas ---
-
+  }, // --- Funciones CRUD básicas ---
   /**
    * @async
    * @function findById
-   * @description Obtiene una inversión por su clave primaria.
+   * @description Obtiene una inversión por su clave primaria (ID).
    * @param {number} id - ID de la inversión.
-   * @returns {Promise<Inversion|null>} La inversión encontrada.
-   */
-  async findById(id) {
+   * @returns {Promise<Inversion|null>} La inversión encontrada o `null`.
+   */ async findById(id) {
     return await Inversion.findByPk(id);
   },
-
   /**
    * @async
    * @function findAll
-   * @description Obtiene todos los registros de inversiones.
+   * @description Obtiene todos los registros de inversiones (incluye inactivas).
    * @returns {Promise<Inversion[]>} Lista de todas las inversiones.
-   */
-  async findAll() {
+   */ async findAll() {
     return await Inversion.findAll();
   },
-
   /**
    * @async
    * @function findByUserId
    * @description Obtiene todas las inversiones de un usuario específico.
    * @param {number} userId - ID del usuario.
    * @returns {Promise<Inversion[]>} Lista de inversiones del usuario.
-   */
-  async findByUserId(userId) {
+   */ async findByUserId(userId) {
     return await Inversion.findAll({
       where: {
         id_usuario: userId,
       },
     });
   },
-
   /**
    * @async
    * @function findAllActivo
-   * @description Obtiene todas las inversiones que no están eliminadas lógicamente.
+   * @description Obtiene todas las inversiones que no están eliminadas lógicamente (`activo: true`).
    * @returns {Promise<Inversion[]>} Lista de inversiones activas.
-   */
-  async findAllActivo() {
+   */ async findAllActivo() {
     return await Inversion.findAll({
       where: {
         activo: true,
       },
     });
   },
-
   /**
    * @async
    * @function update
    * @description Actualiza los datos de una inversión por ID.
-   * @param {number} id - ID de la inversión.
+   * @param {number} id - ID de la inversión a actualizar.
    * @param {object} data - Datos a actualizar.
-   * @returns {Promise<Inversion|null>} La inversión actualizada o null.
-   */
-  async update(id, data) {
+   * @returns {Promise<Inversion|null>} La inversión actualizada o `null` si no se encuentra.
+   */ async update(id, data) {
     const inversion = await Inversion.findByPk(id);
     if (!inversion) return null;
     return await inversion.update(data);
   },
-
   /**
    * @async
    * @function softDelete
-   * @description Realiza una eliminación lógica (soft delete) marcando la inversión como inactiva.
-   * @param {number} id - ID de la inversión.
-   * @returns {Promise<Inversion|null>} La inversión actualizada o null.
-   */
-  async softDelete(id) {
+   * @description Realiza una eliminación lógica (soft delete) al marcar la inversión como inactiva (`activo = false`).
+   * @param {number} id - ID de la inversión a inactivar.
+   * @returns {Promise<Inversion|null>} La inversión actualizada (inactiva) o `null` si no se encuentra.
+   */ async softDelete(id) {
     const inversion = await Inversion.findByPk(id);
     if (!inversion) return null;
     return await inversion.update({
       activo: false,
     });
-  },
-
-  // -------------------------------------------------------------------
-  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS
-  // -------------------------------------------------------------------
-
+  }, // ------------------------------------------------------------------- // 📊 FUNCIONES DE REPORTE Y MÉTRICAS (KPIs) // -------------------------------------------------------------------
   /**
    * @async
    * @function getInvestmentLiquidityRate
-   * @description Calcula la Tasa de Liquidez de Inversiones: (Total Pagado / Total Registrado). (KPI 6)
-   * Mide la eficiencia con la que los proyectos de inversión directa se concretan.
-   * @returns {Promise<object>} Objeto con las métricas de liquidez.
-   */
-  async getInvestmentLiquidityRate() {
-    // 1. Calcular el monto total de todas las inversiones registradas
+   * @description Calcula la **Tasa de Liquidez de Inversiones** (KPI 6).
+   * Mide la proporción de inversiones registradas (pendientes/pagadas) que se concretan (pagadas).
+   * Fórmula: (Total Pagado / Total Registrado) * 100.
+   * @returns {Promise<object>} Objeto con las métricas: total registrado, total pagado, y tasa de liquidez (%).
+   */ async getInvestmentLiquidityRate() {
+    // 1. Calcular el monto total de todas las inversiones registradas y activas.
     const totalInvertidoResult = await Inversion.sum("monto", {
       where: { activo: true },
     });
@@ -235,54 +219,49 @@ const inversionService = {
 
     if (totalInvertido === 0) {
       return {
-        total_invertido_registrado: 0,
-        total_pagado: 0,
+        total_invertido_registrado: 0.0,
+        total_pagado: 0.0,
         tasa_liquidez: 0.0,
       };
-    }
+    } // 2. Calcular el monto total de inversiones efectivamente pagadas y activas.
 
-    // 2. Calcular el monto total de inversiones efectivamente pagadas
     const totalPagadoResult = await Inversion.sum("monto", {
       where: { estado: "pagado", activo: true },
     });
-    const totalPagado = Number(totalPagadoResult) || 0;
+    const totalPagado = Number(totalPagadoResult) || 0; // 3. Calcular la Tasa de Liquidez (KPI 6).
 
-    // 3. Calcular la Tasa de Liquidez (KPI 6)
     const tasaLiquidez = (totalPagado / totalInvertido) * 100;
 
     return {
       total_invertido_registrado: totalInvertido.toFixed(2),
       total_pagado: totalPagado.toFixed(2),
-      tasa_liquidez: tasaLiquidez.toFixed(2), // Porcentaje
+      tasa_liquidez: tasaLiquidez.toFixed(2), // Porcentaje con 2 decimales.
     };
   },
-
   /**
    * @async
    * @function getAggregatedInvestmentByUser
-   * @description Agrega el monto total invertido (pagado) por cada usuario.
-   * Base para el cálculo del Rendimiento del Inversor (KPI 7).
-   * @returns {Promise<object[]>} Lista de usuarios y su monto total invertido pagado.
-   */
-  async getAggregatedInvestmentByUser() {
-    // Usamos el método `findAll` con las opciones de `group` y `attributes` para agregar
+   * @description Agrega el monto total invertido (solo `estado: 'pagado'`) por cada usuario.
+   * Sirve de base para el cálculo del Rendimiento del Inversor (KPI 7).
+   * @returns {Promise<object[]>} Lista de objetos con `id_usuario` y `monto_total_invertido` (pagado).
+   */ async getAggregatedInvestmentByUser() {
+    // Usamos `findAll` con GROUP BY y SUM para realizar la agregación SQL.
     const aggregatedInvestments = await Inversion.findAll({
       attributes: [
-        "id_usuario",
+        "id_usuario", // Aplicar la función de agregación SUM al campo 'monto'.
         [sequelize.fn("SUM", sequelize.col("monto")), "monto_total_invertido"],
       ],
       where: {
-        estado: "pagado", // Solo inversiones que fueron efectivamente pagadas
+        estado: "pagado", // Condición clave: Solo sumar inversiones que fueron pagadas.
         activo: true,
       },
-      group: ["id_usuario"], // Agrupa por el ID del usuario
+      group: ["id_usuario"], // Agrupa los resultados por el ID del usuario.
       order: [
-        [sequelize.literal("monto_total_invertido"), "DESC"], // Ordenar por el monto total invertido
+        [sequelize.literal("monto_total_invertido"), "DESC"], // Ordenar por el monto total invertido de forma descendente.
       ],
-      raw: true,
-    });
+      raw: true, // Retornar resultados planos para facilitar el mapeo.
+    }); // Formatear a números con 2 decimales para la presentación.
 
-    // Formatear a números flotantes
     return aggregatedInvestments.map((item) => ({
       id_usuario: item.id_usuario,
       monto_total_invertido: parseFloat(item.monto_total_invertido).toFixed(2),

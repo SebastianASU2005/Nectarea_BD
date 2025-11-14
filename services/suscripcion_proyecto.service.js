@@ -31,6 +31,14 @@ const suscripcionProyectoService = {
    * @throws {Error} Si el proyecto no existe, está cerrado, o ya alcanzó su capacidad máxima.
    */
   async _createSubscriptionRecord(data, t) {
+    const usuario = await require("./usuario.service").findById(
+      data.id_usuario
+    );
+    if (usuario && usuario.rol === "admin") {
+      throw new Error(
+        "⛔ Los administradores no pueden crear suscripciones como clientes."
+      );
+    }
     const proyecto = await Proyecto.findByPk(data.id_proyecto, {
       transaction: t,
     });

@@ -21,6 +21,12 @@ const inversionController = {
    */
   async create(req, res) {
     try {
+      if (req.user.rol === "admin") {
+        return res.status(403).json({
+          error:
+            "⛔ Los administradores no pueden crear inversiones como clientes por motivos de seguridad.",
+        });
+      }
       const id_usuario = req.user.id;
       const data = { ...req.body, id_usuario };
       const nuevaInversion = await inversionService.crearInversion(data);
@@ -369,11 +375,9 @@ const inversionController = {
       });
     } catch (error) {
       console.error("Error al obtener Tasa de Liquidez:", error.message);
-      res
-        .status(500)
-        .json({
-          error: "Error interno al procesar las métricas de inversión.",
-        });
+      res.status(500).json({
+        error: "Error interno al procesar las métricas de inversión.",
+      });
     }
   },
 
@@ -397,11 +401,9 @@ const inversionController = {
         "Error al obtener inversión agregada por usuario:",
         error.message
       );
-      res
-        .status(500)
-        .json({
-          error: "Error interno al procesar la agregación de inversiones.",
-        });
+      res.status(500).json({
+        error: "Error interno al procesar la agregación de inversiones.",
+      });
     }
   },
 };

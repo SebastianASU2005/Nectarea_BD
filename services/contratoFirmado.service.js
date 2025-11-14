@@ -5,34 +5,39 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Pago = require("../models/Pago");
 const verificacionIdentidadService = require("./verificacionIdentidad.service");
+const ContratoPlantilla = require("../models/ContratoPlantilla"); // Importación necesaria para la validación
 
 /**
- * Servicio de lógica de negocio para la gestión de Contratos Firmados.
- * AUTO-DETECCIÓN: Ya no requiere id_inversion o id_suscripcion del frontend.
+ * Servicio de lógica de negocio para la gestión de Contratos Firmados (Registro de Auditoría).
+ * Implementa la **AUTO-DETECCIÓN** de la Inversión o Suscripción válida asociada al contrato.
  */
 const contratoFirmadoService = {
   /**
-   * @async
-   * @function registerSignedContract
-   * @description Registra la auditoría completa de un Contrato Firmado con AUTO-DETECCIÓN
-   * de inversión o suscripción válida para el usuario y proyecto.
-   * @param {object} signatureData - Datos requeridos para la firma (SIN id_inversion ni id_suscripcion).
+   * Registra la auditoría completa de un Contrato Firmado.
+   * La función realiza validaciones críticas de KYC, coherencia y auto-detección
+   * de la entidad de negocio (Inversión o Suscripción) asociada a la firma.
+   * @param {object} signatureData - Datos de la firma del contrato.
    * @returns {Promise<ContratoFirmado>} El registro de auditoría creado.
-   * @throws {Error} Si fallan las validaciones de negocio.
+   * @throws {Error} Si fallan las validaciones de negocio o seguridad.
    */
   async registerSignedContract(signatureData) {
-    const {
-      id_usuario_firmante,
-      id_proyecto,
-      id_contrato_plantilla, // ✅ AHORA LO USAMOS PARA VALIDACIÓN
-    } = signatureData;
-
-    // 1. VERIFICACIÓN CRÍTICA: KYC
+    const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } =
+      signatureData;
+    const usuario = await require("./usuario.service").findById(
+      id_usuario_firmante
+    );
+    if (usuario && usuario.rol === "admin") {
+      throw new Error(
+        "⛔ Los administradores no pueden firmar contratos como clientes."
+      );
+    }
+    // 1. VERIFICACIÓN CRÍTICA: Estatus de Verificación de Identidad (KYC).
     const verificacionKYC =
       await verificacionIdentidadService.getVerificationStatus(
         id_usuario_firmante
       );
 
+    // Valida que el usuario tenga el KYC aprobado para proceder con la firma de un documento legal.
     if (
       !verificacionKYC ||
       verificacionKYC.estado_verificacion !== "APROBADA"
@@ -48,38 +53,36 @@ const contratoFirmadoService = {
       throw new Error("❌ El proyecto especificado no existe.");
     }
 
-    // ✅ 2.5. VALIDACIÓN CRÍTICA NUEVA: Verificar que la plantilla pertenece al proyecto
-    const ContratoPlantilla = require("../models/ContratoPlantilla");
+    // 2.5. VALIDACIÓN CRÍTICA DE SEGURIDAD: Verificar que la plantilla pertenezca al proyecto.
     const plantilla = await ContratoPlantilla.findByPk(id_contrato_plantilla);
 
     if (!plantilla) {
       throw new Error("❌ La plantilla de contrato especificada no existe.");
     }
 
-    // 🟢 CORRECCIÓN: Convertir a Número el id_proyecto que viene del body para la comparación
+    // Asegura la comparación de tipos de datos para la validación de seguridad.
     const idProyectoNum = parseInt(id_proyecto);
 
     if (plantilla.id_proyecto !== idProyectoNum) {
-      // 👈 Usar el valor convertido
       throw new Error(
-        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}" (ID: ${id_proyecto}). ` +
-          `Esta plantilla está asociada al proyecto ID: ${
-            plantilla.id_proyecto || "ninguno"
-          }.`
+        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`
       );
     }
 
+    // Valida que la plantilla que se intenta firmar esté activa.
     if (!plantilla.activo) {
       throw new Error(
         "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada."
       );
     }
 
-    // 3. AUTO-DETECCIÓN: Buscar inversión o suscripción válida
+    // 3. AUTO-DETECCIÓN: Buscar la Inversión o Suscripción válida asociada al usuario/proyecto.
     let inversionValida = null;
     let suscripcionValida = null;
 
+    // Lógica para proyectos de Inversión Directa.
     if (proyecto.tipo_inversion === "directo") {
+      // Busca la última inversión activa y **pagada** del usuario en este proyecto.
       inversionValida = await Inversion.findOne({
         where: {
           id_usuario: id_usuario_firmante,
@@ -91,7 +94,9 @@ const contratoFirmadoService = {
       });
     }
 
+    // Lógica para proyectos de Inversión Mensual (Suscripción).
     if (proyecto.tipo_inversion === "mensual") {
+      // Busca la suscripción activa más reciente del usuario.
       const suscripcion = await SuscripcionProyecto.findOne({
         where: {
           id_usuario: id_usuario_firmante,
@@ -102,6 +107,7 @@ const contratoFirmadoService = {
       });
 
       if (suscripcion) {
+        // Valida que el primer pago (Mes 1) de la suscripción esté completado.
         const primerPago = await Pago.findOne({
           where: {
             id_suscripcion: suscripcion.id,
@@ -116,25 +122,30 @@ const contratoFirmadoService = {
       }
     }
 
-    // 4. VALIDACIONES DE COHERENCIA
+    // 4. VALIDACIONES DE COHERENCIA DE NEGOCIO
+
+    // Requiere que se encuentre **exactamente una** entidad válida (Inversión o Suscripción).
     if (!inversionValida && !suscripcionValida) {
+      // Retorna mensajes de error específicos según el tipo de proyecto.
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
-          `❌ No se encontró una inversión pagada y activa para el proyecto "${proyecto.nombre_proyecto}". Debes completar el pago de tu inversión antes de firmar el contrato.`
+          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`
         );
       } else {
         throw new Error(
-          `❌ No se encontró una suscripción activa con el primer pago completado para el proyecto "${proyecto.nombre_proyecto}". Debes completar el pago inicial (Mes 1) antes de firmar el contrato.`
+          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`
         );
       }
     }
 
+    // Valida que no se hayan encontrado ambas entidades (Inversión y Suscripción) a la vez (error de integridad del sistema).
     if (inversionValida && suscripcionValida) {
       throw new Error(
-        "❌ Error de integridad: Se encontró tanto una inversión como una suscripción para este proyecto. Esto no debería ser posible. Contacta soporte."
+        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte."
       );
     }
 
+    // Valida que la entidad encontrada coincida con el tipo de proyecto (coherencia de datos).
     if (inversionValida && proyecto.tipo_inversion !== "directo") {
       throw new Error(
         `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`
@@ -147,7 +158,9 @@ const contratoFirmadoService = {
       );
     }
 
-    // 5. VERIFICAR QUE NO EXISTA YA UN CONTRATO FIRMADO
+    // 5. VERIFICAR QUE NO EXISTA YA UN CONTRATO FIRMADO para la entidad encontrada.
+
+    // Si es Inversión, verifica que no haya un contrato FIRMADO asociado a esa inversión.
     if (inversionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -158,11 +171,12 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta inversión. No se pueden firmar múltiples contratos."
+          "❌ Ya existe un contrato firmado para esta inversión."
         );
       }
     }
 
+    // Si es Suscripción, verifica que no haya un contrato FIRMADO asociado a esa suscripción.
     if (suscripcionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -173,14 +187,15 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta suscripción. No se pueden firmar múltiples contratos."
+          "❌ Ya existe un contrato firmado para esta suscripción."
         );
       }
     }
 
-    // 6. CREAR EL REGISTRO DE AUDITORÍA
+    // 6. CREAR EL REGISTRO DE AUDITORÍA con las IDs auto-detectadas.
     const newContract = await ContratoFirmado.create({
       ...signatureData,
+      // Asigna la ID de la Inversión o Suscripción según la auto-detección.
       id_inversion_asociada: inversionValida ? inversionValida.id : null,
       id_suscripcion_asociada: suscripcionValida ? suscripcionValida.id : null,
       fecha_firma: new Date(),
@@ -188,27 +203,24 @@ const contratoFirmadoService = {
 
     return newContract;
   },
+
   /**
-   * @async
-   * @function findByUserId
-   * @description Obtiene todos los contratos firmados válidos de un usuario específico.
+   * Obtiene todos los contratos firmados válidos (activos) de un usuario específico.
    * @param {number} userId - ID del usuario firmante.
-   * @returns {Promise<ContratoFirmado[]>} Lista de contratos firmados.
+   * @returns {Promise<ContratoFirmado[]>} Lista de contratos firmados del usuario.
    */
   async findByUserId(userId) {
     return ContratoFirmado.findAll({
       where: {
         id_usuario_firmante: userId,
-        activo: true,
+        activo: true, // Solo contratos no revocados
       },
       order: [["id", "DESC"]],
     });
   },
 
   /**
-   * @async
-   * @function findByPk
-   * @description Obtiene un contrato firmado por su ID.
+   * Obtiene un contrato firmado por su ID (primary key).
    * @param {number} id - ID del contrato.
    * @returns {Promise<ContratoFirmado|null>} El contrato.
    */
@@ -217,11 +229,10 @@ const contratoFirmadoService = {
   },
 
   /**
-   * @async
-   * @function softDelete
-   * @description Revoca un contrato firmado (marca como REVOCADO).
+   * Revoca un contrato firmado (eliminación lógica).
+   * Marca el contrato como `REVOCADO` y cambia su estado a inactivo (`activo: false`).
    * @param {number} id - ID del contrato.
-   * @returns {Promise<ContratoFirmado|null>} El contrato actualizado.
+   * @returns {Promise<ContratoFirmado|null>} El contrato con el estado actualizado.
    */
   async softDelete(id) {
     const contrato = await ContratoFirmado.findByPk(id);

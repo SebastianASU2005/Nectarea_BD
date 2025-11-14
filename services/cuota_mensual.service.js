@@ -1,18 +1,19 @@
+// services/cuotaMensualService.js
 const CuotaMensual = require("../models/CuotaMensual");
 const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
 
 /**
- * Servicio de lógica de negocio para la gestión y el cálculo de Cuotas Mensuales,
- * y su impacto en el monto de inversión del Proyecto asociado.
+ * Servicio de lógica de negocio para la gestión y el cálculo de Cuotas Mensuales.
+ * CRÍTICO: Asegura que la creación/actualización de una cuota se refleje correctamente
+ * en el campo `monto_inversion` del Proyecto asociado, utilizando **transacciones** para garantizar la atomicidad.
  */
 const cuotaMensualService = {
   /**
-   * @function _calculateValues
-   * @description Función privada que calcula el valor total de la cuota mensual
+   * Función privada que calcula el valor total de la cuota mensual
    * basado en el valor del cemento, unidades y los porcentajes aplicables.
-   * Los resultados son redondeados a dos decimales.
-   * @param {object} data - Datos necesarios para el cálculo (valor_cemento_unidades, valor_cemento, total_cuotas_proyecto, etc.).
+   * Los resultados son redondeados a dos decimales para manejo financiero.
+   * @param {object} data - Datos necesarios para el cálculo.
    * @returns {object} Objeto con todos los valores calculados y redondeados.
    */
   _calculateValues(data) {
@@ -22,21 +23,24 @@ const cuotaMensualService = {
     );
     const porcentaje_iva = parseFloat(data.porcentaje_iva);
 
-    // 1. Calcular el valor_movil (Base del cálculo)
+    // 1. Calcular el valor_movil (Base del cálculo: Unidades * Valor por unidad)
     const valor_movil = data.valor_cemento_unidades * data.valor_cemento;
 
     // 2. Calcular los componentes de la cuota
     const total_del_plan = valor_movil * (porcentaje_plan / 100);
-    // El valor mensual sin cargos se calcula dividiendo el total del plan por el plazo de inversión del proyecto.
+    // Valor sin cargos: se divide el total del plan por el plazo de inversión.
     const valor_mensual = total_del_plan / data.total_cuotas_proyecto;
+
     const carga_administrativa =
       valor_movil * (porcentaje_administrativo / 100);
     const iva_carga_administrativa =
       carga_administrativa * (porcentaje_iva / 100);
+
+    // Valor mensual final que debe pagar el inversionista.
     const valor_mensual_final =
       valor_mensual + carga_administrativa + iva_carga_administrativa;
 
-    // Retorna un objeto con todos los valores calculados y redondeados a 2 decimales.
+    // Retorna todos los valores calculados y redondeados a 2 decimales para precisión monetaria.
     return {
       valor_movil: parseFloat(valor_movil.toFixed(2)),
       total_del_plan: parseFloat(total_del_plan.toFixed(2)),
@@ -48,17 +52,15 @@ const cuotaMensualService = {
   },
 
   /**
-   * @async
-   * @function createAndSetProjectAmount
-   * @description Crea una nueva cuota mensual (calculando todos sus valores) y
-   * actualiza el campo `monto_inversion` del Proyecto asociado con el `valor_mensual_final`.
-   * Ejecuta ambas operaciones en una transacción.
+   * Crea una nueva cuota mensual (calculando todos sus valores) y
+   * **actualiza el Proyecto asociado** con el `valor_mensual_final` resultante.
+   * Ambas operaciones se ejecutan en una **transacción** para asegurar la coherencia (atomicidad).
    * @param {object} data - Datos para la cuota (incluye id_proyecto).
    * @returns {Promise<CuotaMensual>} La nueva cuota creada.
    * @throws {Error} Si el proyecto no existe o no tiene `plazo_inversion`.
    */
   async createAndSetProjectAmount(data) {
-    const t = await sequelize.transaction();
+    const t = await sequelize.transaction(); // Inicia la transacción
     try {
       // 1. Obtener el Proyecto para el plazo de inversión (total de cuotas).
       const proyecto = await Proyecto.findByPk(data.id_proyecto, {
@@ -69,12 +71,12 @@ const cuotaMensualService = {
         throw new Error("El proyecto especificado no fue encontrado.");
       }
 
-      // 2. Extraer el número total de cuotas desde el proyecto.
+      // 2. Extracción crítica del plazo de inversión.
       const totalCuotasProyecto = proyecto.plazo_inversion;
 
       if (!totalCuotasProyecto) {
         throw new Error(
-          "El proyecto no tiene definido el número total de cuotas ('plazo_inversion'). Por favor, complete ese campo en el modelo Proyecto."
+          "El proyecto no tiene definido el número total de cuotas ('plazo_inversion')."
         );
       }
 
@@ -86,7 +88,7 @@ const cuotaMensualService = {
 
       const calculatedValues = this._calculateValues(completeData);
 
-      // 4. Crear la nueva cuota con los campos calculados.
+      // 4. Crear la nueva cuota (dentro de la transacción).
       const nuevaCuota = await CuotaMensual.create(
         {
           id_proyecto: completeData.id_proyecto,
@@ -103,33 +105,32 @@ const cuotaMensualService = {
         { transaction: t }
       );
 
-      // 5. Actualiza el `monto_inversion` del proyecto con el valor final de la cuota.
+      // 5. Actualiza el `monto_inversion` del proyecto con el valor final de la cuota (dentro de la transacción).
       await Proyecto.update(
         { monto_inversion: calculatedValues.valor_mensual_final },
         { where: { id: data.id_proyecto }, transaction: t }
       );
 
-      await t.commit();
+      await t.commit(); // Confirma la transacción
       return nuevaCuota;
     } catch (primaryError) {
-      // Manejo defensivo: Intenta el rollback en caso de error.
+      // Manejo de errores: Intenta el rollback en caso de fallo.
       try {
         if (t && t.finished !== "rollback") {
           await t.rollback();
         }
       } catch (rollbackError) {
-        // Se ignora el error de rollback.
+        // Se ignora el error del rollback.
       }
-      throw primaryError; // Re-lanza el error original
+      throw primaryError; // Re-lanza el error original de negocio o sistema.
     }
   },
 
   /**
-   * @async
-   * @function update
-   * @description Actualiza una cuota por su ID, recalcula sus valores y actualiza el proyecto asociado.
+   * Actualiza una cuota por su ID, recalcula sus valores y actualiza el proyecto asociado.
+   * Ejecuta la lógica dentro de una **transacción**.
    * @param {number} id - ID de la cuota a actualizar.
-   * @param {object} data - Datos a actualizar (los nuevos datos para el cálculo).
+   * @param {object} data - Nuevos datos para el recálculo.
    * @returns {Promise<CuotaMensual|null>} La cuota actualizada o null si no se encuentra.
    */
   async update(id, data) {
@@ -141,7 +142,7 @@ const cuotaMensualService = {
         return null;
       }
 
-      // 1. Determinar el `total_cuotas_proyecto`
+      // 1. Determinar el `total_cuotas_proyecto` (tomando el valor del request, del proyecto o el valor histórico).
       if (!data.total_cuotas_proyecto) {
         const proyecto = await Proyecto.findByPk(cuota.id_proyecto, {
           transaction: t,
@@ -149,18 +150,17 @@ const cuotaMensualService = {
         if (proyecto && proyecto.plazo_inversion) {
           data.total_cuotas_proyecto = proyecto.plazo_inversion;
         } else {
-          // Usar el valor histórico si no está en el request ni en el proyecto.
           data.total_cuotas_proyecto = cuota.total_cuotas_proyecto;
         }
       }
 
-      // 2. Combina los datos existentes y los nuevos datos para el cálculo.
+      // 2. Combina datos históricos y datos de actualización para el cálculo.
       const mergedData = { ...cuota.dataValues, ...data };
 
-      // 3. Recalcular los valores
+      // 3. Recalcular los valores financieros.
       const calculatedValues = this._calculateValues(mergedData);
 
-      // 4. Actualizar la cuota en DB.
+      // 4. Actualizar la cuota.
       await cuota.update(
         {
           ...mergedData,
@@ -169,7 +169,7 @@ const cuotaMensualService = {
         { transaction: t }
       );
 
-      // 5. Actualiza el `monto_inversion` del proyecto asociado.
+      // 5. Actualiza el `monto_inversion` del proyecto asociado (CRÍTICO).
       await Proyecto.update(
         { monto_inversion: calculatedValues.valor_mensual_final },
         { where: { id: cuota.id_proyecto }, transaction: t }
@@ -178,22 +178,20 @@ const cuotaMensualService = {
       await t.commit();
       return cuota;
     } catch (primaryError) {
-      // Manejo defensivo: Intenta el rollback en caso de error.
+      // Manejo de errores: rollback.
       try {
         if (t && t.finished !== "rollback") {
           await t.rollback();
         }
       } catch (rollbackError) {
-        // Se ignora el error de rollback.
+        // Se ignora el error del rollback.
       }
-      throw primaryError; // Re-lanza el error original
+      throw primaryError;
     }
   },
 
   /**
-   * @async
-   * @function findByProjectId
-   * @description Obtiene todas las cuotas de un proyecto específico, ordenadas por fecha de creación descendente.
+   * Obtiene todas las cuotas de un proyecto específico.
    * @param {number} id_proyecto - ID del proyecto.
    * @returns {Promise<CuotaMensual[]>} Arreglo de cuotas.
    */
@@ -205,9 +203,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * @async
-   * @function findLastByProjectId
-   * @description Obtiene la cuota más reciente creada para un proyecto.
+   * Obtiene la cuota más reciente creada para un proyecto (la versión activa actual).
    * @param {number} id_proyecto - ID del proyecto.
    * @returns {Promise<CuotaMensual|null>} La última cuota o null si no existe.
    */
@@ -215,14 +211,13 @@ const cuotaMensualService = {
     return CuotaMensual.findOne({
       where: { id_proyecto: id_proyecto },
       order: [["createdAt", "DESC"]],
+      limit: 1,
     });
   },
 
   /**
-   * @async
-   * @function softDelete
-   * @description Elimina lógicamente una cuota (establece `activo` en false).
-   * @param {number} id - ID de la cuota a "eliminar".
+   * Elimina lógicamente una cuota (establece `activo` en false).
+   * @param {number} id - ID de la cuota.
    * @returns {Promise<CuotaMensual|null>} La cuota actualizada o null si no se encuentra.
    */
   async softDelete(id) {
@@ -230,6 +225,7 @@ const cuotaMensualService = {
     if (!cuota) {
       return null;
     }
+    // Solo marca como inactiva; la eliminación física no es recomendada para datos financieros históricos.
     await cuota.update({ activo: false });
     return cuota;
   },

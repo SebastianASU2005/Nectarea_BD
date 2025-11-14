@@ -33,7 +33,13 @@ const suscripcionProyectoController = {
     try {
       const { id_proyecto } = req.body;
       const id_usuario = req.user && req.user.id;
-
+      if (req.user.rol === "admin") {
+        await t.rollback();
+        return res.status(403).json({
+          error:
+            "⛔ Los administradores no pueden suscribirse como clientes por motivos de seguridad.",
+        });
+      }
       // 1. Validaciones básicas
       if (!id_usuario) {
         await t.rollback();

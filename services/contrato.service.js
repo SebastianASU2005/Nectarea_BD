@@ -1,61 +1,62 @@
 const Contrato = require("../models/contrato");
 const Proyecto = require("../models/proyecto");
 const Inversion = require("../models/inversion");
-// Importamos la función de utilidad para generar el hash de un archivo.
+// Importa la función de utilidad para generar el hash criptográfico de un archivo.
 const { generateFileHash } = require("../utils/generateFileHash");
 
 /**
- * Servicio de lógica de negocio para la gestión de Contratos,
- * incluyendo la verificación de la integridad del archivo mediante su hash criptográfico.
+ * Servicio de lógica de negocio para la gestión de Contratos.
+ * Incluye métodos cruciales para la **verificación de la integridad** del archivo
+ * comparando su hash guardado con el hash calculado del archivo físico.
  */
 const contratoService = {
   /**
-   * @async
-   * @function create
-   * @description Crea un nuevo registro de Contrato. Se usa para subir el archivo base
-   * o para crear el registro de un contrato firmado único.
-   * @param {object} data - Datos del contrato (debe incluir el hash_archivo_original).
-   * @returns {Promise<Contrato>} El contrato creado.
+   * Crea un nuevo registro de Contrato en la base de datos.
+   * Se utiliza para cargar la plantilla base o para registrar un contrato firmado.
+   * @param {object} data - Datos del contrato.
+   * @returns {Promise<Contrato>} El contrato recién creado.
    */
   async create(data) {
     return Contrato.create(data);
   },
 
   /**
-   * @async
-   * @function findAndVerifyById
-   * @description Busca un contrato por ID e inmediatamente verifica la integridad del archivo
-   * comparando el hash guardado en DB con el hash calculado del archivo físico.
+   * Busca un contrato por su ID y realiza una verificación de integridad crítica.
+   * Compara el **hash criptográfico** guardado en la DB (`hash_archivo_original`)
+   * con el hash calculado del archivo físico actual (`url_archivo`).
    * @param {number} id - ID del contrato.
-   * @returns {Promise<Contrato|null>} El contrato, con un campo `integrity_compromised` añadido.
+   * @returns {Promise<Contrato|null>} El contrato con el campo `integrity_compromised` (booleano) añadido para indicar manipulación.
    */
   async findAndVerifyById(id) {
+    // 1. Obtiene el contrato de la base de datos, incluyendo la información del proyecto asociado.
     const contrato = await Contrato.findByPk(id, {
       include: [{ model: Proyecto, as: "proyecto" }],
     });
 
-    // Si el contrato existe y tiene un hash de referencia
+    // 2. Procede con la verificación solo si el contrato existe y tiene un hash de referencia.
     if (contrato && contrato.hash_archivo_original) {
       try {
-        // Comparamos el hash que está en la DB con el hash del archivo físico
+        // Calcula el hash actual del archivo físico usando su URL.
         const hashActual = await generateFileHash(contrato.url_archivo);
 
+        // Lógica de validación: Compara el hash guardado vs. el hash calculado.
         if (hashActual !== contrato.hash_archivo_original) {
           console.warn(
             `🚨 ALERTA DE INTEGRIDAD: Contrato ID ${id} manipulado. Hash esperado: ${contrato.hash_archivo_original}, Hash actual: ${hashActual}`
           );
-          // Flag para indicar que la integridad está comprometida
+          // Marca el contrato si se detecta alteración.
           contrato.dataValues.integrity_compromised = true;
         } else {
+          // Marca el contrato si la integridad es correcta.
           contrato.dataValues.integrity_compromised = false;
         }
       } catch (error) {
-        // Manejar el caso de que el archivo físico no exista o no sea accesible
+        // Maneja errores de acceso al archivo (e.g., archivo no encontrado o inaccesible),
+        // y por seguridad, lo marca como comprometido.
         console.error(
           `Error al verificar integridad del archivo ${contrato.id}:`,
           error.message
         );
-        // Marcar como comprometido por falla de acceso
         contrato.dataValues.integrity_compromised = true;
       }
     }
@@ -63,21 +64,17 @@ const contratoService = {
   },
 
   /**
-   * @async
-   * @function findById
-   * @description Obtiene un contrato por su ID. Es un alias del método que incluye la verificación de integridad.
+   * Obtiene un contrato por su ID. Es un alias que invoca la función de verificación.
    * @param {number} id - ID del contrato.
-   * @returns {Promise<Contrato|null>} El contrato con el chequeo de integridad.
+   * @returns {Promise<Contrato|null>} El contrato con el resultado del chequeo de integridad.
    */
   async findById(id) {
     return this.findAndVerifyById(id);
   },
 
   /**
-   * @async
-   * @function findByUserId
-   * @description Obtiene todos los contratos activos firmados por un usuario específico.
-   * (No verifica el hash para optimizar la carga de la lista).
+   * Obtiene todos los contratos marcados como activos firmados por un usuario.
+   * **Nota:** No incluye la verificación de hash para optimizar la carga de listados.
    * @param {number} userId - ID del usuario firmante.
    * @returns {Promise<Contrato[]>} Lista de contratos activos del usuario.
    */
@@ -91,29 +88,29 @@ const contratoService = {
   },
 
   /**
-   * @async
-   * @function createSignedContract
-   * @description Crea un registro de contrato firmado, utilizado cuando se genera un contrato único para un usuario.
-   * @param {object} uniqueData - Los datos únicos del contrato firmado (URL, Hash, Firma, etc.).
-   * @returns {Promise<Contrato>} El nuevo registro de contrato firmado.
+   * Crea un registro de un contrato que ya ha sido firmado digitalmente,
+   * generalmente un contrato único generado para la firma.
+   * @param {object} uniqueData - Los datos del contrato firmado (URL, Hash, Firma, id_usuario, etc.).
+   * @returns {Promise<Contrato>} El nuevo registro de contrato firmado con la fecha de firma automática.
    */
   async createSignedContract(uniqueData) {
     return Contrato.create({
       ...uniqueData,
-      fecha_firma: new Date(), // Asigna la fecha de firma automáticamente
+      // Asigna la fecha de firma en el momento de la creación del registro.
+      fecha_firma: new Date(),
     });
   },
 
   /**
-   * @async
-   * @function update
-   * @description Actualiza los campos de un contrato existente por ID.
+   * Actualiza los campos de un contrato existente por ID.
+   * **Importante:** Utiliza `findById` internamente, lo que asegura que
+   * se realiza la verificación de integridad antes de la actualización.
    * @param {number} id - ID del contrato a actualizar.
    * @param {object} data - Datos a actualizar.
-   * @returns {Promise<Contrato|null>} El contrato actualizado o null si no se encuentra.
+   * @returns {Promise<Contrato|null>} El contrato actualizado o `null` si no se encuentra.
    */
   async update(id, data) {
-    const contrato = await this.findById(id); // Usa findById para obtener el contrato (con verificación de integridad)
+    const contrato = await this.findById(id);
     if (!contrato) {
       return null;
     }
@@ -121,35 +118,30 @@ const contratoService = {
   },
 
   /**
-   * @async
-   * @function softDelete
-   * @description Realiza una eliminación lógica (soft delete) marcando el contrato como inactivo.
+   * Realiza una **eliminación lógica** (soft delete) marcando el campo `activo` como `false`.
    * @param {number} id - ID del contrato.
-   * @returns {Promise<Contrato|null>} El contrato actualizado o null si no se encuentra.
+   * @returns {Promise<Contrato|null>} El contrato marcado como inactivo o `null` si no se encuentra.
    */
   async softDelete(id) {
-    const contrato = await Contrato.findByPk(id); // Usa findByPk simple aquí para la eliminación
+    const contrato = await Contrato.findByPk(id);
     if (!contrato) {
       return null;
     }
+    // Actualiza el estado a inactivo
     return contrato.update({ activo: false });
   },
 
   /**
-   * @async
-   * @function findAll
-   * @description Obtiene todos los contratos (incluye inactivos).
-   * @returns {Promise<Contrato[]>} Lista de todos los contratos.
+   * Obtiene la lista de todos los contratos, incluyendo los inactivos.
+   * @returns {Promise<Contrato[]>} Lista completa de contratos.
    */
   async findAll() {
     return Contrato.findAll();
   },
 
   /**
-   * @async
-   * @function findAllActivo
-   * @description Obtiene todos los contratos activos.
-   * @returns {Promise<Contrato[]>} Lista de contratos activos.
+   * Obtiene la lista de todos los contratos activos.
+   * @returns {Promise<Contrato[]>} Lista de contratos donde `activo` es `true`.
    */
   async findAllActivo() {
     return Contrato.findAll({
@@ -160,20 +152,19 @@ const contratoService = {
   },
 
   /**
-   * @async
-   * @function registerSignature
-   * @description Actualiza el registro de un contrato base (plantilla) con los datos de la firma y el vínculo de autorización.
-   * @param {number} id_contrato_base - El ID del contrato base a actualizar.
-   * @param {object} signatureData - Los datos de la firma (URL, hash, estado, id_inversion_asociada, etc.).
+   * Registra la firma en un contrato base (que actúa como plantilla).
+   * Actualiza el registro con datos de la firma y retorna el objeto actualizado con verificación de integridad.
+   * @param {number} id_contrato_base - El ID del contrato plantilla a actualizar.
+   * @param {object} signatureData - Los datos de la firma (e.g., URL del archivo firmado, hash final, estado, etc.).
    * @returns {Promise<Contrato>} El contrato actualizado.
-   * @throws {Error} Si el contrato base no se encuentra o falla la actualización.
+   * @throws {Error} Si el contrato base no se encuentra o la actualización falla.
    */
   async registerSignature(id_contrato_base, signatureData) {
     try {
-      // 1. Actualiza el registro del contrato base con los datos de firma.
+      // 1. Actualiza el registro del contrato base.
       const [rowsAffected] = await Contrato.update(signatureData, {
         where: { id: id_contrato_base },
-        returning: true, // Solicita el objeto actualizado (depende de la configuración del dialecto de Sequelize)
+        returning: true, // Intenta obtener los datos actualizados (depende del motor DB).
       });
 
       if (rowsAffected === 0) {
@@ -182,10 +173,12 @@ const contratoService = {
         );
       }
 
-      // 2. Buscamos y retornamos el registro actualizado, usando findById para incluir la verificación de integridad.
+      // 2. Retorna el registro actualizado, usando findById para incluir la verificación de integridad
+      // y confirmar que el archivo firmado generado no ha sido alterado.
       return this.findById(id_contrato_base);
     } catch (error) {
       console.error("Error en registerSignature del servicio:", error);
+      // Relanza una excepción con un mensaje de error claro.
       throw new Error(`Fallo en el registro de la firma: ${error.message}`);
     }
   },

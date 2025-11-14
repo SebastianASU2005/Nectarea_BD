@@ -1,65 +1,72 @@
+// services/emailService.js
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 dotenv.config();
 
 // Configura el transportador de correo utilizando las credenciales de entorno.
+// CRÍTICO: Las credenciales deben cargarse correctamente desde .env (EMAIL_USER, EMAIL_PASS)
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: "gmail", // Usar un servicio conocido simplifica la configuración
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
+
+/**
+ * Genera la plantilla base HTML que envuelve el contenido específico del correo.
+ * Utiliza tablas para garantizar la compatibilidad con clientes de correo antiguos.
+ * @param {string} contenidoPrincipalHtml - El HTML específico del cuerpo del correo.
+ * @returns {string} El HTML completo del correo electrónico.
+ */
 function obtenerPlantillaHtml(contenidoPrincipalHtml) {
-  // ⚠️ URLs de imágenes de ejemplo. DEBES REEMPLAZARLAS.
+  // CRÍTICO: Estas URLs y colores deben ser configurados para la identidad de la marca.
   const LOGO_URL =
     "https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg";
-  const FONDO_HEADER_FOOTER = "#be7720ff"; // Azul oscuro
-  const COLOR_ACCION = "#FF5733"; // Naranja de acción
+  const FONDO_HEADER_FOOTER = "#0b1b36"; // Azul oscuro del branding
+  const COLOR_ACCION = "#FF5733"; // Naranja de acción (se usa en el contenido interno)
 
   return `
-      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f6f6f6;">
-        <tr>
-          <td align="center">
-            <table class="content-table" width="600" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-              <tr>
-                <td align="center" style="padding: 20px 0; background-color: #ffffff; border-bottom: 2px solid #eeeeee;">
-                  <img src="${LOGO_URL}" alt="Logo Loteplan.com" width="200" style="display: block; border: 0;" />
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 30px 40px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333333;">
-                  ${contenidoPrincipalHtml}
-                </td>
-              </tr>
-              <tr>
-                <td align="center" style="background-color: ${FONDO_HEADER_FOOTER}; padding: 30px 40px 20px;">
-                  <div style="text-align: center; margin-bottom: 20px;">
-                  </div>
-                  <p style="margin: 0; color: #ffffff; font-size: 14px; font-family: Arial, sans-serif;">
-                    <a href="https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg" style="color: #ffffff; text-decoration: none;">© ${new Date().getFullYear()} Loteplan.com</a>
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    `;
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f6f6f6;">
+      <tr>
+        <td align="center">
+          <table class="content-table" width="600" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <tr>
+              <td align="center" style="padding: 20px 0; background-color: #ffffff; border-bottom: 2px solid #eeeeee;">
+                <img src="${LOGO_URL}" alt="Logo Loteplan.com" width="200" style="display: block; border: 0;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 30px 40px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333333;">
+                ${contenidoPrincipalHtml}
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background-color: ${FONDO_HEADER_FOOTER}; padding: 30px 40px 20px;">
+                <p style="margin: 0; color: #ffffff; font-size: 14px; font-family: Arial, sans-serif;">
+                  <a href="[URL_SITIO_WEB]" style="color: #ffffff; text-decoration: none;">© ${new Date().getFullYear()} Loteplan.com</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
 }
+
 /**
- * Servicio para el envío de correos electrónicos a través de Nodemailer.
- * Incluye funciones específicas para notificaciones clave de la aplicación.
+ * Servicio para el envío de correos electrónicos transaccionales.
  */
 const emailService = {
+  
   /**
-   * @async
-   * @function sendEmail
-   * @description Función base para enviar un correo electrónico.
-   * @param {string} to - Dirección de correo del destinatario.
-   * @param {string} subject - Asunto del correo.
-   * @param {string} text - Cuerpo del correo en texto plano.
-   * @param {string} html - Cuerpo del correo en formato HTML.
+   * Función base para enviar un correo electrónico.
+   * Incluye manejo de errores para el envío.
+   * @param {string} to - Destinatario.
+   * @param {string} subject - Asunto.
+   * @param {string} text - Cuerpo en texto plano (fallback).
+   * @param {string} html - Cuerpo en formato HTML (principal).
    */
   async sendEmail(to, subject, text, html) {
     const mailOptions = {
@@ -74,25 +81,26 @@ const emailService = {
       await transporter.sendMail(mailOptions);
       console.log(`Correo enviado a ${to}`);
     } catch (error) {
+      // Registrar el error sin detener la ejecución de la aplicación.
       console.error(`Error al enviar correo a ${to}:`, error);
+      // Opcional: Podría lanzarse un error aquí si la falla de envío es crítica.
     }
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarInicioSubasta
-   * @description Envía un correo de notificación de inicio de subasta, indicando si es pública o privada.
+   * Notifica a los usuarios que una subasta ha iniciado.
+   * LÓGICA DE NEGOCIO: Diferencia entre subasta **Pública** y **Privada**.
    * @param {string} email - Correo del destinatario.
-   * @param {object} lote - Instancia del lote que se está activando (debe contener id, nombre_lote, monto_base_lote, fecha_fin).
-   * @param {boolean} esSubastaPrivada - Indica si la subasta es exclusiva para suscriptores.
+   * @param {object} lote - Datos del lote (id, nombre_lote, monto_base_lote, fecha_fin).
+   * @param {boolean} esSubastaPrivada - Indica exclusividad.
    */
   async notificarInicioSubasta(email, lote, esSubastaPrivada) {
     const tipoSubasta = esSubastaPrivada ? "Privada" : "Pública";
     const subject = `¡NUEVO LOTE EN SUBASTA (${tipoSubasta})! Lote #${lote.id}`;
+    
+    // El mensaje de exclusividad es crítico para la UX y las reglas de negocio.
     const mensajeExclusividad = esSubastaPrivada
-      ? `**IMPORTANTE: Esta es una subasta privada y solo los suscriptores del proyecto asociado (ID: ${
-          lote.id_proyecto || "N/A"
-        }) pueden participar.**`
+      ? `**IMPORTANTE: Esta es una subasta privada y solo los suscriptores del proyecto asociado pueden participar.**`
       : `¡No te lo pierdas!`;
 
     // Contenido interno específico para la plantilla
@@ -107,9 +115,6 @@ const emailService = {
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
             <li><strong style="color: #555;">Monto Base:</strong> $${
               lote.monto_base_lote
-            }</li>
-            <li><strong style="color: #555;">ID del Lote:</strong> ${
-              lote.id
             }</li>
             <li><strong style="color: #FF5733;">Fecha de Cierre Estimada:</strong> ${
               lote.fecha_fin
@@ -132,17 +137,15 @@ const emailService = {
     }. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
 
     await this.sendEmail(email, subject, text, html);
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function sendConfirmationEmail
-   * @description Envía el correo electrónico de confirmación de cuenta con un enlace.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
+   * Envía el correo electrónico de confirmación de cuenta.
+   * CRÍTICO: Utiliza `FRONTEND_URL` para construir el enlace seguro.
+   * @param {object} user - Objeto del usuario (nombre, email).
    * @param {string} token - Token de confirmación.
    */
   async sendConfirmationEmail(user, token) {
-    // ⚠️ La URL base DEBE ser la del frontend que procesa la confirmación.
     const confirmationLink = `${process.env.FRONTEND_URL}/api/auth/confirmar_email/${token}`;
     const subject = "¡Bienvenido! Confirma tu Cuenta de Usuario";
 
@@ -165,16 +168,15 @@ const emailService = {
       `Confirma tu cuenta en ${confirmationLink}`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarGanadorPuja
-   * @description Notifica al usuario que ha ganado un lote, indicando el plazo de 90 días para el pago.
-   * @param {object} user - Objeto del nuevo ganador.
+   * Notifica al usuario que ha ganado un lote.
+   * LÓGICA DE NEGOCIO: Establece el plazo de pago de 90 días y gestiona la **reasignación**.
+   * @param {object} user - Ganador.
    * @param {number} loteId - ID del lote ganado.
-   * @param {string} fechaLimite - Fecha límite de pago (formateada).
-   * @param {boolean} [esReasignacion=false] - Indica si la victoria es por un incumplimiento anterior.
+   * @param {string} fechaLimite - Fecha límite de pago.
+   * @param {boolean} [esReasignacion=false] - Indica si la victoria fue por reasignación.
    */
   async notificarGanadorPuja(
     user,
@@ -202,7 +204,6 @@ const emailService = {
         <h3 style="color: #333;">Detalles y Plazo de Pago</h3>
         <p>Tienes **90 días** para completar el pago.</p>
         <p style="font-size: 1.1em; font-weight: bold; color: #FF5733;">La fecha límite de pago es: **${fechaLimite}**.</p>
-        <p>Visita tu perfil para gestionar el pago.</p>
         <a href="[URL_A_TU_PERFIL_PAGOS]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
             Gestionar Pago
         </a>
@@ -216,14 +217,12 @@ const emailService = {
       `Ganaste el Lote #${loteId}. Fecha límite de pago: ${fechaLimite}`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarImpago
-   * @description Notifica al usuario que ha perdido un lote por no cumplir con el plazo de pago,
-   * e informa sobre la devolución de su token.
-   * @param {object} user - Objeto del usuario incumplidor.
+   * Notifica al usuario que ha perdido un lote por no cumplir con el plazo de pago.
+   * LÓGICA DE NEGOCIO: Informa la **pérdida del lote** y la **devolución del token de subasta**.
+   * @param {object} user - Usuario incumplidor.
    * @param {number} loteId - ID del lote perdido.
    */
   async notificarImpago(user, loteId) {
@@ -248,23 +247,22 @@ const emailService = {
       `Lote #${loteId} perdido por impago. Token devuelto.`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   // -----------------------------------------------------------
   // FUNCIONES DE NOTIFICACIÓN ESPECÍFICAS DE PROYECTO
   // -----------------------------------------------------------
 
   /**
-   * @async
-   * @function notificarInicioProyectoMasivo (A MÚLTIPLES USUARIOS)
-   * @description Envía un email a todos los usuarios informando que el proyecto alcanzó su objetivo y ha comenzado.
-   * @param {object} proyecto - Instancia del proyecto de Sequelize.
-   * @param {object[]} usuarios - Lista de objetos Usuario a notificar (debe contener nombre y email).
-   * @returns {Promise<void>}
+   * Notifica a **MÚLTIPLES USUARIOS** que el proyecto alcanzó su objetivo y ha comenzado.
+   * LÓGICA DE NEGOCIO: Proporciona la información crítica sobre el **inicio de la facturación**.
+   * @param {object} proyecto - Proyecto de Sequelize.
+   * @param {object[]} usuarios - Lista de usuarios a notificar.
    */
   async notificarInicioProyectoMasivo(proyecto, usuarios) {
     const subject = `🥳 ¡Objetivo Alcanzado! El proyecto ${proyecto.nombre_proyecto} ha comenzado.`;
 
+    // Lógica para enviar a múltiples destinatarios.
     for (const usuario of usuarios) {
       if (usuario.email) {
         // Contenido interno específico para la plantilla
@@ -287,14 +285,13 @@ const emailService = {
         await this.sendEmail(usuario.email, subject, text, html);
       }
     }
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarInicioProyectoAdmin (A UN ADMINISTRADOR) 🆕
-   * @description Notifica a un administrador que un proyecto alcanzó su objetivo y ha comenzado.
+   * Notifica a un **ADMINISTRADOR** que un proyecto alcanzó su objetivo y ha comenzado.
+   * LÓGICA DE NEGOCIO: Aviso a personal clave sobre un evento de transición de estado.
    * @param {string} adminEmail - Correo del administrador.
-   * @param {object} proyecto - Instancia del proyecto de Sequelize.
+   * @param {object} proyecto - Proyecto de Sequelize.
    */
   async notificarInicioProyectoAdmin(adminEmail, proyecto) {
     const subject = `🟢 INICIO DE PROYECTO: Objetivo Cumplido - ${proyecto.nombre_proyecto}`;
@@ -316,15 +313,14 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha comenzado su proceso de inversión.`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarPausaProyecto (A USUARIOS)
-   * @description Envía un correo a un suscriptor notificando la pausa de un proyecto mensual
-   * debido a la caída de suscripciones por debajo del mínimo.
-   * @param {object} user - Objeto del usuario/suscriptor (debe contener nombre y email).
-   * @param {object} proyecto - Objeto del proyecto.
+   * Notifica a un **USUARIO/SUSCRIPTOR** la pausa de un proyecto.
+   * LÓGICA DE NEGOCIO: La pausa se debe a que las suscripciones cayeron por debajo del mínimo,
+   * y la consecuencia es la **detención de la facturación y el plazo**.
+   * @param {object} user - Usuario/suscriptor.
+   * @param {object} proyecto - Proyecto.
    */
   async notificarPausaProyecto(user, proyecto) {
     const subject = `🚨 ¡Importante! Proyecto ${proyecto.nombre_proyecto} PAUSADO`;
@@ -342,14 +338,14 @@ const emailService = {
     const html = obtenerPlantillaHtml(contenidoInterno);
 
     await this.sendEmail(user.email, subject, text, html);
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarReversionAdmin (A ADMINISTRADORES)
-   * @description Notifica a un administrador que un proyecto se revirtió a 'En Espera' por bajo umbral.
-   * @param {object} adminEmail - Correo del admin.
-   * @param {object} proyecto - Objeto del proyecto.
+   * Notifica a un **ADMINISTRADOR** la reversión de un proyecto.
+   * LÓGICA DE NEGOCIO: Alerta crítica sobre la reversión de estado a 'En Espera' debido a bajo umbral,
+   * que requiere una revisión manual de las acciones tomadas por el sistema.
+   * @param {string} adminEmail - Correo del admin.
+   * @param {object} proyecto - Proyecto.
    */
   async notificarReversionAdmin(adminEmail, proyecto) {
     const subject = `🛑 ALERTA CRÍTICA: Proyecto Revertido - ${proyecto.nombre_proyecto}`;
@@ -371,14 +367,14 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha sido revertido a 'En Espera'.`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarFinalizacionAdmin (A ADMINISTRADORES)
-   * @description Notifica a un administrador que un proyecto ha completado su plazo.
-   * @param {string} adminEmail - Dirección de correo del destinatario (jefe/admin).
-   * @param {object} proyecto - Objeto del proyecto que ha finalizado.
+   * Notifica a un **ADMINISTRADOR** que un proyecto ha completado su plazo.
+   * LÓGICA DE NEGOCIO: Alerta crítica de cierre que requiere **acciones manuales** de finalización,
+   * como marcar el estado final y gestionar devoluciones/lotes pendientes.
+   * @param {string} adminEmail - Correo del administrador.
+   * @param {object} proyecto - Proyecto finalizado.
    */
   async notificarFinalizacionAdmin(adminEmail, proyecto) {
     const subject = `✅ PROYECTO FINALIZADO - Acción: ${proyecto.nombre_proyecto}`;
@@ -408,17 +404,15 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha finalizado. Revisar cierre.`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function notificarPagoGenerado
-   * @description Notifica al usuario que se ha generado su pago mensual.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
-   * @param {object} proyecto - Objeto del proyecto (debe contener nombre_proyecto).
-   * @param {number} cuota - Número de la cuota (mes) generada.
+   * Notifica al usuario que se ha generado su pago mensual.
+   * @param {object} user - Usuario.
+   * @param {object} proyecto - Proyecto.
+   * @param {number} cuota - Número de la cuota.
    * @param {number} monto - Monto del pago.
-   * @param {string} fechaVencimiento - Fecha límite de pago (formato YYYY-MM-DD).
+   * @param {string} fechaVencimiento - Fecha límite de pago.
    */
   async notificarPagoGenerado(user, proyecto, cuota, monto, fechaVencimiento) {
     const subject = `Recordatorio de Pago: ${proyecto.nombre_proyecto} - Cuota ${cuota}`;
@@ -436,9 +430,6 @@ const emailService = {
               2
             )}</strong></li>
             <li><strong style="color: #555;">Cuota Nro:</strong> ${cuota}</li>
-            <li><strong style="color: #555;">Proyecto:</strong> ${
-              proyecto.nombre_proyecto
-            }</li>
             <li><strong style="color: #FF5733;">Fecha Límite de Pago:</strong> **${fechaVencimiento}**</li>
         </ul>
         <p>Por favor, realiza el pago antes de la fecha límite para evitar recargos.</p>
@@ -458,18 +449,16 @@ const emailService = {
       }. Vence el ${fechaVencimiento}.`,
       html
     );
-  }, // <-- COMA
+  }, 
 
   /**
-   * @async
-   * @function sendPasswordResetEmail
-   * @description Envía un correo con el enlace para restablecer la contraseña.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
+   * Envía un correo con el enlace para restablecer la contraseña.
+   * CRÍTICO: Utiliza `FRONTEND_URL` y el token para un proceso de restablecimiento seguro.
+   * @param {object} user - Usuario.
    * @param {string} token - Token de restablecimiento.
    */
   async sendPasswordResetEmail(user, token) {
-    // ⚠️ La URL base DEBE ser la del frontend que procesa el token de reset.
-    // MODIFICADO: Uso de process.env.FRONTEND_URL
+    // MODIFICADO: Uso de process.env.FRONTEND_URL y paso del token como query parameter.
     const resetLink = `${process.env.FRONTEND_URL}/restablecer_contrasena?token=${token}`;
     const subject = "Solicitud de Restablecimiento de Contraseña";
 
@@ -495,13 +484,12 @@ const emailService = {
   },
 
   /**
-   * @async
-   * @function notificarPagoVencidoAdmin
-   * @description Notifica al administrador sobre un pago vencido de un usuario específico.
+   * Notifica al **ADMINISTRADOR** sobre un pago vencido.
+   * LÓGICA DE NEGOCIO: Alerta de incumplimiento, mostrando el detalle del **recargo aplicado**.
    * @param {string} adminEmail - Correo del administrador.
-   * @param {object} user - Objeto del usuario incumplidor (para mostrar quién es).
-   * @param {object} proyecto - Objeto del proyecto asociado.
-   * @param {object} pago - Objeto del pago vencido.
+   * @param {object} user - Usuario incumplidor.
+   * @param {object} proyecto - Proyecto asociado.
+   * @param {object} pago - Pago vencido.
    * @param {number} montoBase - Monto base del pago.
    * @param {number} recargoTotal - Recargo aplicado.
    */
@@ -548,6 +536,7 @@ const emailService = {
       html
     );
   },
+
   /**
    * @async
    * @function notificarReembolsoUsuario

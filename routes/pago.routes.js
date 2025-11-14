@@ -4,7 +4,8 @@ const express = require("express");
 const router = express.Router();
 const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
+const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
 
 // =================================================================
 // 1. RUTAS ESTÁTICAS Y SEMI-DINÁMICAS (USUARIO y ADMIN)
@@ -18,11 +19,12 @@ router.get(
 );
 
 // POST /confirmar-pago-2fa
-// 🔒 OPERACIÓN CRÍTICA: Confirma pago con verificación 2FA
+// 🔒 OPERACIÓN CRÍTICA: Confirma pago con verificación 2FA (NO admins)
 router.post(
   "/confirmar-pago-2fa",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   pagoController.confirmarPagoYContinuar
 );
 
@@ -63,11 +65,12 @@ router.post(
 // =================================================================
 
 // POST /pagar-mes/:id
-// 🔒 OPERACIÓN CRÍTICA: Inicia el pago de una mensualidad (requiere KYC + 2FA)
+// 🔒 OPERACIÓN CRÍTICA: Inicia el pago de una mensualidad (NO admins)
 router.post(
   "/pagar-mes/:id",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 PROTECCIÓN DE PAGO
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   pagoController.requestCheckout
 );
 

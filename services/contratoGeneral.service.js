@@ -1,17 +1,17 @@
 // services/contratoGeneralService.js
 const ContratoFirmado = require("../models/ContratoFirmado ");
-const { Op } = require("sequelize");
+const { Op } = require("sequelize"); // Se mantiene la importación, aunque Op no se usa directamente en este archivo.
 
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Firmados.
- * Se enfoca en la consulta, listado y preparación de datos para la descarga segura.
+ * Se enfoca en las operaciones de **consulta** (lectura) y la **aplicación de permisos**
+ * para la descarga segura de archivos.
  */
 const contratoGeneralService = {
   /**
-   * @async
-   * @function findAll
-   * @description Obtiene todos los contratos firmados en el sistema (Solo Admin).
-   * @returns {Promise<ContratoFirmado[]>} Lista de todos los contratos.
+   * Obtiene todos los contratos firmados en el sistema.
+   * **Restringido a usuarios Administradores o con permisos de auditoría.**
+   * @returns {Promise<ContratoFirmado[]>} Lista completa de contratos, ordenados por ID descendente.
    */
   async findAll() {
     return ContratoFirmado.findAll({
@@ -20,22 +20,18 @@ const contratoGeneralService = {
   },
 
   /**
-   * @async
-   * @function findByPk
-   * @description Obtiene un contrato firmado específico por su ID.
+   * Obtiene un contrato firmado específico por su ID.
    * @param {number} id - ID del Contrato Firmado.
-   * @returns {Promise<ContratoFirmado|null>} El contrato.
+   * @returns {Promise<ContratoFirmado|null>} El contrato encontrado.
    */
   async findByPk(id) {
     return ContratoFirmado.findByPk(id);
   },
 
   /**
-   * @async
-   * @function findByUserId
-   * @description Obtiene todos los contratos firmados donde el usuario participa.
-   * @param {number} id_usuario - ID del usuario.
-   * @returns {Promise<ContratoFirmado[]>} Lista de contratos del usuario.
+   * Obtiene todos los contratos firmados donde el usuario autenticado figura como firmante.
+   * @param {number} id_usuario - ID del usuario solicitante.
+   * @returns {Promise<ContratoFirmado[]>} Lista de contratos asociados al usuario, ordenados por ID descendente.
    */
   async findByUserId(id_usuario) {
     return ContratoFirmado.findAll({
@@ -47,25 +43,27 @@ const contratoGeneralService = {
   },
 
   /**
-   * @async
-   * @function getContractForDownload
-   * @description Verifica si un contrato existe y si el usuario tiene permiso para descargarlo.
+   * Verifica la existencia de un contrato y aplica la **lógica de permisos**
+   * para determinar si el usuario autenticado tiene derecho a descargarlo.
    * @param {number} id_contrato - ID del contrato firmado solicitado.
    * @param {number} id_usuario - ID del usuario autenticado.
-   * @param {boolean} isAdmin - Indica si el usuario es administrador.
-   * @returns {Promise<ContratoFirmado|null>} El contrato si el permiso es concedido.
+   * @param {boolean} isAdmin - Indica si el usuario tiene rol de Administrador.
+   * @returns {Promise<ContratoFirmado|null>} El contrato (con campos mínimos para descarga) si el permiso es concedido, o `null` en caso contrario.
    */
   async getContractForDownload(id_contrato, id_usuario, isAdmin = false) {
     let whereClause = {
       id: id_contrato,
     };
 
+    // Lógica de seguridad: Si NO es administrador, debe ser el firmante del contrato.
     if (!isAdmin) {
       whereClause.id_usuario_firmante = id_usuario;
     }
 
+    // Busca el contrato aplicando el filtro de ID y, si no es Admin, el filtro de `id_usuario_firmante`.
     const contrato = await ContratoFirmado.findOne({
       where: whereClause,
+      // Solo se seleccionan los atributos necesarios para la descarga segura (URL, nombre y confirmación de firmante).
       attributes: [
         "id",
         "url_archivo",
@@ -79,3 +77,4 @@ const contratoGeneralService = {
 };
 
 module.exports = contratoGeneralService;
+  

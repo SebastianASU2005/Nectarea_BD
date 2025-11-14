@@ -4,12 +4,21 @@ const express = require("express");
 const router = express.Router();
 const pujaController = require("../controllers/puja.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO: Importación
 
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas primero, dinámicas después)
 // =======================================================
 
-router.post("/", authMiddleware.authenticate, pujaController.create);
+// POST /
+// 🔒 OPERACIÓN CRÍTICA: Crear puja (Añadir blockAdminTransactions)
+router.post(
+  "/",
+  authMiddleware.authenticate,
+  blockAdminTransactions, // ✅ Bloquea admins
+  pujaController.create
+);
+
 router.get(
   "/activas",
   authMiddleware.authenticate,
@@ -26,6 +35,11 @@ router.get(
   authMiddleware.authenticate,
   pujaController.findMyPujaById
 );
+
+// DELETE /mis_pujas/:id
+// Nota: Aunque el soft-delete es una "transacción" del cliente sobre su data,
+// usualmente solo las operaciones de **dinero/riesgo** llevan el bloqueo.
+// Lo dejaré sin bloquear, similar a la lógica de contratos/inversiones GET/DELETE.
 router.delete(
   "/mis_pujas/:id",
   authMiddleware.authenticate,
@@ -33,16 +47,20 @@ router.delete(
 );
 
 // RUTA DE PAGO INICIAL: Inicia el proceso de checkout (bifurcación 2FA).
+// 🔒 OPERACIÓN CRÍTICA: Iniciar pago (Añadir blockAdminTransactions)
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
+  blockAdminTransactions, // ✅ Bloquea admins
   pujaController.requestCheckout
 );
 
 // NUEVA RUTA: Verifica el 2FA y genera el checkout para la puja ganadora.
+// 🔒 OPERACIÓN CRÍTICA: Confirmar 2FA (Añadir blockAdminTransactions)
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
+  blockAdminTransactions, // ✅ Bloquea admins
   pujaController.confirmarPujaCon2FA
 );
 
@@ -59,6 +77,7 @@ router.get(
 );
 
 // NUEVA RUTA para la gestión de tokens al finalizar la subasta (Estática)
+// Esta es una acción de admin, NO debe llevar blockAdminTransactions.
 router.post(
   "/gestionar_finalizacion",
   authMiddleware.authenticate,

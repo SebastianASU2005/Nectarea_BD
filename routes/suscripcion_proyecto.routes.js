@@ -4,18 +4,20 @@ const express = require("express");
 const router = express.Router();
 const suscripcionProyectoController = require("../controllers/suscripcion_proyecto.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
+const { blockAdminTransactions } = require("../middleware/roleValidation");
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
 
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas y Semidinámicas Primero)
 // =======================================================
 
 // POST /iniciar-pago
-// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de suscripción (requiere KYC + 2FA)
+// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de suscripción
 router.post(
   "/iniciar-pago",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  blockAdminTransactions, // ✅ YA TIENE
+  checkKYCandTwoFA,
   suscripcionProyectoController.iniciarSuscripcion
 );
 
@@ -24,7 +26,8 @@ router.post(
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 DOBLE VERIFICACIÓN
+  blockAdminTransactions, // ✅ YA TIENE
+  checkKYCandTwoFA,
   suscripcionProyectoController.confirmarSuscripcionCon2FA
 );
 
@@ -50,22 +53,29 @@ router.get(
 );
 
 // DELETE /mis_suscripciones/:id
-// 🔒 OPERACIÓN SENSIBLE: Cancelar suscripción (requiere KYC + 2FA)
+// 🔒 OPERACIÓN SENSIBLE: Cancelar suscripción
 router.delete(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 PROTECCIÓN CONTRA CANCELACIONES NO AUTORIZADAS
+  checkKYCandTwoFA,
   suscripcionProyectoController.softDeleteMySubscription
 );
 
-// POST /confirmar-pago (Webhook público)
+// POST /confirmar-pago (Webhook - puede ser llamado sin autenticación desde MP)
+// ⚠️ NOTA: Si este endpoint es llamado por MercadoPago, NO debe tener authMiddleware
+// Si es llamado desde tu frontend, entonces SÍ debe estar protegido
 router.post(
   "/confirmar-pago",
+  // ⚠️ DECISIÓN: ¿Este endpoint es llamado por MercadoPago o por tu frontend?
+  // Si es por MP: NO poner middlewares de auth
+  // Si es por tu frontend: descomentar las siguientes líneas:
+  // authMiddleware.authenticate,
+  // blockAdminTransactions,
   suscripcionProyectoController.confirmarSuscripcion
 );
 
 // =======================================================
-// RUTAS PARA ADMINISTRADORES (Generales y Dinámicas al final)
+// RUTAS PARA ADMINISTRADORES
 // =======================================================
 
 // GET /metrics/morosidad (KPI 4)

@@ -62,6 +62,12 @@ const pagoController = {
    */
   async requestCheckout(req, res) {
     try {
+      if (req.user.rol === "admin") {
+        return res.status(403).json({
+          error:
+            "⛔ Los administradores no pueden realizar pagos como clientes por motivos de seguridad.",
+        });
+      }
       const pagoId = req.params.id;
       const userId = req.user.id; // 👈 VERIFICA ESTE VALOR
       console.log(
@@ -318,12 +324,10 @@ const pagoController = {
       const { mes, anio } = req.query;
 
       if (!mes || !anio || isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
-          });
+        return res.status(400).json({
+          error:
+            "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
+        });
       }
 
       const metrics = await pagoService.getMonthlyPaymentMetrics(
@@ -356,12 +360,10 @@ const pagoController = {
       const { mes, anio } = req.query;
 
       if (!mes || !anio || isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
-          });
+        return res.status(400).json({
+          error:
+            "Parámetros 'mes' (1-12) y 'anio' (YYYY) son requeridos y deben ser válidos.",
+        });
       }
 
       const metrics = await pagoService.getOnTimePaymentRate(
@@ -378,11 +380,9 @@ const pagoController = {
         "Error al obtener la tasa de pagos a tiempo:",
         error.message
       );
-      res
-        .status(500)
-        .json({
-          error: "Error interno al procesar la tasa de pagos a tiempo.",
-        });
+      res.status(500).json({
+        error: "Error interno al procesar la tasa de pagos a tiempo.",
+      });
     }
   },
 };

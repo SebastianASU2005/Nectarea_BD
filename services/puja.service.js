@@ -29,6 +29,12 @@ const pujaService = {
    */
   async create(data) {
     const { id_usuario, id_lote, monto_puja } = data;
+    const usuario = await require("./usuario.service").findById(id_usuario);
+    if (usuario && usuario.rol === "admin") {
+      throw new Error(
+        "⛔ Los administradores no pueden participar en subastas como clientes."
+      );
+    }
     const t = await sequelize.transaction(); // Inicia la transacción.
 
     try {

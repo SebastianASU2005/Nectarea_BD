@@ -3,14 +3,13 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/auth.middleware");
-const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
+const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
 
-// --- Controladores ---
 const contratoPlantillaController = require("../controllers/contratoPlantilla.controller");
 const contratoFirmaController = require("../controllers/contratoFirmado.controller");
 const contratoGeneralController = require("../controllers/contratoGeneral.controller");
 
-// --- Middlewares ---
 const {
   uploadSignedContract,
   uploadPlantilla,
@@ -20,8 +19,6 @@ const {
 // 1. RUTAS DE GESTIÓN DE PLANTILLAS (ADMINISTRACIÓN)
 // ===============================================
 
-// POST /api/contratos/plantillas/upload
-// Sube un nuevo archivo PDF y crea una nueva Plantilla (Solo Admin)
 router.post(
   "/plantillas/upload",
   authMiddleware.authenticate,
@@ -30,8 +27,6 @@ router.post(
   contratoPlantillaController.createPlantilla
 );
 
-// POST /api/contratos/plantillas/update-pdf/:id
-// Actualiza el archivo PDF de una plantilla existente (Solo Admin)
 router.post(
   "/plantillas/update-pdf/:id",
   authMiddleware.authenticate,
@@ -40,8 +35,6 @@ router.post(
   contratoPlantillaController.updatePlantillaPdf
 );
 
-// PUT /api/contratos/plantillas/soft-delete/:id
-// Borrado lógico de una plantilla (Solo Admin)
 router.put(
   "/plantillas/soft-delete/:id",
   authMiddleware.authenticate,
@@ -49,8 +42,6 @@ router.put(
   contratoPlantillaController.softDeletePlantilla
 );
 
-// GET /api/contratos/plantillas/all
-// Lista TODAS las plantillas (activas e inactivas) (Solo Admin)
 router.get(
   "/plantillas/all",
   authMiddleware.authenticate,
@@ -58,8 +49,6 @@ router.get(
   contratoPlantillaController.findAllPlantillas
 );
 
-// GET /api/contratos/plantillas/unassociated
-// Lista plantillas activas sin proyecto asignado (Solo Admin)
 router.get(
   "/plantillas/unassociated",
   authMiddleware.authenticate,
@@ -67,23 +56,18 @@ router.get(
   contratoPlantillaController.findUnassociatedPlantillas
 );
 
-// GET /api/contratos/plantilla/:idProyecto/:version
-// Obtener una plantilla específica con verificación de integridad (Usuario/Admin)
 router.get(
   "/plantilla/:idProyecto/:version",
   authMiddleware.authenticate,
   contratoPlantillaController.getPlantillaByProjectVersion
 );
 
-// GET /api/contratos/plantillas/project/:idProyecto
-// Lista todas las versiones de plantillas para un proyecto (Usuario/Admin)
 router.get(
   "/plantillas/project/:idProyecto",
   authMiddleware.authenticate,
   contratoPlantillaController.findPlantillasByProject
 );
 
-// GET /api/contratos/plantillas/:idProyecto (Por compatibilidad)
 router.get(
   "/plantillas/:idProyecto",
   authMiddleware.authenticate,
@@ -95,21 +79,20 @@ router.get(
 // ===============================================
 
 // POST /api/contratos/firmar
-// 🔒 OPERACIÓN CRÍTICA: Requiere KYC aprobado + 2FA activo
+// 🔒 OPERACIÓN CRÍTICA: Requiere KYC + 2FA + NO ser admin
 router.post(
   "/firmar",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   uploadSignedContract,
   contratoFirmaController.registrarFirma
 );
 
 // ===============================================
-// 3. RUTAS DE GESTIÓN DE CONTRATOS FIRMADOS (Generales)
+// 3. RUTAS DE GESTIÓN DE CONTRATOS FIRMADOS
 // ===============================================
 
-// GET /api/contratos/
-// Ver TODOS los contratos firmados (Solo Admin)
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -117,29 +100,25 @@ router.get(
   contratoGeneralController.findAllSigned
 );
 
-// GET /api/contratos/mis_contratos
-// Ver sus propios contratos firmados
 router.get(
   "/mis_contratos",
   authMiddleware.authenticate,
   contratoGeneralController.findMyContracts
 );
 
-// GET /api/contratos/descargar/:idContratoFirmado
-// 🔒 DESCARGA SEGURA: Requiere KYC + 2FA para descargar contratos
+// GET /descargar/:idContratoFirmado
+// 🔒 DESCARGA SEGURA: Requiere KYC + 2FA (admins SÍ pueden descargar para auditoría)
 router.get(
   "/descargar/:idContratoFirmado",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 PROTECCIÓN ADICIONAL
+  checkKYCandTwoFA,
   contratoGeneralController.download
 );
 
 // ===============================================
-// 4. RUTAS DINÁMICAS GENÉRICAS (DEBEN IR AL FINAL)
+// 4. RUTAS DINÁMICAS GENÉRICAS (Van al final)
 // ===============================================
 
-// GET /api/contratos/:id
-// Obtener un registro de ContratoFirmado específico por ID
 router.get(
   "/:id",
   authMiddleware.authenticate,

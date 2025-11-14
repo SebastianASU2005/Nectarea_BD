@@ -4,18 +4,20 @@ const express = require("express");
 const router = express.Router();
 const inversionController = require("../controllers/inversion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA"); // 🔒 NUEVO
+const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
+const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
 
 // ===============================================
 // 1. RUTAS POST (Estáticas y Semi-Dinámicas)
 // ===============================================
 
 // POST /
-// 🔒 OPERACIÓN CRÍTICA: Crear inversión (requiere KYC + 2FA)
+// 🔒 OPERACIÓN CRÍTICA: Crear inversión (requiere KYC + 2FA + NO ser admin)
 router.post(
   "/",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 MIDDLEWARE DE SEGURIDAD OBLIGATORIO
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   inversionController.create
 );
 
@@ -24,16 +26,18 @@ router.post(
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 DOBLE VERIFICACIÓN
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   inversionController.confirmarInversionCon2FA
 );
 
 // POST /iniciar-pago/:idInversion
-// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de pago (requiere KYC + 2FA)
+// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de pago (requiere KYC + 2FA + NO ser admin)
 router.post(
   "/iniciar-pago/:idInversion",
   authMiddleware.authenticate,
-  checkKYCandTwoFA, // 🚨 PROTECCIÓN DE TRANSACCIÓN
+  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  checkKYCandTwoFA,
   inversionController.requestCheckoutInversion
 );
 

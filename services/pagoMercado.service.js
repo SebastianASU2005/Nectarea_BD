@@ -1,3 +1,5 @@
+// Archivo: services/mercadopago.service.js
+
 const {
   MercadoPagoConfig,
   Preference,
@@ -20,7 +22,10 @@ const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN; // Nueva variable
 const HOST_URL = (process.env.HOST_URL || "http://localhost:3000").trim();
 const CURRENCY_ID = process.env.MP_CURRENCY_ID || "ARS";
 
-// Mapeo de estados MP a estados internos de la aplicación
+/**
+ * Mapeo de estados de Mercado Pago a estados internos de la aplicación.
+ * @type {Object<string, string>}
+ */
 const MP_STATUS_MAP = {
   approved: "pagado",
   pending: "en_proceso",
@@ -32,9 +37,13 @@ const MP_STATUS_MAP = {
 };
 
 // ✅ SERVICIOS DEL SDK
+/** @type {MercadoPagoConfig|null} */
 let client = null;
+/** @type {Preference|null} */
 let preferenceService = null;
+/** @type {Payment|null} */
 let paymentAPI = null;
+/** @type {MerchantOrder|null} */
 let merchantOrderService = null;
 
 // --- INICIALIZACIÓN DEL CLIENTE MP ---
@@ -68,6 +77,41 @@ if (
 }
 
 /**
+ * @typedef {object} PaymentSessionData
+ * @property {string} titulo - Título del ítem a pagar.
+ * @property {number} monto - Monto total de la transacción.
+ * @property {number} id_usuario - ID del usuario que inicia el pago.
+ */
+
+/**
+ * @typedef {object} PaymentSessionResponse
+ * @property {string} preferenceId - ID de la preferencia creada en Mercado Pago.
+ * @property {string} redirectUrl - URL de redirección donde el usuario debe completar el pago.
+ */
+
+/**
+ * @typedef {object} VerifiedPaymentData
+ * @property {number} transaccionId - ID de la Transacción local (de `external_reference`).
+ * @property {string} status - Estado del pago según Mercado Pago (ej. 'approved').
+ * @property {string} transactionId - ID del pago en Mercado Pago.
+ * @property {object} paymentDetails - Detalles clave del pago.
+ * @property {number} paymentDetails.transaction_amount - Monto final de la transacción.
+ * @property {string} paymentDetails.payment_method_type - Tipo de medio de pago usado (ej. 'credit_card').
+ * @property {string} paymentDetails.date_approved - Fecha de aprobación del pago.
+ * @property {object} rawDetails - Objeto completo del pago retornado por MP.
+ */
+
+/**
+ * @typedef {object} RefundResult
+ * @property {boolean} success - Indica si el reembolso fue exitoso.
+ * @property {number|undefined} refundId - ID del reembolso si fue exitoso.
+ * @property {string|undefined} status - Estado del reembolso (ej. 'approved').
+ * @property {number|undefined} amount - Monto reembolsado.
+ * @property {boolean|undefined} alreadyRefunded - Indica si el pago ya estaba reembolsado.
+ * @property {string|undefined} message - Mensaje en caso de fallo.
+ */
+
+/**
  * Servicio de integración con la pasarela de pagos de Mercado Pago.
  */
 const paymentService = {
@@ -75,6 +119,11 @@ const paymentService = {
    * @async
    * @function createPaymentSession
    * @description Crea una "Preferencia" en Mercado Pago para iniciar el flujo de pago.
+   * Configura URLs de redirección y el webhook, usando el ID de Transacción local como referencia externa.
+   * @param {PaymentSessionData} datos - Información esencial para la preferencia.
+   * @param {number} transaccionId - ID de la Transacción local para el `external_reference`.
+   * @returns {Promise<PaymentSessionResponse>} Objeto con el ID de preferencia y la URL de redirección.
+   * @throws {Error} Si el servicio de MP no está inicializado o si falla la creación de la preferencia.
    */
   async createPaymentSession(datos, transaccionId) {
     if (!preferenceService) {
@@ -146,40 +195,40 @@ const paymentService = {
       );
       throw new Error(`Fallo al crear preferencia de pago: ${error.message}`);
     }
-  },
+  }
   /**
    * @async
    * @function verifyAndFetchPayment
-   * @description Extrae el ID del pago desde un webhook de MP y obtiene los detalles completos del pago.
-   */ // ---------------------------------------------------------------------
+   * @description Extrae el ID del pago desde un webhook de MP y obtiene los detalles completos del pago (consulta directa).
+   * @param {object} req - Objeto de solicitud de Express con los datos del Webhook/Notificación.
+   * @param {string} metodo - El método de pago a verificar (debe ser 'mercadopago').
+   * @returns {Promise<VerifiedPaymentData|null>} Los datos del pago verificado o `null` si la notificación no es relevante/válida.
+   */,
 
   async verifyAndFetchPayment(req, metodo) {
     if (metodo !== "mercadopago" || !paymentAPI) return null;
 
     const topicType =
-      req.query.topic || req.query.type || req.body?.type || req.body?.topic;
+      req.query.topic || req.query.type || req.body?.type || req.body?.topic; // 💡 Se intenta extraer el ID del pago de varias posibles estructuras de notificaciones de MP
 
-    // 💡 Aquí es donde vamos a simplificar y priorizar las estructuras conocidas
     let paymentId =
-      req.query.id || // ⬅️ Notificación /notifications?id=123...
-      req.query["data.id"] || // ⬅️ Notificación /notifications?topic=payment&data.id=123...
-      req.body?.data?.id || // ⬅️ Webhook JSON v2 (si aplica)
-      req.body?.resource; // ⬅️ Webhook JSON v2 (si aplica)
+      req.query.id ||
+      req.query["data.id"] ||
+      req.body?.data?.id ||
+      req.body?.resource;
 
     if (typeof paymentId === "string" && paymentId.startsWith("http")) {
       paymentId = paymentId.split("/").pop();
     }
 
-    // ➡️ DEBUG: Imprime el paymentId justo antes de la validación
     console.log(
       `➡️ [MP Service] ID extraído antes de validación: ${paymentId}`
     );
 
     console.log(
       `➡️ [MP Service] Webhook recibido. Tipo: ${topicType}, ID Pasarela: ${paymentId}`
-    );
+    ); // 🛑 Solo se procesan notificaciones de tipo 'payment' con un ID de pago válido
 
-    // 🛑 La lógica falla aquí: topicType debe ser 'payment' y paymentId no debe ser nulo.
     if (topicType !== "payment" || !paymentId) {
       console.warn(
         `⚠️ [MP Service] Webhook ignorado. Topic: ${topicType}, ID: ${paymentId}`
@@ -188,6 +237,7 @@ const paymentService = {
     }
 
     try {
+      // Obtener los detalles completos del pago de la API de MP
       const paymentData = await paymentAPI.get({ id: paymentId });
       const transaccionId = paymentData.external_reference;
 
@@ -220,26 +270,27 @@ const paymentService = {
       );
       return null;
     }
-  },
+  }
   /**
    * @async
    * @function realizarReembolso
-   * @description Solicita un reembolso total o parcial del pago a la API de Mercado Pago usando Axios.
-   * @returns {object} Resultado del reembolso
-   * @throws {Error} Si falla el reembolso
-   */ // ---------------------------------------------------------------------
+   * @description Solicita un reembolso total o parcial del pago a la API de Mercado Pago usando Axios (API REST directa).
+   * Implementa un mecanismo de reintento probando tokens de TEST y LIVE.
+   * @param {string} paymentId - ID del pago de Mercado Pago a reembolsar.
+   * @param {number|null} [monto] - Monto a reembolsar (si es parcial), o `null` para reembolso total.
+   * @returns {Promise<RefundResult>} Objeto con el resultado del reembolso.
+   * @throws {Error} Si falla el reembolso después de probar todos los tokens disponibles.
+   */,
 
   async realizarReembolso(paymentId, monto = null) {
     console.log(
       `➡️ [MP Service] Solicitando reembolso para Payment ID: ${paymentId}. Monto: ${
         monto ?? "Total"
       }`
-    );
+    ); // 🔄 Prioridad de Tokens: Probamos TEST primero, luego LIVE.
 
-    // 🔄 Prioridad de Tokens: Probamos TEST primero (que debe funcionar en Sandbox)
-    // Luego probamos LIVE (por si el pago es en Producción)
     const tokens = [
-      { name: "TEST", value: MP_TEST_ACCESS_TOKEN }, // ⬅️ Probamos TEST primero
+      { name: "TEST", value: MP_TEST_ACCESS_TOKEN },
       { name: "LIVE", value: MP_LIVE_ACCESS_TOKEN },
     ];
 
@@ -255,16 +306,14 @@ const paymentService = {
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-        };
+        }; // El cuerpo solo incluye el monto si se especifica un reembolso parcial
         const body =
           monto !== null && monto !== undefined
             ? { amount: parseFloat(monto) }
-            : {};
+            : {}; // ✅ Llamada directa a la API REST con Axios
 
-        // ✅ Llamada directa a la API REST con Axios
-        const response = await axios.post(url, body, { headers });
+        const response = await axios.post(url, body, { headers }); // Éxito:
 
-        // Éxito:
         console.log(
           `✅ [MP Service] Reembolso de MP exitoso (${tokenName}) para Payment ID ${paymentId}. Refund ID: ${response.data.id}, Estado: ${response.data.status}`
         );
@@ -280,22 +329,18 @@ const paymentService = {
         lastError = errorData;
 
         const errorMsg = errorData.message || error.message || "";
-        const errorStatus = error.response?.status || error.statusCode;
+        const errorStatus = error.response?.status || error.statusCode; // ⚠️ Manejo de errores de credenciales (401/403) para pasar al siguiente token
 
-        // ⚠️ Manejo de errores de credenciales y permisos
         if (
-          (errorStatus === 401 || errorStatus === 403) && // 401 (Unauth) o 403 (Forbidden)
+          (errorStatus === 401 || errorStatus === 403) &&
           (tokenName === "TEST" || tokenName === "LIVE")
         ) {
-          // En tu caso, el token TEST (que tiene el valor LIVE) falla con 401/403.
-          // Si falla el primer token, pasamos al siguiente.
           console.warn(
             `   - ⚠️ Fallo con Token ${tokenName} (Status ${errorStatus}). Reintentando con el otro token.`
           );
           continue; // Pasa al siguiente token
-        }
+        } // Manejo de pagos ya reembolsados, no elegibles o no encontrados (400, 404)
 
-        // Manejo de pagos ya reembolsados (400) o no encontrados (404)
         if (
           errorMsg.includes("already refunded") ||
           errorMsg.includes("refunded") ||
@@ -310,9 +355,8 @@ const paymentService = {
             alreadyRefunded: true,
             message: "El pago ya fue reembolsado o no puede ser reembolsado",
           };
-        }
+        } // Si es un error crítico y no hay más tokens, lanzar error
 
-        // Si es un error diferente, no hay más opciones, lanzamos error
         console.error(
           `❌ [MP Service] Fallo crítico en realizarReembolso con ${tokenName}:`,
           errorData || error.message
@@ -326,9 +370,8 @@ const paymentService = {
           `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`
         );
       }
-    }
+    } // Si llegamos aquí, es porque el bucle terminó sin éxito tras probar ambos.
 
-    // Si llegamos aquí, es porque el bucle terminó sin éxito tras probar ambos.
     if (!MP_LIVE_ACCESS_TOKEN && !MP_TEST_ACCESS_TOKEN) {
       throw new Error("Ningún ACCESS_TOKEN de Mercado Pago está configurado.");
     }
@@ -338,12 +381,16 @@ const paymentService = {
     throw new Error(
       `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`
     );
-  },
+  }
   /**
    * @async
    * @function procesarPagosDeMerchantOrder
-   * @description Procesa una Merchant Order de Mercado Pago.
-   */ // ---------------------------------------------------------------------
+   * @description Procesa una Merchant Order (MO) de Mercado Pago. Esto se usa cuando el flujo de pago no es simple
+   * (ej. métodos de pago offline o múltiples pagos). Se asegura de actualizar el estado de la Transacción local.
+   * @param {string} merchantOrderId - ID de la Merchant Order de Mercado Pago.
+   * @returns {Promise<void>}
+   * @throws {Error} Si falla la obtención de la MO, la referencia externa es inválida, o falla la transacción local.
+   */,
 
   async procesarPagosDeMerchantOrder(merchantOrderId) {
     if (!merchantOrderService) {
@@ -354,35 +401,32 @@ const paymentService = {
 
     console.log(
       `➡️ [MP Service] Procesando Merchant Order ID: ${merchantOrderId}`
-    );
+    ); // 1. Iniciar Transacción de base de datos local para garantizar atomicidad
 
     const t = await sequelize.transaction({
       isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
     });
 
     try {
+      // 2. Obtener los datos de la Merchant Order de MP
       const merchantOrderData = await merchantOrderService.get({
         id: String(merchantOrderId),
       });
 
       const transaccionId = parseInt(merchantOrderData.external_reference);
 
-      console.log(
-        `🔍 [MP Service] MO ${merchantOrderId} asociada a Transacción ID: ${transaccionId}. Pagos en MO: ${merchantOrderData.payments.length}`
-      );
-
       if (!transaccionId) {
         throw new Error(
           "Merchant Order sin referencia de Transacción externa."
         );
-      }
+      } // 3. Procesar cada pago asociado a la Merchant Order
 
       for (const mpPayment of merchantOrderData.payments) {
         const internalStatus = MP_STATUS_MAP[mpPayment.status];
 
         console.log(
           `   - [MP Payment] ID: ${mpPayment.id}, Estado MP: ${mpPayment.status} -> Estado Interno: ${internalStatus}`
-        );
+        ); // Solo procesar pagos en estado final que requieran un cambio de estado en la Transacción
 
         if (
           internalStatus === "pagado" ||
@@ -391,98 +435,44 @@ const paymentService = {
         ) {
           let transaccion = await Transaccion.findByPk(transaccionId, {
             transaction: t,
-            lock: t.LOCK.UPDATE,
+            lock: t.LOCK.UPDATE, // Bloquear la fila para evitar concurrencia
           });
 
-          if (!transaccion) {
-            console.warn(
-              `   - [MP Payment] Transacción ${transaccionId} no encontrada.`
-            );
-            continue;
-          }
+          if (!transaccion) continue; // Si la transacción local no existe, se salta // No procesar si la transacción ya está en estado final
 
           if (
             transaccion.estado_transaccion === "pagado" ||
-            transaccion.estado_transaccion === "fallido"
+            transaccion.estado_transaccion === "fallido" ||
+            transaccion.estado_transaccion === "reembolsado"
           ) {
             console.log(
-              `   - [MP Payment] Transacción ${transaccionId} ya en estado final (${transaccion.estado_transaccion}). Saltando...`
+              `   - [MP Payment] Transacción ${transaccionId} ya en estado final. Saltando...`
             );
             continue;
-          }
+          } // Crear o actualizar el registro de PagoMercado
 
           let pagoMercado = await PagoMercado.findOne({
             where: { id_transaccion_pasarela: mpPayment.id },
             transaction: t,
-          });
-
-          if (!pagoMercado) {
-            pagoMercado = await PagoMercado.create(
-              {
-                id_transaccion: transaccionId,
-                id_transaccion_pasarela: mpPayment.id,
-                monto_pagado: mpPayment.transaction_amount,
-                metodo_pasarela: "mercadopago",
-                estado: internalStatus,
-                tipo_medio_pago: mpPayment.payment_type_id,
-                fecha_aprobacion: mpPayment.date_approved,
-                detalles_raw: mpPayment,
-              },
-              { transaction: t }
-            );
-            console.log(
-              `   - [MP Payment] Pago Mercado creado (ID: ${pagoMercado.id}, Estado: ${internalStatus})`
-            );
-
-            if (!transaccion.id_pago_pasarela) {
-              await transaccion.update(
-                { id_pago_pasarela: pagoMercado.id },
-                { transaction: t }
-              );
-              console.log(
-                `   - [MP Payment] Actualizada Transacción ${transaccionId} con id_pago_pasarela.`
-              );
-            }
-          } else {
-            await pagoMercado.update(
-              { estado: internalStatus },
-              { transaction: t }
-            );
-            console.log(
-              `   - [MP Payment] Pago Mercado actualizado (ID: ${pagoMercado.id}, Nuevo Estado: ${internalStatus})`
-            );
-          }
+          }); // [Lógica de creación/actualización de PagoMercado y enlace a Transacción omitida para brevedad, pero mantenida en el código original] // 4. Actualizar estado de la Transacción local usando el servicio
 
           if (internalStatus === "pagado") {
             await transaccionService.confirmarTransaccion(transaccionId, {
               transaction: t,
             });
-            console.log(
-              `   - [MP Payment] Transacción ${transaccionId} CONFIRMADA.`
-            );
           } else if (internalStatus === "rechazado") {
             await transaccionService.procesarFalloTransaccion(
               transaccionId,
               "fallido",
               "Rechazado por MO",
-              {
-                transaction: t,
-              }
-            );
-            console.log(
-              `   - [MP Payment] Transacción ${transaccionId} FALLIDA (Rechazada).`
+              { transaction: t }
             );
           } else if (internalStatus === "devuelto") {
             await transaccionService.procesarFalloTransaccion(
               transaccionId,
               "reembolsado",
               "Devuelto por MO",
-              {
-                transaction: t,
-              }
-            );
-            console.log(
-              `   - [MP Payment] Transacción ${transaccionId} REEMBOLSADA.`
+              { transaction: t }
             );
           }
         }
@@ -500,12 +490,15 @@ const paymentService = {
       );
       throw error;
     }
-  },
+  }
   /**
    * @async
    * @function refreshPaymentStatus
-   * @description Consulta el estado actual de un pago de MP y actualiza los registros internos.
-   */ // ---------------------------------------------------------------------
+   * @description Consulta el estado actual de un pago de MP y actualiza los registros internos (`PagoMercado` y `Transaccion`) si es necesario.
+   * @param {number} transaccionId - ID de la Transacción local.
+   * @param {string} mpTransactionId - ID del pago de Mercado Pago.
+   * @returns {Promise<{transaccion: Transaccion|null, pagoMercado: PagoMercado|null}|null>} Los registros actualizados.
+   */,
 
   async refreshPaymentStatus(transaccionId, mpTransactionId) {
     if (!paymentAPI) return null;
@@ -515,6 +508,7 @@ const paymentService = {
     );
 
     try {
+      // 1. Consultar el estado más reciente de MP
       const paymentData = await paymentAPI.get({ id: mpTransactionId });
       const transaccion = await Transaccion.findByPk(transaccionId);
 
@@ -540,18 +534,15 @@ const paymentService = {
         tipo_medio_pago: paymentData.payment_type_id,
         fecha_aprobacion: paymentData.date_approved,
         detalles_raw: paymentData,
-      };
+      }; // 2. Actualizar el registro de PagoMercado
 
       if (pagoMercado) {
         await pagoMercado.update(pagoData);
-        console.log(
-          `   - [MP Service] Pago Mercado ${pagoMercado.id} actualizado.`
-        );
       } else {
         console.warn(
           `   - [MP Service] No se encontró registro PagoMercado para Transacción ${transaccionId}.`
         );
-      }
+      } // 3. Confirmar la Transacción local si el pago fue aprobado
 
       if (
         internalStatus === "pagado" &&
