@@ -48,6 +48,7 @@ router.post(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
+  imageUpload.uploadImage,
   imagenController.create
 );
 
