@@ -1,4 +1,4 @@
-// Importar los modelos necesarios (se mantienen)
+
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Pago = require("../models/Pago");

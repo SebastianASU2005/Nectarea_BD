@@ -9,7 +9,7 @@ const Usuario = sequelize.define(
     activo: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: false, // La cuenta inicia inactiva hasta confirmar email
+      defaultValue: false,
     },
     nombre: {
       type: DataTypes.STRING(100),
@@ -64,6 +64,12 @@ const Usuario = sequelize.define(
       allowNull: true,
       comment:
         "Clave secreta para la generación de códigos TOTP (Google Authenticator)",
+    },
+    // 🆕 NUEVO CAMPO: Última verificación 2FA exitosa
+    last_2fa_verification: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: "Fecha y hora de la última verificación 2FA exitosa en el login",
     },
     reset_password_token: {
       type: DataTypes.STRING(255),
