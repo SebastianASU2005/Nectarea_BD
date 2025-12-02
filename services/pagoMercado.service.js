@@ -132,29 +132,49 @@ const paymentService = {
       );
     }
 
-    const { titulo, monto, id_usuario } = datos;
+    const {
+      titulo,
+      monto, // Ya viene validado como número desde _construirDatosPreferencia
+      id_usuario,
+      nombre_usuario,
+      apellido_usuario,
+      email_usuario,
+      telefono,
+      documento,
+      tipo_transaccion,
+      id_proyecto,
+    } = datos;
 
     try {
-      // 🚨 MODIFICACIÓN CLAVE: Lógica para la URL del Webhook
-      // Asume que si NODE_ENV no es 'production', debe usar la URL de prueba.
       const isDevOrTest = process.env.NODE_ENV !== "production";
-
-      const webhookPath = isDevOrTest
-        ? "/api/payment/webhook/mercadopago" // ⬅️ CAMBIA ESTA URL a tu endpoint de prueba
-        : "/api/payment/webhook/mercadopago"; // ⬅️ Deja esta para producción
+      const webhookPath = "/api/payment/webhook/mercadopago";
       const webhookUrl = `${HOST_URL}${webhookPath}`;
 
       console.log(
         `➡️ [MP Service] Creando preferencia para Transacción ID: ${transaccionId}. Webhook: ${webhookUrl}`
       );
 
+      // ✅ Validación final por seguridad
+      if (!monto || isNaN(monto) || monto <= 0) {
+        throw new Error(
+          `Monto inválido recibido: ${monto} (tipo: ${typeof monto})`
+        );
+      }
+
+      console.log(`💰 Monto a procesar: ${monto} ${CURRENCY_ID}`);
+
       const preferenceBody = {
         items: [
           {
             title: titulo,
-            unit_price: parseFloat(monto),
+            unit_price: monto, // Ya es número
             quantity: 1,
             currency_id: CURRENCY_ID,
+            description: this._generarDescripcionDetallada(
+              datos,
+              transaccionId
+            ),
+            picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
           },
         ],
         external_reference: String(transaccionId),
@@ -163,11 +183,66 @@ const paymentService = {
           failure: `${HOST_URL}/pago/fallo/${transaccionId}`,
           pending: `${HOST_URL}/pago/pendiente/${transaccionId}`,
         },
-        notification_url: webhookUrl, // ⬅️ URL DINÁMICA
+        notification_url: webhookUrl,
         auto_return: "approved",
-        statement_descriptor: "PLATAFORMA_INV",
+        statement_descriptor: "LOTEPLAN",
+
+        additional_info: {
+          items: [
+            {
+              id: String(transaccionId),
+              title: titulo,
+              description: this._generarDescripcionDetallada(
+                datos,
+                transaccionId
+              ),
+              picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
+              category_id: "services",
+              quantity: 1,
+              unit_price: monto,
+            },
+          ],
+          payer: {
+            first_name: nombre_usuario || undefined,
+            last_name: apellido_usuario || undefined,
+            phone: telefono
+              ? {
+                  area_code: telefono.substring(0, 4) || undefined,
+                  number: telefono.substring(4) || undefined,
+                }
+              : undefined,
+          },
+        },
+
+        metadata: {
+          transaccion_id: transaccionId,
+          tipo_transaccion: tipo_transaccion || "pago",
+          plataforma: "Loteplan",
+          fecha_creacion: new Date().toISOString(),
+          proyecto_id: id_proyecto || undefined,
+        },
+
+        payment_methods: {
+          installments: 12,
+        },
+
         payer: {
           id: String(id_usuario),
+          name: nombre_usuario || undefined,
+          surname: apellido_usuario || undefined,
+          email: email_usuario || undefined,
+          phone: telefono
+            ? {
+                area_code: telefono.substring(0, 4) || undefined,
+                number: telefono.substring(4) || undefined,
+              }
+            : undefined,
+          identification: documento
+            ? {
+                type: "DNI",
+                number: String(documento), // ✅ Asegurar que sea string
+              }
+            : undefined,
         },
       };
 
@@ -193,9 +268,16 @@ const paymentService = {
         "❌ [MP Service] Error al crear preferencia en MP:",
         error.message
       );
+      // ✅ Agregar más detalles del error
+      console.error("Datos recibidos:", {
+        monto,
+        titulo,
+        id_usuario,
+        tipo_transaccion,
+      });
       throw new Error(`Fallo al crear preferencia de pago: ${error.message}`);
     }
-  }
+  },
   /**
    * @async
    * @function verifyAndFetchPayment
@@ -203,9 +285,7 @@ const paymentService = {
    * @param {object} req - Objeto de solicitud de Express con los datos del Webhook/Notificación.
    * @param {string} metodo - El método de pago a verificar (debe ser 'mercadopago').
    * @returns {Promise<VerifiedPaymentData|null>} Los datos del pago verificado o `null` si la notificación no es relevante/válida.
-   */,
-
-  async verifyAndFetchPayment(req, metodo) {
+   */ async verifyAndFetchPayment(req, metodo) {
     if (metodo !== "mercadopago" || !paymentAPI) return null;
 
     const topicType =
@@ -270,7 +350,7 @@ const paymentService = {
       );
       return null;
     }
-  }
+  },
   /**
    * @async
    * @function realizarReembolso
@@ -280,9 +360,7 @@ const paymentService = {
    * @param {number|null} [monto] - Monto a reembolsar (si es parcial), o `null` para reembolso total.
    * @returns {Promise<RefundResult>} Objeto con el resultado del reembolso.
    * @throws {Error} Si falla el reembolso después de probar todos los tokens disponibles.
-   */,
-
-  async realizarReembolso(paymentId, monto = null) {
+   */ async realizarReembolso(paymentId, monto = null) {
     console.log(
       `➡️ [MP Service] Solicitando reembolso para Payment ID: ${paymentId}. Monto: ${
         monto ?? "Total"
@@ -381,7 +459,7 @@ const paymentService = {
     throw new Error(
       `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`
     );
-  }
+  },
   /**
    * @async
    * @function procesarPagosDeMerchantOrder
@@ -390,9 +468,7 @@ const paymentService = {
    * @param {string} merchantOrderId - ID de la Merchant Order de Mercado Pago.
    * @returns {Promise<void>}
    * @throws {Error} Si falla la obtención de la MO, la referencia externa es inválida, o falla la transacción local.
-   */,
-
-  async procesarPagosDeMerchantOrder(merchantOrderId) {
+   */ async procesarPagosDeMerchantOrder(merchantOrderId) {
     if (!merchantOrderService) {
       throw new Error(
         "El servicio de MerchantOrder no está inicializado. Revise MP_ACCESS_TOKEN."
@@ -490,7 +566,45 @@ const paymentService = {
       );
       throw error;
     }
-  }
+  },
+  /**
+   * @private
+   * @function _generarDescripcionDetallada
+   * @description Genera una descripción detallada para el recibo de pago
+   * @param {PaymentSessionData} datos - Datos de la sesión de pago
+   * @param {number} transaccionId - ID de la transacción
+   * @returns {string} Descripción formateada
+   */
+  _generarDescripcionDetallada(datos, transaccionId) {
+    const fecha = new Date().toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+    let descripcion = `${datos.titulo || "Transacción"} | `;
+    descripcion += `ID: #${transaccionId} | `;
+    descripcion += `Fecha: ${fecha}`;
+
+    // Agrega información adicional según el tipo
+    if (datos.id_proyecto) {
+      descripcion += ` | Proyecto ID: ${datos.id_proyecto}`;
+    }
+
+    if (datos.tipo_transaccion) {
+      const tipoLegible = {
+        directo: "Inversión Directa",
+        Puja: "Puja",
+        mensual: "Pago Mensual",
+        pago_suscripcion_inicial: "Suscripción Inicial",
+      };
+      descripcion += ` | Tipo: ${
+        tipoLegible[datos.tipo_transaccion] || datos.tipo_transaccion
+      }`;
+    }
+
+    return descripcion;
+  },
   /**
    * @async
    * @function refreshPaymentStatus
@@ -498,9 +612,7 @@ const paymentService = {
    * @param {number} transaccionId - ID de la Transacción local.
    * @param {string} mpTransactionId - ID del pago de Mercado Pago.
    * @returns {Promise<{transaccion: Transaccion|null, pagoMercado: PagoMercado|null}|null>} Los registros actualizados.
-   */,
-
-  async refreshPaymentStatus(transaccionId, mpTransactionId) {
+   */ async refreshPaymentStatus(transaccionId, mpTransactionId) {
     if (!paymentAPI) return null;
 
     console.log(

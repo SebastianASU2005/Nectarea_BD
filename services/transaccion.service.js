@@ -545,7 +545,15 @@ const transaccionService = {
       throw new Error("Solo mercadopago está soportado actualmente");
     }
 
-    const datosPreferencia = this._construirDatosPreferencia(transaccion);
+    // ✅ CRÍTICO: Construir datos de preferencia ANTES de llamar al servicio
+    const datosPreferencia = await this._construirDatosPreferencia(transaccion);
+
+    // ✅ Log para depuración
+    console.log("📋 Datos de preferencia construidos:", {
+      monto: datosPreferencia.monto,
+      titulo: datosPreferencia.titulo,
+      id_usuario: datosPreferencia.id_usuario,
+    });
 
     return await paymentService.createPaymentSession(
       datosPreferencia,
@@ -553,7 +561,7 @@ const transaccionService = {
     );
   },
 
-  _construirDatosPreferencia(transaccion) {
+  async _construirDatosPreferencia(transaccion) {
     const { tipo_transaccion, id } = transaccion;
 
     let titulo = "";
@@ -574,13 +582,54 @@ const transaccionService = {
         titulo = `Transacción #${id}`;
     }
 
-    return {
+    // ✅ CRÍTICO: Validar que transaccion.monto existe
+    if (!transaccion.monto) {
+      throw new Error(`Transacción ${id} no tiene monto definido`);
+    }
+
+    // ✅ Convertir monto a número inmediatamente
+    const montoNumerico = parseFloat(transaccion.monto);
+
+    if (isNaN(montoNumerico) || montoNumerico <= 0) {
+      throw new Error(
+        `Monto inválido en transacción ${id}: ${transaccion.monto}`
+      );
+    }
+
+    // Obtener datos del usuario
+    const User = require("../models/usuario");
+    const usuario = await User.findByPk(transaccion.id_usuario, {
+      attributes: ["nombre", "apellido", "email", "numero_telefono", "dni"],
+    });
+
+    if (!usuario) {
+      console.warn(
+        `⚠️ Usuario ${transaccion.id_usuario} no encontrado, continuando sin datos personales`
+      );
+    }
+
+    const datosPreferencia = {
       id: id,
       id_usuario: transaccion.id_usuario,
-      monto: transaccion.monto,
+      monto: montoNumerico, // ✅ Ya es número
       id_proyecto: transaccion.id_proyecto,
       titulo: titulo,
+      tipo_transaccion: tipo_transaccion,
+      nombre_usuario: usuario?.nombre,
+      apellido_usuario: usuario?.apellido,
+      email_usuario: usuario?.email,
+      telefono: usuario?.numero_telefono,
+      documento: usuario?.dni,
     };
+
+    // ✅ Log para verificar que todo está correcto
+    console.log("✅ Datos de preferencia construidos:", {
+      monto: datosPreferencia.monto,
+      tipo: typeof datosPreferencia.monto,
+      titulo: datosPreferencia.titulo,
+    });
+
+    return datosPreferencia;
   },
 
   _validarDatosTransaccion(data) {
