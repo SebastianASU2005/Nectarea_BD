@@ -21,9 +21,9 @@ const MP_STATUS_MAP = {
   refunded: "devuelto",
   charged_back: "devuelto",
 };
-
 /**
  * 🔑 FUNCIÓN DE VALIDACIÓN CRÍTICA DE LA FIRMA (Mercado Pago Webhook)
+ * VERSIÓN MEJORADA - Maneja correctamente payment y merchant_order
  * Utiliza la clave secreta (`MP_WEBHOOK_SECRET`), las cabeceras (`x-signature`, `x-request-id`)
  * y el ID de la data para verificar la autenticidad del webhook mediante HMAC-SHA256.
  * @param {object} req - Objeto de solicitud de Express.
@@ -34,87 +34,99 @@ function verifySignature(req) {
   const signatureHeader = req.headers["x-signature"];
   const requestId = req.headers["x-request-id"];
 
+  // ✅ EXTRAER TOPIC DE TODAS LAS FUENTES POSIBLES
+  const topic =
+    req.query.topic || req.body?.topic || req.query.type || req.body?.type;
+
   console.log("🔐 VALIDACIÓN DE FIRMA - DATOS COMPLETOS:", {
-    // Headers
     signature: signatureHeader
       ? signatureHeader.substring(0, 50) + "..."
       : "MISSING",
     requestId: requestId || "MISSING",
-
-    // Query params
-    topic: req.query.topic,
-    type: req.query.type,
+    topic: topic || "MISSING",
+    queryTopic: req.query.topic,
+    queryType: req.query.type,
+    bodyTopic: req.body?.topic,
+    bodyType: req.body?.type,
     queryId: req.query.id,
     queryDataId: req.query["data.id"],
-
-    // Body
-    bodyType: req.body?.type,
-    bodyTopic: req.body?.topic,
     bodyDataId: req.body?.data?.id,
     bodyResource: req.body?.resource,
-
-    // Config
     hasSecret: !!secret,
     secretPrefix: secret ? secret.substring(0, 10) + "..." : "MISSING",
   });
 
-  // ⚠️ Si no hay secret configurado, RECHAZA
   if (!secret) {
     console.error("❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado");
     return false;
   }
 
-  // ✅ CASO 1: Webhooks SIN firma (merchant_order, algunos eventos antiguos)
-  // Mercado Pago NO siempre envía x-signature para todos los tipos de notificación
-  if (!signatureHeader) {
-    const topic = req.query.topic || req.query.type || req.body?.type;
+  // 🚫 IGNORAR formato antiguo de merchant_order que no se valida correctamente
+  // MP envía el mismo evento con topic='topic_merchant_order_wh' que sí se valida bien
+  if (topic === "merchant_order" && signatureHeader) {
+    console.log(
+      "⚠️ Webhook merchant_order (formato antiguo) IGNORADO - MP enviará topic_merchant_order_wh"
+    );
+    return true; // Aceptamos pero será ignorado en el handler
+  }
 
-    // merchant_order y algunos eventos legacy no tienen x-signature
+  // ✅ CASO 1: Webhooks SIN firma (merchant_order legacy, algunos eventos antiguos)
+  if (!signatureHeader) {
+    // ✅ MERCHANT_ORDER: Algunos webhooks NO traen firma (comportamiento legacy)
     if (topic === "merchant_order" || topic === "order") {
-      console.log("✅ Webhook sin firma aceptado (merchant_order o legacy)");
+      console.log(
+        "⚠️ Webhook merchant_order sin firma ACEPTADO (comportamiento legacy de MP)"
+      );
       return true;
     }
 
-    // Para payment sin firma, verificamos si al menos tiene los datos básicos
+    // ✅ PAYMENT SIN FIRMA: Solo aceptar si tiene datos básicos válidos
     if (topic === "payment") {
-      const hasBasicData = !!(req.query.id || req.body?.data?.id);
+      const hasBasicData = !!(
+        req.query.id ||
+        req.body?.data?.id ||
+        req.query["data.id"]
+      );
+
       if (hasBasicData) {
         console.warn(
-          "⚠️ Payment webhook sin firma pero con datos válidos - ACEPTANDO"
+          "⚠️ Payment webhook sin firma pero con datos válidos - ACEPTANDO (entorno legacy)"
         );
         return true;
       }
     }
 
-    console.error("❌ Webhook sin firma y sin tipo reconocido");
+    console.error(
+      "❌ Webhook sin firma y sin tipo reconocido o datos válidos",
+      {
+        topic,
+        hasQueryId: !!req.query.id,
+        hasBodyDataId: !!req.body?.data?.id,
+      }
+    );
     return false;
   }
 
-  // ✅ CASO 2: Webhooks CON firma (payment v1)
+  // ✅ CASO 2: Webhooks CON firma
   if (!requestId) {
     console.error("❌ Falta x-request-id pero hay x-signature");
     return false;
   }
 
-  // Extraer dataId de múltiples fuentes posibles
-  let dataId =
-    req.query.id ||
-    req.query["data.id"] ||
-    req.body?.data?.id ||
-    req.body?.id ||
-    req.body?.resource;
-
-  // Caso de webhook `resource` que puede ser una URL
-  if (typeof dataId === "string" && dataId.startsWith("http")) {
-    dataId = dataId.split("/").pop();
-  }
+  // ✅ Extraer dataId usando la función auxiliar
+  const dataId = extractDataId(req);
 
   if (!dataId) {
-    console.error("❌ No se pudo extraer dataId");
+    console.error("❌ No se pudo extraer dataId para validar firma", {
+      topic,
+      queryId: req.query.id,
+      bodyDataId: req.body?.data?.id,
+      resource: req.body?.resource,
+    });
     return false;
   }
 
-  // Parsear `ts` (timestamp) y `v1` (hash de la firma)
+  // Parsear ts y v1 de la firma
   const parts = signatureHeader.split(",");
   let ts, v1;
 
@@ -125,15 +137,26 @@ function verifySignature(req) {
   }
 
   if (!ts || !v1) {
-    console.error("❌ No se pudo extraer ts o v1 de la firma");
+    console.error("❌ No se pudo extraer ts o v1 de la firma", {
+      signatureHeader: signatureHeader.substring(0, 100),
+    });
     return false;
   }
 
-  // Construir manifiesto EXACTO requerido por MP
-  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  // 🔥 DIFERENCIA CLAVE: El manifest varía según el tipo de webhook
+  let manifest;
 
-  // Calcular HMAC-SHA256 local
-  const crypto = require("crypto");
+  if (topic === "merchant_order" || topic === "order") {
+    // Para merchant_order: solo se usa el ID del merchant_order
+    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  } else if (topic === "payment") {
+    // Para payment: se usa el ID del payment
+    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  } else {
+    // Para otros tipos, usar el formato estándar
+    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  }
+
   const localHash = crypto
     .createHmac("sha256", secret)
     .update(manifest)
@@ -141,18 +164,70 @@ function verifySignature(req) {
 
   const isValid = localHash === v1;
 
-  console.log(isValid ? "✅ Firma válida" : "❌ Firma inválida", {
-    dataId,
-    requestId,
-    ts,
-    expected: localHash.substring(0, 20) + "...",
-    received: v1.substring(0, 20) + "...",
-  });
+  if (isValid) {
+    console.log("✅ Firma válida", {
+      topic,
+      dataId,
+      requestId,
+      ts,
+      expected: localHash.substring(0, 20) + "...",
+      received: v1.substring(0, 20) + "...",
+    });
+  } else {
+    console.error("❌ Firma inválida", {
+      topic,
+      dataId,
+      requestId,
+      ts,
+      manifest, // 🔍 Agregado para debugging
+      expected: localHash.substring(0, 20) + "...",
+      received: v1.substring(0, 20) + "...",
+    });
+  }
 
   return isValid;
 }
 
-module.exports = { verifySignature };
+/**
+ * ✅ FUNCIÓN MEJORADA: Extrae el dataId de merchant_order o payment
+ */
+function extractDataId(req) {
+  const topic =
+    req.query.topic || req.body?.topic || req.query.type || req.body?.type;
+
+  // 1. Intentar extraer de query params
+  let dataId = req.query.id || req.query["data.id"];
+
+  // 2. Intentar extraer del body
+  if (!dataId) {
+    dataId = req.body?.data?.id;
+  }
+
+  // 3. Para Merchant Orders, extraer del resource URL
+  if (!dataId && (topic === "merchant_order" || topic === "order")) {
+    const resource = req.body?.resource || req.query.resource;
+    if (resource && typeof resource === "string") {
+      // Puede venir como: "https://api.mercadolibre.com/merchant_orders/36032254645"
+      const match = resource.match(/\/merchant_orders\/(\d+)/);
+      if (match && match[1]) {
+        dataId = match[1];
+        console.log(
+          `✅ DataId de merchant_order extraído de resource URL: ${dataId}`
+        );
+      }
+    }
+  }
+
+  // 4. Para payments, limpiar si viene como URL
+  if (dataId && typeof dataId === "string" && dataId.startsWith("http")) {
+    dataId = dataId.split("/").pop();
+    console.log(`✅ DataId limpiado de URL: ${dataId}`);
+  }
+
+  return dataId;
+}
+
+module.exports = { verifySignature, extractDataId };
 
 const paymentController = {
   /**
@@ -290,6 +365,27 @@ const paymentController = {
    * @param {object} res - Objeto de respuesta de Express.
    */
   async handleWebhook(req, res) {
+    // 🕐 IGNORAR WEBHOOKS MUY ANTIGUOS (más de 8 horas)
+    const signatureHeader = req.headers["x-signature"];
+    if (signatureHeader) {
+      const tsMatch = signatureHeader.match(/ts=(\d+)/);
+      if (tsMatch && tsMatch[1]) {
+        const ts = parseInt(tsMatch[1]);
+        const webhookAgeSeconds = Date.now() / 1000 - ts;
+        const webhookAgeHours = webhookAgeSeconds / 3600;
+
+        if (webhookAgeSeconds > 28800) {
+          // 8 horas = 28800 segundos
+          console.log(
+            `⏱️ Webhook muy antiguo (${webhookAgeHours.toFixed(
+              1
+            )} horas). Ignorando para evitar procesamiento duplicado.`
+          );
+          return res.status(200).send("OK - Webhook antiguo ignorado");
+        }
+      }
+    }
+
     // ⚠️ VALIDACIÓN CRÍTICA DE LA FIRMA
     const isValid = verifySignature(req);
 
@@ -300,6 +396,11 @@ const paymentController = {
 
     console.log("✅ Firma válida - Procesando webhook");
 
+    // ✅ EXTRAER TOPIC E ID AQUÍ (después de validar firma)
+    const topic =
+      req.query.topic || req.body?.topic || req.query.type || req.body?.type;
+    const id = req.query.id || req.query["data.id"] || req.body?.data?.id;
+
     const { metodo } = req.params;
     let transaccionId = null; // Variable para rastrear la ID en caso de error
 
@@ -307,15 +408,20 @@ const paymentController = {
     let transaccion = null;
     let pagoMercado = null;
 
-    const { topic, id } = req.query;
+    // 🚫 IGNORAR el formato antiguo de merchant_order (MP envía duplicados)
+    if (topic === "merchant_order") {
+      console.log(
+        `⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`
+      );
+      return res.status(200).send("OK - Formato antiguo ignorado");
+    }
 
-    // Flujo para `merchant_order` (usado para pagos con múltiples ítems o transacciones)
-    if (topic === "merchant_order" && id) {
+    // Flujo para `topic_merchant_order_wh` (formato nuevo)
+    if (topic === "topic_merchant_order_wh" && id) {
       try {
         console.log(
-          `🔄 Merchant Order ${id} recibida. Buscando pagos asociados...`
+          `🔄 Merchant Order ${id} recibida (formato nuevo). Buscando pagos asociados...`
         );
-        // El servicio se encarga de buscar y procesar todos los pagos dentro de esta MO
         await pagoMercadoService.procesarPagosDeMerchantOrder(id);
         console.log(
           `✅ Merchant Order ${id} procesada. Pagos internos actualizados.`
@@ -325,12 +431,11 @@ const paymentController = {
         console.error(
           `❌ Error al procesar Merchant Order ${id}: ${error.message}`
         );
-        // Se retorna 200 OK para evitar que MP reenvíe, pero se registra el error
         return res.status(200).send("OK - Error en procesamiento de MO");
       }
     }
 
-    // Si no es `merchant_order`, se asume un flujo de `payment` individual
+    // Si no es merchant_order, se asume un flujo de `payment` individual
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
       metodo
@@ -550,7 +655,6 @@ const paymentController = {
                     }
                   }
                 }
-                // ❌ SE ELIMINA LA LÓGICA DE mensajeService.crear() AQUÍ
               } catch (adminError) {
                 console.error(
                   `Error al notificar a administradores: ${adminError.message}`
@@ -565,9 +669,6 @@ const paymentController = {
             console.warn(
               `⚠️ NO se pudo realizar el reembolso automático para Transacción ${transaccionId}. Faltan datos de pago de MP.`
             );
-
-            // Notificar a admins sobre este caso crítico
-            // ❌ SE ELIMINA LA LÓGICA DE mensajeService.crear() AQUÍ
           }
         } catch (reembolsoError) {
           console.error(
@@ -609,7 +710,6 @@ const paymentController = {
       return res.status(500).send("Error interno");
     }
   },
-
   /**
    * @async
    * @function iniciarPagoPorModelo

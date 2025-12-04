@@ -682,35 +682,265 @@ const transaccionService = {
     });
   },
 
+  // =========================================================================
+  // FUNCIONES DE ACCESO BÁSICO (ACTUALIZADAS CON INCLUDES)
+  // =========================================================================
+  async findAll() {
+    try {
+      const Usuario = require("../models/usuario");
+      const Proyecto = require("../models/proyecto");
+      const Inversion = require("../models/inversion");
+      const Pago = require("../models/Pago");
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+      const Puja = require("../models/puja");
+      const PagoMercado = require("../models/pagoMercado");
+
+      return await Transaccion.findAll({
+        include: [
+          {
+            model: Usuario,
+            as: "usuario", // ✅ Coincide con associations.js
+            attributes: ["id", "nombre", "apellido", "email", "dni"],
+          },
+          {
+            model: Proyecto,
+            as: "proyectoTransaccion", // ✅ Coincide con associations.js
+            attributes: [
+              "id",
+              "nombre_proyecto",
+              "tipo_inversion",
+              "estado_proyecto",
+              "moneda",
+            ],
+          },
+          {
+            model: Inversion,
+            as: "inversion", // ✅ Coincide con associations.js
+            attributes: ["id", "monto", "estado"],
+            required: false, // LEFT JOIN - no todas las transacciones tienen inversión
+          },
+          {
+            model: Pago,
+            as: "pagoMensual", // ✅ Coincide con associations.js
+            attributes: ["id", "monto", "estado_pago", "fecha_vencimiento"],
+            required: false,
+          },
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion", // ✅ NO ESTÁ en associations.js para Transaccion
+            attributes: [
+              "id",
+              "monto_suscripcion",
+              "estado",
+              "meses_a_pagar",
+              "meses_pagados",
+            ],
+            required: false,
+          },
+          {
+            model: Puja,
+            as: "puja", // ✅ Coincide con associations.js
+            attributes: ["id", "monto_puja", "estado"],
+            required: false,
+          },
+          {
+            model: PagoMercado,
+            as: "pagoPasarela", // ✅ Coincide con associations.js
+            attributes: [
+              "id",
+              "monto_pagado",
+              "metodo_pasarela",
+              "estado",
+              "id_transaccion_pasarela",
+            ],
+            required: false,
+          },
+        ],
+        order: [["createdAt", "DESC"]], // Más recientes primero
+      });
+    } catch (error) {
+      console.error("Error al obtener transacciones con includes:", error);
+      throw new Error("Error al obtener transacciones.");
+    }
+  },
+
   async findByUserId(userId, options = {}) {
     try {
+      const Usuario = require("../models/usuario");
+      const Proyecto = require("../models/proyecto");
+      const Inversion = require("../models/inversion");
+      const Pago = require("../models/Pago");
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+      const Puja = require("../models/puja");
+      const PagoMercado = require("../models/pagoMercado");
+
       return await Transaccion.findAll({
         where: {
           id_usuario: userId,
         },
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "nombre", "apellido", "email"],
+          },
+          {
+            model: Proyecto,
+            as: "proyectoTransaccion",
+            attributes: [
+              "id",
+              "nombre_proyecto",
+              "tipo_inversion",
+              "estado_proyecto",
+              "moneda",
+            ],
+          },
+          {
+            model: Inversion,
+            as: "inversion",
+            attributes: ["id", "monto", "estado"],
+            required: false,
+          },
+          {
+            model: Pago,
+            as: "pagoMensual",
+            attributes: ["id", "monto", "estado_pago", "fecha_vencimiento"],
+            required: false,
+          },
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+            attributes: [
+              "id",
+              "monto_suscripcion",
+              "estado",
+              "meses_a_pagar",
+              "meses_pagados",
+            ],
+            required: false,
+          },
+          {
+            model: Puja,
+            as: "puja",
+            attributes: ["id", "monto_puja", "estado"],
+            required: false,
+          },
+          {
+            model: PagoMercado,
+            as: "pagoPasarela",
+            attributes: [
+              "id",
+              "monto_pagado",
+              "metodo_pasarela",
+              "estado",
+              "id_transaccion_pasarela",
+            ],
+            required: false,
+          },
+        ],
+        order: [["createdAt", "DESC"]],
         ...options,
       });
     } catch (error) {
+      console.error("Error al obtener transacciones por usuario:", error);
       throw new Error("Error al obtener transacciones por ID de usuario.");
-    }
-  },
-
-  async findAll() {
-    try {
-      return await Transaccion.findAll();
-    } catch (error) {
-      throw new Error("Error al obtener transacciones.");
     }
   },
 
   async findById(id) {
     try {
-      return await Transaccion.findByPk(id);
+      const Usuario = require("../models/usuario");
+      const Proyecto = require("../models/proyecto");
+      const Inversion = require("../models/inversion");
+      const Pago = require("../models/Pago");
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+      const Puja = require("../models/puja");
+      const PagoMercado = require("../models/pagoMercado");
+
+      return await Transaccion.findByPk(id, {
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: [
+              "id",
+              "nombre",
+              "apellido",
+              "email",
+              "dni",
+              "numero_telefono",
+            ],
+          },
+          {
+            model: Proyecto,
+            as: "proyectoTransaccion",
+            attributes: [
+              "id",
+              "nombre_proyecto",
+              "tipo_inversion",
+              "estado_proyecto",
+              "moneda",
+              "monto_inversion",
+              "plazo_inversion",
+            ],
+          },
+          {
+            model: Inversion,
+            as: "inversion",
+            attributes: ["id", "monto", "estado", "fecha_inversion"],
+            required: false,
+          },
+          {
+            model: Pago,
+            as: "pagoMensual",
+            attributes: [
+              "id",
+              "monto",
+              "estado_pago",
+              "fecha_vencimiento",
+              "mes_numero",
+            ],
+            required: false,
+          },
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+            attributes: [
+              "id",
+              "monto_suscripcion",
+              "estado",
+              "meses_a_pagar",
+              "meses_pagados",
+              "fecha_inicio",
+            ],
+            required: false,
+          },
+          {
+            model: Puja,
+            as: "puja",
+            attributes: ["id", "monto_puja", "estado", "fecha_puja"],
+            required: false,
+          },
+          {
+            model: PagoMercado,
+            as: "pagoPasarela",
+            attributes: [
+              "id",
+              "monto_pagado",
+              "metodo_pasarela",
+              "estado",
+              "id_transaccion_pasarela",
+              "fecha_pago",
+            ],
+            required: false,
+          },
+        ],
+      });
     } catch (error) {
+      console.error("Error al buscar transacción por ID:", error);
       throw new Error("Error al buscar transacción por ID.");
     }
   },
-
   async softDelete(id) {
     try {
       const transaccion = await Transaccion.findByPk(id);
