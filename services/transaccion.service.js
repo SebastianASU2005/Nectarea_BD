@@ -682,10 +682,7 @@ const transaccionService = {
     });
   },
 
-  // =========================================================================
-  // FUNCIONES DE ACCESO BÁSICO (ACTUALIZADAS CON INCLUDES)
-  // =========================================================================
-  async findAll() {
+   async findAll() {
     try {
       const Usuario = require("../models/usuario");
       const Proyecto = require("../models/proyecto");
@@ -696,15 +693,30 @@ const transaccionService = {
       const PagoMercado = require("../models/pagoMercado");
 
       return await Transaccion.findAll({
+       attributes: [
+          "id",
+          "tipo_transaccion",
+          "monto",
+          "fecha_transaccion",
+          "id_usuario",
+          "id_proyecto",
+          "id_pago_mensual",
+          "id_pago_pasarela",
+          "id_inversion",
+          "id_puja",
+          "estado_transaccion",
+          "createdAt",
+          "updatedAt",
+        ],
         include: [
           {
             model: Usuario,
-            as: "usuario", // ✅ Coincide con associations.js
+            as: "usuario",
             attributes: ["id", "nombre", "apellido", "email", "dni"],
           },
           {
             model: Proyecto,
-            as: "proyectoTransaccion", // ✅ Coincide con associations.js
+            as: "proyectoTransaccion",
             attributes: [
               "id",
               "nombre_proyecto",
@@ -715,37 +727,53 @@ const transaccionService = {
           },
           {
             model: Inversion,
-            as: "inversion", // ✅ Coincide con associations.js
+            as: "inversion",
             attributes: ["id", "monto", "estado"],
-            required: false, // LEFT JOIN - no todas las transacciones tienen inversión
+            required: false,
           },
           {
             model: Pago,
-            as: "pagoMensual", // ✅ Coincide con associations.js
-            attributes: ["id", "monto", "estado_pago", "fecha_vencimiento"],
+            as: "pagoMensual",
+            attributes: [
+              "id",
+              "monto",
+              "estado_pago",
+              "fecha_vencimiento",
+              "id_suscripcion",
+              "id_usuario",
+              "id_proyecto",
+            ],
             required: false,
           },
           {
             model: SuscripcionProyecto,
-            as: "suscripcion", // ✅ NO ESTÁ en associations.js para Transaccion
+            as: "suscripcion",
             attributes: [
               "id",
-              "monto_suscripcion",
-              "estado",
+              "monto_total_pagado",
               "meses_a_pagar",
-              "meses_pagados",
+              "tokens_disponibles",
+              "saldo_a_favor",
+              "id_usuario",
+              "id_proyecto",
             ],
             required: false,
           },
           {
             model: Puja,
-            as: "puja", // ✅ Coincide con associations.js
-            attributes: ["id", "monto_puja", "estado"],
+            as: "puja",
+            attributes: [
+              "id",
+              "monto_puja",
+              "estado_puja",
+              "fecha_puja",
+              "id_suscripcion",
+            ],
             required: false,
           },
           {
             model: PagoMercado,
-            as: "pagoPasarela", // ✅ Coincide con associations.js
+            as: "pagoPasarela",
             attributes: [
               "id",
               "monto_pagado",
@@ -756,7 +784,7 @@ const transaccionService = {
             required: false,
           },
         ],
-        order: [["createdAt", "DESC"]], // Más recientes primero
+        order: [["createdAt", "DESC"]],
       });
     } catch (error) {
       console.error("Error al obtener transacciones con includes:", error);
@@ -778,6 +806,21 @@ const transaccionService = {
         where: {
           id_usuario: userId,
         },
+       attributes: [
+          "id",
+          "tipo_transaccion",
+          "monto",
+          "fecha_transaccion",
+          "id_usuario",
+          "id_proyecto",
+          "id_pago_mensual",
+          "id_pago_pasarela",
+          "id_inversion",
+          "id_puja",
+          "estado_transaccion",
+          "createdAt",
+          "updatedAt",
+        ],
         include: [
           {
             model: Usuario,
@@ -804,7 +847,15 @@ const transaccionService = {
           {
             model: Pago,
             as: "pagoMensual",
-            attributes: ["id", "monto", "estado_pago", "fecha_vencimiento"],
+            attributes: [
+              "id",
+              "monto",
+              "estado_pago",
+              "fecha_vencimiento",
+              "id_suscripcion",
+              "id_usuario",
+              "id_proyecto",
+            ],
             required: false,
           },
           {
@@ -812,17 +863,25 @@ const transaccionService = {
             as: "suscripcion",
             attributes: [
               "id",
-              "monto_suscripcion",
-              "estado",
+              "monto_total_pagado",
               "meses_a_pagar",
-              "meses_pagados",
+              "tokens_disponibles",
+              "saldo_a_favor",
+              "id_usuario",
+              "id_proyecto",
             ],
             required: false,
           },
           {
             model: Puja,
             as: "puja",
-            attributes: ["id", "monto_puja", "estado"],
+            attributes: [
+              "id",
+              "monto_puja",
+              "estado_puja",
+              "fecha_puja",
+              "id_suscripcion",
+            ],
             required: false,
           },
           {
@@ -858,6 +917,21 @@ const transaccionService = {
       const PagoMercado = require("../models/pagoMercado");
 
       return await Transaccion.findByPk(id, {
+        attributes: [
+          "id",
+          "tipo_transaccion",
+          "monto",
+          "fecha_transaccion",
+          "id_usuario",
+          "id_proyecto",
+          "id_pago_mensual",
+          "id_pago_pasarela",
+          "id_inversion",
+          "id_puja",
+          "estado_transaccion",
+          "createdAt",
+          "updatedAt",
+        ],
         include: [
           {
             model: Usuario,
@@ -898,7 +972,10 @@ const transaccionService = {
               "monto",
               "estado_pago",
               "fecha_vencimiento",
-              "mes_numero",
+              "mes",
+              "id_suscripcion",
+              "id_usuario",
+              "id_proyecto",
             ],
             required: false,
           },
@@ -907,18 +984,26 @@ const transaccionService = {
             as: "suscripcion",
             attributes: [
               "id",
-              "monto_suscripcion",
-              "estado",
+              "monto_total_pagado",
               "meses_a_pagar",
-              "meses_pagados",
-              "fecha_inicio",
+              "tokens_disponibles",
+              "saldo_a_favor",
+              "id_usuario",
+              "id_proyecto",
             ],
             required: false,
           },
           {
             model: Puja,
             as: "puja",
-            attributes: ["id", "monto_puja", "estado", "fecha_puja"],
+            attributes: [
+              "id",
+              "monto_puja",
+              "estado_puja",
+              "fecha_puja",
+              "fecha_vencimiento_pago",
+              "id_suscripcion",
+            ],
             required: false,
           },
           {
@@ -930,7 +1015,8 @@ const transaccionService = {
               "metodo_pasarela",
               "estado",
               "id_transaccion_pasarela",
-              "fecha_pago",
+              "tipo_medio_pago",
+              "fecha_aprobacion",
             ],
             required: false,
           },
@@ -941,6 +1027,8 @@ const transaccionService = {
       throw new Error("Error al buscar transacción por ID.");
     }
   },
+
+
   async softDelete(id) {
     try {
       const transaccion = await Transaccion.findByPk(id);
