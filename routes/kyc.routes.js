@@ -56,12 +56,36 @@ router.get(
 // RUTAS DE ADMINISTRADOR (Gestión de Verificaciones)
 // =================================================================
 
-// GET /pending
+// GET /pending - Lista verificaciones PENDIENTES
 router.get(
   "/pending",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   verificacionIdentidadController.getPendingVerifications
+);
+
+// GET /approved - Lista verificaciones APROBADAS
+router.get(
+  "/approved",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  verificacionIdentidadController.getApprovedVerifications
+);
+
+// GET /rejected - Lista verificaciones RECHAZADAS
+router.get(
+  "/rejected",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  verificacionIdentidadController.getRejectedVerifications
+);
+
+// GET /all - Lista TODAS las verificaciones (aprobadas y rechazadas)
+router.get(
+  "/all",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  verificacionIdentidadController.getAllProcessedVerifications
 );
 
 // POST /approve/:idUsuario

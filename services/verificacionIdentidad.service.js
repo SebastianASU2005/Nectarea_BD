@@ -7,14 +7,8 @@ const verificacionIdentidadService = {
    * @function submitVerificationData
    * @description Registra la solicitud inicial de verificación de identidad.
    * 🚨 REGLA DE NEGOCIO: Solo se permite UNA solicitud PENDIENTE a la vez.
-   * @param {number} id_usuario - ID del usuario.
-   * @param {object} data - Datos de la verificación.
-   * @param {object} files - Archivos subidos (Buffer de multer).
-   * @returns {Promise<VerificacionIdentidad>} El registro creado o actualizado.
-   * @throws {Error} Si ya existe una solicitud PENDIENTE o APROBADA.
    */
   async submitVerificationData(id_usuario, data, files) {
-    // 🔍 DEBUGGING: Ver qué archivos llegaron
     console.log(
       "📦 Files recibidos:",
       JSON.stringify(
@@ -32,7 +26,7 @@ const verificacionIdentidadService = {
       )
     );
 
-    // 1. 🔍 VERIFICACIÓN MEJORADA: Consultar estado actual del usuario
+    // 1. 🔍 VERIFICACIÓN: Consultar estado actual del usuario
     const registroExistente = await VerificacionIdentidad.findOne({
       where: { id_usuario },
     });
@@ -72,7 +66,6 @@ const verificacionIdentidadService = {
     }
 
     // 🎯 CASO 3: Puede enviar (primera vez o después de rechazo)
-    const esPrimeraVez = !registroExistente;
     const esReintento =
       registroExistente &&
       registroExistente.estado_verificacion === "RECHAZADA";
@@ -95,7 +88,6 @@ const verificacionIdentidadService = {
       );
     }
 
-    // Validación más detallada
     const errores = [];
 
     if (!files.documento_frente || !files.documento_frente[0]) {
@@ -123,7 +115,6 @@ const verificacionIdentidadService = {
     const timestamp = Date.now();
     const basePath = `kyc/${id_usuario}`;
 
-    // Subir documento frente
     const documentoFrenteBuffer = files.documento_frente[0].buffer;
     const documentoFrenteExt = files.documento_frente[0].mimetype.split("/")[1];
     const documentoFrentePath = `${basePath}/documento-frente-${timestamp}.${documentoFrenteExt}`;
@@ -135,7 +126,6 @@ const verificacionIdentidadService = {
         documentoFrentePath
       );
 
-    // Subir documento dorso (opcional)
     let url_foto_documento_dorso = null;
     if (files.documento_dorso && files.documento_dorso[0]) {
       const documentoDorsoBuffer = files.documento_dorso[0].buffer;
@@ -149,7 +139,6 @@ const verificacionIdentidadService = {
       );
     }
 
-    // Subir selfie
     const selfieBuffer = files.selfie_con_documento[0].buffer;
     const selfieExt = files.selfie_con_documento[0].mimetype.split("/")[1];
     const selfiePath = `${basePath}/selfie-${timestamp}.${selfieExt}`;
@@ -158,7 +147,6 @@ const verificacionIdentidadService = {
     const url_foto_selfie_con_documento =
       await localFileStorageService.uploadBuffer(selfieBuffer, selfiePath);
 
-    // Subir video (opcional)
     let url_video_verificacion = null;
     if (files.video_verificacion && files.video_verificacion[0]) {
       const videoBuffer = files.video_verificacion[0].buffer;
@@ -181,7 +169,6 @@ const verificacionIdentidadService = {
       url_foto_selfie_con_documento,
       url_video_verificacion,
       estado_verificacion: "PENDIENTE",
-      // Resetear campos de verificación
       id_verificador: null,
       fecha_verificacion: null,
       motivo_rechazo: null,
@@ -190,13 +177,11 @@ const verificacionIdentidadService = {
     let registro;
 
     if (registroExistente) {
-      // Actualizar registro rechazado
       console.log(
         `✅ Actualizando registro rechazado para usuario ${id_usuario}`
       );
       registro = await registroExistente.update(submissionData);
     } else {
-      // Crear nuevo registro
       console.log(`✅ Creando nuevo registro KYC para usuario ${id_usuario}`);
       registro = await VerificacionIdentidad.create(submissionData);
     }
@@ -285,7 +270,49 @@ const verificacionIdentidadService = {
       where: {
         estado_verificacion: "PENDIENTE",
       },
-      order: [["createdAt", "ASC"]], // Las más antiguas primero
+      order: [["createdAt", "ASC"]],
+    });
+  },
+
+  /**
+   * @async
+   * @function findApprovedVerifications
+   * @description Obtiene todas las solicitudes APROBADAS.
+   */
+  async findApprovedVerifications() {
+    return VerificacionIdentidad.findAll({
+      where: {
+        estado_verificacion: "APROBADA",
+      },
+      order: [["fecha_verificacion", "DESC"]],
+    });
+  },
+
+  /**
+   * @async
+   * @function findRejectedVerifications
+   * @description Obtiene todas las solicitudes RECHAZADAS.
+   */
+  async findRejectedVerifications() {
+    return VerificacionIdentidad.findAll({
+      where: {
+        estado_verificacion: "RECHAZADA",
+      },
+      order: [["fecha_verificacion", "DESC"]],
+    });
+  },
+
+  /**
+   * @async
+   * @function findAllProcessedVerifications
+   * @description Obtiene todas las solicitudes procesadas (APROBADAS y RECHAZADAS).
+   */
+  async findAllProcessedVerifications() {
+    return VerificacionIdentidad.findAll({
+      where: {
+        estado_verificacion: ["APROBADA", "RECHAZADA"],
+      },
+      order: [["fecha_verificacion", "DESC"]],
     });
   },
 };

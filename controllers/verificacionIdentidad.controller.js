@@ -1,6 +1,5 @@
 const verificacionIdentidadService = require("../services/verificacionIdentidad.service");
 const { getIpAddress } = require("../utils/networkUtils");
-const { formatErrorResponse } = require("../utils/responseUtils");
 
 const verificacionIdentidadController = {
   /**
@@ -22,7 +21,6 @@ const verificacionIdentidadController = {
 
       const files = req.files;
 
-      // Validación básica de campos requeridos
       if (!tipo_documento || !numero_documento || !nombre_completo) {
         return res.status(400).json({
           success: false,
@@ -45,7 +43,6 @@ const verificacionIdentidadController = {
         ip_verificacion,
       };
 
-      // El servicio maneja la subida de archivos y validaciones
       const registro =
         await verificacionIdentidadService.submitVerificationData(
           id_usuario,
@@ -67,15 +64,13 @@ const verificacionIdentidadController = {
     } catch (error) {
       console.error("Error al enviar datos de verificación:", error);
 
-      // 🎯 Intentar parsear el error como JSON estructurado
       try {
         const errorData = JSON.parse(error.message);
 
-        // Mapear tipo de error a código HTTP apropiado
         const statusCodeMap = {
-          YA_VERIFICADO: 409, // Conflict
-          SOLICITUD_PENDIENTE: 409, // Conflict
-          ARCHIVOS_FALTANTES: 400, // Bad Request
+          YA_VERIFICADO: 409,
+          SOLICITUD_PENDIENTE: 409,
+          ARCHIVOS_FALTANTES: 400,
         };
 
         const statusCode = statusCodeMap[errorData.tipo] || 400;
@@ -85,7 +80,6 @@ const verificacionIdentidadController = {
           ...errorData,
         });
       } catch (parseError) {
-        // Si no es un error estructurado, manejarlo como error genérico
         const statusCode = error.message.includes("❌") ? 400 : 500;
         return res.status(statusCode).json({
           success: false,
@@ -117,7 +111,6 @@ const verificacionIdentidadController = {
         });
       }
 
-      // Determinar si puede enviar nueva documentación
       const puede_enviar = registro.estado_verificacion === "RECHAZADA";
 
       return res.status(200).json({
@@ -230,7 +223,7 @@ const verificacionIdentidadController = {
 
   /**
    * @route GET /api/kyc/pending
-   * @description Lista todas las solicitudes pendientes (solo Admins).
+   * @description Lista todas las solicitudes PENDIENTES (solo Admins).
    */
   async getPendingVerifications(req, res) {
     try {
@@ -238,6 +231,7 @@ const verificacionIdentidadController = {
         await verificacionIdentidadService.findPendingVerifications();
       return res.status(200).json({
         success: true,
+        estado: "PENDIENTE",
         total: pendientes.length,
         solicitudes: pendientes,
       });
@@ -247,6 +241,92 @@ const verificacionIdentidadController = {
         success: false,
         tipo: "ERROR_SERVIDOR",
         mensaje: "Error al listar verificaciones pendientes",
+        detalles: error.message,
+      });
+    }
+  },
+
+  /**
+   * @route GET /api/kyc/approved
+   * @description Lista todas las solicitudes APROBADAS (solo Admins).
+   */
+  async getApprovedVerifications(req, res) {
+    try {
+      const aprobadas =
+        await verificacionIdentidadService.findApprovedVerifications();
+      return res.status(200).json({
+        success: true,
+        estado: "APROBADA",
+        total: aprobadas.length,
+        solicitudes: aprobadas,
+      });
+    } catch (error) {
+      console.error("Error al listar aprobadas:", error);
+      return res.status(500).json({
+        success: false,
+        tipo: "ERROR_SERVIDOR",
+        mensaje: "Error al listar verificaciones aprobadas",
+        detalles: error.message,
+      });
+    }
+  },
+
+  /**
+   * @route GET /api/kyc/rejected
+   * @description Lista todas las solicitudes RECHAZADAS (solo Admins).
+   */
+  async getRejectedVerifications(req, res) {
+    try {
+      const rechazadas =
+        await verificacionIdentidadService.findRejectedVerifications();
+      return res.status(200).json({
+        success: true,
+        estado: "RECHAZADA",
+        total: rechazadas.length,
+        solicitudes: rechazadas,
+      });
+    } catch (error) {
+      console.error("Error al listar rechazadas:", error);
+      return res.status(500).json({
+        success: false,
+        tipo: "ERROR_SERVIDOR",
+        mensaje: "Error al listar verificaciones rechazadas",
+        detalles: error.message,
+      });
+    }
+  },
+
+  /**
+   * @route GET /api/kyc/all
+   * @description Lista TODAS las verificaciones procesadas (APROBADAS + RECHAZADAS) (solo Admins).
+   */
+  async getAllProcessedVerifications(req, res) {
+    try {
+      const procesadas =
+        await verificacionIdentidadService.findAllProcessedVerifications();
+
+      // Contar por estado
+      const stats = {
+        aprobadas: procesadas.filter(
+          (v) => v.estado_verificacion === "APROBADA"
+        ).length,
+        rechazadas: procesadas.filter(
+          (v) => v.estado_verificacion === "RECHAZADA"
+        ).length,
+      };
+
+      return res.status(200).json({
+        success: true,
+        total: procesadas.length,
+        estadisticas: stats,
+        solicitudes: procesadas,
+      });
+    } catch (error) {
+      console.error("Error al listar todas las verificaciones:", error);
+      return res.status(500).json({
+        success: false,
+        tipo: "ERROR_SERVIDOR",
+        mensaje: "Error al listar todas las verificaciones",
         detalles: error.message,
       });
     }
