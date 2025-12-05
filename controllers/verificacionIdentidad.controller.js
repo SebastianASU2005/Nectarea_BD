@@ -1,4 +1,3 @@
-// controllers/verificacionIdentidad.controller.js
 const verificacionIdentidadService = require("../services/verificacionIdentidad.service");
 const { getIpAddress } = require("../utils/networkUtils");
 const { formatErrorResponse } = require("../utils/responseUtils");
@@ -26,7 +25,10 @@ const verificacionIdentidadController = {
       // Validación básica de campos requeridos
       if (!tipo_documento || !numero_documento || !nombre_completo) {
         return res.status(400).json({
-          message:
+          success: false,
+          tipo: "CAMPOS_REQUERIDOS",
+          mensaje: "Campos obligatorios faltantes",
+          detalles:
             "Los campos tipo_documento, numero_documento y nombre_completo son obligatorios.",
         });
       }
@@ -52,8 +54,10 @@ const verificacionIdentidadController = {
         );
 
       return res.status(202).json({
-        message:
-          "✅ Solicitud de verificación enviada con éxito. Pendiente de revisión por un administrador.",
+        success: true,
+        mensaje: "Solicitud de verificación enviada con éxito",
+        detalles:
+          "Tu solicitud está pendiente de revisión por un administrador. Te notificaremos cuando sea procesada.",
         registro: {
           id: registro.id,
           estado_verificacion: registro.estado_verificacion,
@@ -62,8 +66,34 @@ const verificacionIdentidadController = {
       });
     } catch (error) {
       console.error("Error al enviar datos de verificación:", error);
-      const statusCode = error.message.includes("❌") ? 400 : 500;
-      return res.status(statusCode).json(formatErrorResponse(error.message));
+
+      // 🎯 Intentar parsear el error como JSON estructurado
+      try {
+        const errorData = JSON.parse(error.message);
+
+        // Mapear tipo de error a código HTTP apropiado
+        const statusCodeMap = {
+          YA_VERIFICADO: 409, // Conflict
+          SOLICITUD_PENDIENTE: 409, // Conflict
+          ARCHIVOS_FALTANTES: 400, // Bad Request
+        };
+
+        const statusCode = statusCodeMap[errorData.tipo] || 400;
+
+        return res.status(statusCode).json({
+          success: false,
+          ...errorData,
+        });
+      } catch (parseError) {
+        // Si no es un error estructurado, manejarlo como error genérico
+        const statusCode = error.message.includes("❌") ? 400 : 500;
+        return res.status(statusCode).json({
+          success: false,
+          tipo: "ERROR_GENERAL",
+          mensaje: error.message,
+          detalles: null,
+        });
+      }
     }
   },
 
@@ -79,18 +109,36 @@ const verificacionIdentidadController = {
       );
 
       if (!registro) {
-        return res.status(404).json({
-          message: "No se ha iniciado la verificación de identidad.",
+        return res.status(200).json({
+          success: true,
           estado_verificacion: "NO_INICIADO",
+          mensaje: "No has iniciado tu verificación de identidad",
+          puede_enviar: true,
         });
       }
 
-      return res.status(200).json(registro);
+      // Determinar si puede enviar nueva documentación
+      const puede_enviar = registro.estado_verificacion === "RECHAZADA";
+
+      return res.status(200).json({
+        success: true,
+        ...registro.toJSON(),
+        puede_enviar,
+        mensaje_estado: {
+          PENDIENTE: "Tu solicitud está siendo revisada",
+          APROBADA: "Tu identidad fue verificada exitosamente",
+          RECHAZADA:
+            "Tu solicitud fue rechazada. Puedes enviar nueva documentación",
+        }[registro.estado_verificacion],
+      });
     } catch (error) {
       console.error("Error al obtener estado de verificación:", error);
-      return res
-        .status(500)
-        .json(formatErrorResponse("Fallo al consultar el estado de KYC."));
+      return res.status(500).json({
+        success: false,
+        tipo: "ERROR_SERVIDOR",
+        mensaje: "Error al consultar el estado de KYC",
+        detalles: error.message,
+      });
     }
   },
 
@@ -100,7 +148,7 @@ const verificacionIdentidadController = {
    */
   async approveVerification(req, res) {
     try {
-      const id_verificador = req.user.id; // ✅ CORREGIDO: usar req.user.id
+      const id_verificador = req.user.id;
       const id_usuario = parseInt(req.params.idUsuario);
 
       const registro =
@@ -111,7 +159,8 @@ const verificacionIdentidadController = {
         );
 
       return res.status(200).json({
-        message: `✅ Verificación del usuario ${id_usuario} APROBADA exitosamente.`,
+        success: true,
+        mensaje: `Verificación del usuario ${id_usuario} aprobada exitosamente`,
         registro: {
           id: registro.id,
           estado_verificacion: registro.estado_verificacion,
@@ -121,7 +170,11 @@ const verificacionIdentidadController = {
     } catch (error) {
       console.error("Error al aprobar verificación:", error);
       const statusCode = error.message.includes("❌") ? 400 : 500;
-      return res.status(statusCode).json(formatErrorResponse(error.message));
+      return res.status(statusCode).json({
+        success: false,
+        tipo: "ERROR_APROBACION",
+        mensaje: error.message,
+      });
     }
   },
 
@@ -131,13 +184,15 @@ const verificacionIdentidadController = {
    */
   async rejectVerification(req, res) {
     try {
-      const id_verificador = req.user.id; // ✅ CORREGIDO
+      const id_verificador = req.user.id;
       const id_usuario = parseInt(req.params.idUsuario);
       const { motivo_rechazo } = req.body;
 
       if (!motivo_rechazo) {
         return res.status(400).json({
-          message: "El motivo de rechazo es obligatorio.",
+          success: false,
+          tipo: "CAMPO_REQUERIDO",
+          mensaje: "El motivo de rechazo es obligatorio",
         });
       }
 
@@ -150,7 +205,8 @@ const verificacionIdentidadController = {
         );
 
       return res.status(200).json({
-        message: `✅ Verificación del usuario ${id_usuario} RECHAZADA.`,
+        success: true,
+        mensaje: `Verificación del usuario ${id_usuario} rechazada`,
         registro: {
           id: registro.id,
           estado_verificacion: registro.estado_verificacion,
@@ -164,7 +220,11 @@ const verificacionIdentidadController = {
         error.message.includes("❌") || error.message.includes("No se encontró")
           ? 400
           : 500;
-      return res.status(statusCode).json(formatErrorResponse(error.message));
+      return res.status(statusCode).json({
+        success: false,
+        tipo: "ERROR_RECHAZO",
+        mensaje: error.message,
+      });
     }
   },
 
@@ -177,16 +237,18 @@ const verificacionIdentidadController = {
       const pendientes =
         await verificacionIdentidadService.findPendingVerifications();
       return res.status(200).json({
+        success: true,
         total: pendientes.length,
         solicitudes: pendientes,
       });
     } catch (error) {
       console.error("Error al listar pendientes:", error);
-      return res
-        .status(500)
-        .json(
-          formatErrorResponse("Fallo al listar verificaciones pendientes.")
-        );
+      return res.status(500).json({
+        success: false,
+        tipo: "ERROR_SERVIDOR",
+        mensaje: "Error al listar verificaciones pendientes",
+        detalles: error.message,
+      });
     }
   },
 };

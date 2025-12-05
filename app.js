@@ -22,9 +22,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("       El servicio de pagos NO funcionará.");
+  console.error("       El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -38,7 +38,7 @@ function captureRawBody(req, res, buf, encoding) {
 }
 
 // ====================================================================
-// 2. MIDDLEWARES GLOBALES (Para el 99% de las rutas de la API)
+// 2. MIDDLEWARES GLOBALES BÁSICOS (SIN BODY PARSING AÚN)
 // ====================================================================
 const corsOptions = {
   // Solo permite peticiones desde tu frontend de desarrollo
@@ -48,8 +48,6 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
 // Permite acceder a archivos subidos mediante la URL /uploads
@@ -107,7 +105,7 @@ const SuscripcionProyecto = require("./models/suscripcion_proyecto");
 const SuscripcionCancelada = require("./models/suscripcion_cancelada");
 const Favorito = require("./models/Favorito");
 const VerificacionIdentidad = require("./models/verificacion_identidad");
-const ContratoPlantilla = require("./models/ContratoPlantilla"); 
+const ContratoPlantilla = require("./models/ContratoPlantilla");
 const ContratoFirmado = require("./models/ContratoFirmado ");
 
 // Importa la función de asociaciones
@@ -153,7 +151,11 @@ const {
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 
 // ====================================================================
-// 5. RUTAS DEL WEBHOOK (USANDO ROUTER DEDICADO PARA MIDDLEWARE RAW)
+// 5. 🔥 CONFIGURACIÓN CRÍTICA DE RUTAS EN ORDEN ESPECÍFICO
+// ====================================================================
+
+// ====================================================================
+// 5.1. WEBHOOK ROUTER (CON RAW BODY) - DEBE IR PRIMERO
 // ====================================================================
 const webhookRouter = express.Router();
 
@@ -174,16 +176,50 @@ console.log(
 );
 
 // ====================================================================
-// 6. OTRAS RUTAS DE LA API (CON AUTENTICACIÓN)
+// 5.2. 🔥 RUTAS QUE USAN MULTER (SIN BODY PARSING PREVIO)
+// ====================================================================
+// ⚠️ CRÍTICO: Estas rutas NO deben tener express.json() antes
+// 🎯 Multer maneja el parsing de multipart/form-data internamente
+
+console.log("📦 Registrando rutas con Multer (sin body parsing)...");
+
+app.use('/api/kyc', (req, res, next) => {
+  console.log('\n🔍 ===== DEBUG PRE-KYC =====');
+  console.log('📍 URL:', req.url);
+  console.log('📍 Method:', req.method);
+  console.log('📍 Content-Type:', req.get('content-type'));
+  console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('📍 Body ya parseado?:', !!req.body, '- Keys:', Object.keys(req.body || {}));
+  console.log('📍 Files ya parseados?:', !!req.files, '- Keys:', Object.keys(req.files || {}));
+  console.log('🔍 ===========================\n');
+  next();
+});
+
+app.use("/api/kyc", kycRoutes); // ✅ Usa Multer
+app.use("/api/contratos", contratoRoutes); // ✅ Usa Multer
+app.use("/api/imagenes", imagenRoutes); // ✅ Usa Multer
+
+console.log("✅ Rutas con Multer registradas correctamente");
+
+// ====================================================================
+// 5.3. 🔥 BODY PARSING GLOBAL (PARA TODAS LAS DEMÁS RUTAS)
+// ====================================================================
+console.log("🔧 Activando body parsing global...");
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+console.log("✅ Body parsing activado");
+
+// ====================================================================
+// 5.4. RESTO DE RUTAS DE LA API (CON BODY PARSING)
 // ====================================================================
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
 app.use("/api/proyectos", proyectoRoutes);
 app.use("/api/pujas", pujaRoutes);
-app.use("/api/imagenes", imagenRoutes);
 app.use("/api/transacciones", transaccionRoutes);
-app.use("/api/contratos", contratoRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
 app.use("/api/suscripcionesCanceladas", suscripcionRoutes);
 app.use("/api/pagos", pagoRoutes);
@@ -193,17 +229,15 @@ app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/favoritos", favoritoRoutes);
-// 🚨 RUTA DE VERIFICACIÓN DE IDENTIDAD AÑADIDA
-app.use("/api/kyc", kycRoutes);
 
-// 7. RUTAS DE PAGO (AUTENTICADAS) - SIN EL WEBHOOK
+// Rutas de pago (autenticadas) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
 
-// 8. RUTAS DE REDIRECCIÓN (PÁGINAS DE RESULTADO DE PAGO)
+// Rutas de redirección (páginas de resultado de pago)
 app.use(redireccionRoutes);
 
 // ====================================================================
-// 9. SINCRONIZACIÓN DE BASE DE DATOS E INICIO DEL SERVIDOR (CRÍTICO)
+// 6. SINCRONIZACIÓN DE BASE DE DATOS E INICIO DEL SERVIDOR (CRÍTICO)
 // ====================================================================
 
 /**
@@ -286,6 +320,15 @@ async function synchronizeDatabase() {
     // Inicia el servidor de Express
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);
+      console.log("=".repeat(70));
+      console.log("📋 ORDEN DE MIDDLEWARES CONFIGURADO:");
+      console.log("   1. CORS");
+      console.log("   2. Archivos estáticos (/uploads)");
+      console.log("   3. Webhook (con raw body)");
+      console.log("   4. Rutas con Multer (KYC, Contratos, Imágenes)");
+      console.log("   5. Body parsing global (express.json)");
+      console.log("   6. Resto de rutas de la API");
+      console.log("=".repeat(70));
     });
   } catch (error) {
     console.error("Error al sincronizar la base de datos:", error);
