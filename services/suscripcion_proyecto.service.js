@@ -432,27 +432,34 @@ const suscripcionProyectoService = {
    * @function softDelete
    * @description Cancela una suscripción (soft delete), actualiza el proyecto, valida la puja ganadora y registra la cancelación.
    * @param {number} suscripcionId - ID de la suscripción a cancelar.
-   * @param {number} userId - ID del usuario que intenta cancelar (para validación de propiedad).
+   * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol).
    * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
-   * @throws {Error} Si la suscripción no existe, ya está cancelada o tiene pujas pagadas asociadas.
-   */ // =================================================================== // LÓGICA DE CANCELACIÓN (FUNCIÓN CENTRAL CON VALIDACIÓN DE PUJA Y REGISTRO) // ===================================================================
-  async softDelete(suscripcionId, userId) {
+   * @throws {Error} Si la suscripción no existe, ya está cancelada, no te pertenece o tiene pujas pagadas asociadas.
+   */
+  async softDelete(suscripcionId, usuarioAutenticado) {
     const t = await sequelize.transaction(); // Inicia la transacción de BD.
     try {
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
       });
-      if (!suscripcion) throw new Error("Suscripción no encontrada."); // Validación de Propiedad
+      if (!suscripcion) throw new Error("Suscripción no encontrada."); // 🛑 NUEVA LÓGICA CLAVE: Permitir la cancelación si es el dueño O si es un administrador
 
-      if (suscripcion.id_usuario !== userId) {
-        throw new Error("Acceso denegado. La suscripción no te pertenece.");
-      } // Verificar idempotencia.
+      const esAdministrador =
+        usuarioAutenticado && usuarioAutenticado.rol === "admin";
+      if (
+        suscripcion.id_usuario !== usuarioAutenticado.id &&
+        !esAdministrador
+      ) {
+        throw new Error(
+          "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador."
+        );
+      } // Fin de la verificación de propiedad/rol. // Verificar idempotencia.
 
       if (!suscripcion.activo)
         throw new Error("La suscripción ya ha sido cancelada."); // 🛑 1. VALIDACIÓN CRÍTICA: Bloquear si hay una puja ganadora pagada.
 
       const hasPaidBid = await pujaService.hasWonAndPaidBid(
-        suscripcion.id_usuario,
+        suscripcion.id_usuario, // Siempre se verifica al dueño original de la suscripción
         suscripcion.id_proyecto,
         { transaction: t }
       );

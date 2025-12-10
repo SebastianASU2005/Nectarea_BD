@@ -9,38 +9,51 @@ const suscripcionController = {
    * @async
    * @function cancel
    * @description Cancela lógicamente una suscripción por ID (soft delete).
-   * La verificación de propiedad y la validación de la puja ganadora se manejan en el servicio.
-   * @param {object} req - Objeto de solicitud de Express (ID de suscripción en `params` y ID de usuario en `req.user.id`).
-   * @param {object} res - Objeto de respuesta de Express.
+   * Ahora pasa el objeto de usuario completo para la verificación de rol de administrador.
    */
   async cancel(req, res) {
     try {
-      const { id } = req.params;
-      const userId = req.user.id; // Obtiene el ID del usuario autenticado.
+      const { id } = req.params; // 🛑 CAMBIO CLAVE: Obtiene el objeto de usuario autenticado.
+      const usuarioAutenticado = req.user; // Nueva validación: Asegura que el objeto de usuario esté disponible.
 
-      // 1. Realizar la eliminación lógica (soft delete).
-      // Se pasa el userId para que el servicio valide la propiedad y la restricción de puja.
+      if (
+        !usuarioAutenticado ||
+        !usuarioAutenticado.id ||
+        !usuarioAutenticado.rol
+      ) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "Usuario no autenticado o datos de autenticación incompletos.",
+          });
+      } // 1. Realizar la eliminación lógica (soft delete). // Se pasa el objeto completo (que incluye el rol) al servicio.
+
       const suscripcionCancelada = await suscripcionService.softDelete(
         id,
-        userId
-      );
+        usuarioAutenticado // 👈 ¡Se pasa el objeto completo!
+      ); // 2. Respuesta de éxito.
 
-      // 2. Respuesta de éxito.
       res.status(200).json({
         message: "Suscripción cancelada correctamente.",
         suscripcion: suscripcionCancelada,
       });
     } catch (error) {
-      // Manejar errores lanzados por el servicio (no existe, no pertenece, puja ganadora, etc.).
-      let statusCode = 400; // Bad Request por defecto
+      // Manejar errores lanzados por el servicio
+      let statusCode = 500; // Por defecto
 
       if (
         error.message.includes("Acceso denegado") ||
-        error.message.includes("No se puede cancelar")
+        error.message.includes("No se puede cancelar") ||
+        error.message.includes("ya ha sido cancelada")
       ) {
-        statusCode = 403; // Forbidden
+        statusCode = 403; // Forbidden / Bad Request
       } else if (error.message.includes("Suscripción no encontrada")) {
         statusCode = 404; // Not Found
+      } else if (
+        error.message.includes("El ID del proyecto debe ser un número")
+      ) {
+        statusCode = 400; // Bad Request
       }
 
       res.status(statusCode).json({ error: error.message });

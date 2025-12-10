@@ -1,5 +1,5 @@
 const usuarioService = require("../services/usuario.service");
-
+const auth2faService = require("../services/auth2fa.service");
 /**
  * Controlador de Express para manejar las peticiones HTTP relacionadas con el modelo Usuario.
  * Actúa como la capa entre la solicitud y la lógica de negocio (service).
@@ -209,37 +209,104 @@ const usuarioController = {
   },
   /**
    * @async
+   * @function validateDeactivation
+   * @description Valida si un usuario puede desactivar su cuenta sin realmente desactivarla.
+   * Útil para mostrar advertencias en el frontend antes de confirmar.
+   */
+  async validateDeactivation(req, res) {
+    try {
+      const validation = await usuarioService.validateUserDeactivation(
+        req.user.id
+      );
+      res.status(200).json(validation);
+    } catch (error) {
+      // Si hay suscripciones activas, devuelve 409 (Conflict)
+      res.status(409).json({
+        error: error.message,
+        canDeactivate: false,
+      });
+    }
+  },
+  /**
+   * @async
    * @function softDelete
    * @description "Elimina" lógicamente (soft delete) un usuario por ID. Versión para administradores.
    */
-
   async softDelete(req, res) {
     try {
       const usuarioEliminado = await usuarioService.softDelete(req.params.id);
       if (!usuarioEliminado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
       }
-      res.status(204).send(); // 204 No Content para una eliminación exitosa
+      res.status(200).json({
+        message: "Usuario desactivado exitosamente",
+        success: true,
+      });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      const statusCode = error.message.includes("suscripción") ? 409 : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   },
   /**
    * @async
    * @function softDeleteMe
-   * @description "Elimina" lógicamente (soft delete) el perfil del usuario autenticado.
+   * @description "Elimina" lógicamente (soft delete) el perfil del usuario autenticado,
+   * REQUIRIENDO 2FA si está activo.
    */
-
   async softDeleteMe(req, res) {
+    const userId = req.user.id; // 🛑 CORRECCIÓN CLAVE: Usamos 'req.body || {}' para prevenir TypeError // Si req.body es undefined (porque no se envió un cuerpo JSON), twofaCode será undefined, lo cual es manejable.
+    const { twofaCode } = req.body || {};
+
     try {
-      // Usa req.user.id para asegurar que solo elimina su propio perfil
-      const usuarioEliminado = await usuarioService.softDelete(req.user.id);
-      if (!usuarioEliminado) {
+      // 1. Obtener el secreto 2FA del usuario
+      const secret = await usuarioService.get2FASecret(userId);
+      const is2FAEnabled = !!secret;
+
+      if (is2FAEnabled) {
+        // A) 2FA ACTIVO: Requiere el código
+        if (!twofaCode) {
+          // El frontend debe detectar este estado y pedir el código.
+          return res.status(403).json({
+            message:
+              "Se requiere el código de Autenticación de Dos Factores (2FA) para eliminar la cuenta.",
+            requires2fa: true,
+          });
+        } // B) 2FA ACTIVO y CÓDIGO PROPORCIONADO: Validar el código
+
+        const isTokenValid = auth2faService.verifyToken(secret, twofaCode);
+
+        if (!isTokenValid) {
+          return res.status(403).json({
+            message:
+              "Código 2FA incorrecto. La eliminación de cuenta fue abortada.",
+            requires2fa: true,
+            codeInvalid: true,
+          });
+        } // Si el código es válido, se procede a la eliminación.
+      } else {
+        // C) 2FA INACTIVO: Procede directamente (no se necesita código)
+      } // 2. Ejecutar la lógica de soft delete (validación de suscripciones + desactivación)
+
+      const usuarioDesactivado = await usuarioService.softDelete(userId);
+
+      if (!usuarioDesactivado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
       }
-      res.status(204).send();
+
+      return res.status(200).json({
+        message:
+          "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
+        success: true,
+      });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      // Captura errores de softDelete, como tener suscripciones activas.
+      const isConflict =
+        error.message.includes("suscripción") ||
+        error.message.includes("ya está activa");
+      const statusCode = isConflict ? 409 : 500;
+
+      console.error("Error al desactivar cuenta:", error.message);
+      res.status(statusCode).json({ error: error.message });
     }
   },
   /**
@@ -300,6 +367,84 @@ const usuarioController = {
         : 500;
 
       console.error("Error al resetear 2FA por admin:", error.message);
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
+   * @function prepareForReactivation
+   * @description Permite a un admin cambiar email/username de una cuenta INACTIVA
+   * para resolver conflictos antes de reactivarla.
+   * (SOLO ADMIN)
+   */
+  async prepareForReactivation(req, res) {
+    try {
+      const userId = parseInt(req.params.id);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "ID de usuario inválido." });
+      } // ✅ CAMBIO: Incluir 'dni' en la desestructuración
+
+      const { email, nombre_usuario, dni } = req.body || {}; // ✅ CAMBIO: Validar si al menos un campo es proporcionado
+
+      if (!email && !nombre_usuario && !dni) {
+        return res.status(400).json({
+          error:
+            "Debes proporcionar al menos un campo para actualizar (email, nombre_usuario o dni).",
+        });
+      }
+
+      const usuarioActualizado =
+        await usuarioService.prepareAccountForReactivation(userId, {
+          email,
+          nombre_usuario,
+          dni, // ✅ Agregar DNI al objeto de datos para el servicio
+        });
+
+      return res.status(200).json({
+        message:
+          "Datos actualizados exitosamente. Ahora el usuario puede reactivar su cuenta.",
+        usuario: usuarioActualizado,
+      });
+    } catch (error) {
+      // Se asume que el servicio lanza errores con mensajes útiles
+      const statusCode = error.message.startsWith("❌") ? 409 : 404;
+      return res.status(statusCode).json({ error: error.message });
+    }
+  },
+
+  /**
+   * @async
+   * @function reactivateAccount
+   * @description Reactiva una cuenta inactiva.
+   * (SOLO ADMIN)
+   */
+  async reactivateAccount(req, res) {
+    try {
+      const userId = parseInt(req.params.id);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "ID de usuario inválido." });
+      }
+
+      const usuarioReactivado = await usuarioService.reactivateAccount(userId);
+
+      res.status(200).json({
+        message: "✅ Cuenta reactivada exitosamente.",
+        usuario: {
+          id: usuarioReactivado.id,
+          nombre: usuarioReactivado.nombre,
+          email: usuarioReactivado.email,
+          nombre_usuario: usuarioReactivado.nombre_usuario,
+          activo: usuarioReactivado.activo,
+        },
+      });
+    } catch (error) {
+      const statusCode = error.message.includes("no encontrado")
+        ? 404
+        : error.message.includes("ya está activa")
+        ? 409
+        : 400;
       res.status(statusCode).json({ error: error.message });
     }
   },

@@ -4,6 +4,10 @@ const Usuario = require("../models/usuario");
 const { Op } = require("sequelize");
 const emailService = require("./email.service");
 const crypto = require("crypto");
+// 🛑 IMPORTACIONES FALTANTES PARA validateUserDeactivation
+const SuscripcionProyecto = require("../models/suscripcion_proyecto"); // 🛑
+const Puja = require("../models/puja"); // 🛑
+const ContratoFirmado = require("../models/ContratoFirmado "); // 🛑
 
 /**
  * @function generateToken
@@ -288,20 +292,6 @@ const usuarioService = {
   },
   /**
    * @async
-   * @function softDelete
-   * @description "Elimina" un usuario marcándolo como inactivo.
-   * @param {number} id - ID del usuario.
-   * @returns {Promise<Usuario|null>} El usuario actualizado o null si no existe.
-   */
-  async softDelete(id) {
-    const usuario = await this.findById(id);
-    if (!usuario) {
-      return null;
-    } // Marca el campo 'activo' como falso.
-    return usuario.update({ activo: false });
-  }, // 🚨 COMA AGREGADA AQUÍ
-  /**
-   * @async
    * @function findAllActivos
    * @description Obtiene todos los usuarios cuyo campo 'activo' es verdadero.
    * @returns {Promise<Usuario[]>}
@@ -433,6 +423,329 @@ const usuarioService = {
       order: [["nombre_usuario", "ASC"]],
       limit: 50,
     });
+  },
+  /**
+   * @async
+   * @function validateUserDeactivation
+   * @description Valida si un usuario puede desactivar su cuenta verificando:
+   * - Suscripciones activas (bloqueante)
+   * - Pujas ganadoras pendientes de pago (advertencia)
+   * - Contratos firmados disponibles para descarga (advertencia)
+   * @param {number} userId - ID del usuario.
+   * @returns {Promise<object>} Objeto con validación y detalles.
+   * @throws {Error} Si hay suscripciones activas que impidan la desactivación.
+   */
+  async validateUserDeactivation(userId) {
+    // 1. 🚨 VALIDACIÓN CRÍTICA: Suscripciones Activas (BLOQUEANTE)
+    const suscripcionesActivas = await SuscripcionProyecto.findAll({
+      where: {
+        id_usuario: userId,
+        activo: true,
+      },
+      include: [
+        {
+          model: require("../models/proyecto"),
+          as: "proyectoAsociado",
+          attributes: ["id", "nombre_proyecto"],
+        },
+      ],
+    });
+
+    if (suscripcionesActivas.length > 0) {
+      const proyectos = suscripcionesActivas.map(
+        (s) => s.proyectoAsociado.nombre_proyecto
+      );
+
+      throw new Error(
+        `❌ No puedes desactivar tu cuenta. Tienes ${
+          suscripcionesActivas.length
+        } suscripción(es) activa(s) en: ${proyectos.join(
+          ", "
+        )}. Debes cancelar todas tus suscripciones primero.`
+      );
+    }
+
+    // 2. ⚠️ ADVERTENCIA: Pujas Ganadoras Pendientes de Pago
+    const pujasGanadorasPendientes = await Puja.findAll({
+      where: {
+        id_usuario: userId,
+        estado_puja: "ganadora_pendiente",
+      },
+      include: [
+        {
+          model: require("../models/lote"),
+          as: "lote",
+          attributes: ["id", "nombre_lote"],
+        },
+      ],
+    });
+
+    // 3. 📄 INFORMACIÓN: Contratos Firmados Disponibles
+    const contratosFirmados = await ContratoFirmado.findAll({
+      where: {
+        id_usuario_firmante: userId,
+        activo: true,
+        estado_firma: "FIRMADO",
+      },
+      attributes: ["id", "nombre_archivo", "fecha_firma"],
+      order: [["fecha_firma", "DESC"]],
+    });
+
+    // 4. Construir respuesta con toda la información
+    return {
+      canDeactivate: true, // Pasó las validaciones bloqueantes
+      warnings: {
+        pujasGanadorasPendientes: pujasGanadorasPendientes.length > 0,
+        pujasDetalle: pujasGanadorasPendientes.map((p) => ({
+          id_lote: p.lote.id,
+          nombre_lote: p.lote.nombre_lote,
+          monto_puja: p.monto_puja,
+          fecha_vencimiento: p.fecha_vencimiento_pago,
+        })),
+        contratosFirmados: contratosFirmados.length > 0,
+        contratosDetalle: contratosFirmados.map((c) => ({
+          id: c.id,
+          nombre_archivo: c.nombre_archivo,
+          fecha_firma: c.fecha_firma,
+        })),
+      },
+      message: this._buildDeactivationMessage(
+        pujasGanadorasPendientes.length,
+        contratosFirmados.length
+      ),
+    };
+  },
+  /**
+   * @private
+   * @function _buildDeactivationMessage
+   * @description Construye un mensaje personalizado según las advertencias encontradas.
+   */ _buildDeactivationMessage(pujasCount, contratosCount) {
+    const messages = [];
+
+    if (pujasCount > 0) {
+      messages.push(
+        `⚠️ Tienes ${pujasCount} puja(s) ganadora(s) pendiente(s) de pago. Si no pagas en 90 días, perderás el lote y pasará al siguiente postor.`
+      );
+    }
+
+    if (contratosCount > 0) {
+      messages.push(
+        `📄 Tienes ${contratosCount} contrato(s) firmado(s). Te recomendamos descargar todos tus contratos antes de desactivar tu cuenta, ya que no podrás acceder a ellos después.`
+      );
+    }
+
+    if (messages.length === 0) {
+      return "✅ Tu cuenta puede ser desactivada sin inconvenientes.";
+    }
+
+    return messages.join(" ");
+  },
+  /**
+   * @async
+   * @function softDelete
+   * @description "Elimina" un usuario marcándolo como inactivo.
+   * Ahora incluye validación previa obligatoria.
+   * @param {number} id - ID del usuario.
+   * @returns {Promise<Usuario|null>} El usuario actualizado o null si no existe.
+   * @throws {Error} Si el usuario tiene suscripciones activas.
+   */ async softDelete(id) {
+    // 🆕 VALIDACIÓN OBLIGATORIA ANTES DE DESACTIVAR
+    await this.validateUserDeactivation(id);
+
+    const usuario = await this.findById(id);
+    if (!usuario) {
+      return null;
+    }
+
+    const usuarioDesactivado = await usuario.update({
+      activo: false,
+      is_2fa_enabled: false, // 🛑 Agregado
+      twofa_secret: null, // 🛑 Agregado
+    });
+    try {
+      if (usuario.email) {
+        await emailService.notificarDesactivacionCuenta(usuario);
+      }
+    } catch (error) {
+      console.error(
+        `Error al enviar email de desactivación al usuario ${id}:`,
+        error.message
+      );
+      // No lanzamos el error para que la desactivación se complete igual
+    }
+
+    return usuarioDesactivado;
+  },
+  /**
+   * @async
+   * @function prepareAccountForReactivation
+   * @description Permite cambiar email/username de una cuenta INACTIVA para resolver conflictos
+   * antes de reactivarla. Solo funciona con cuentas desactivadas.
+   * @param {number} userId - ID del usuario inactivo.
+   * @param {object} newData - Nuevos datos (email, nombre_usuario).
+   * @returns {Promise<Usuario>} Usuario actualizado.
+   * @throws {Error} Si la cuenta está activa o hay conflictos de unicidad con cuentas ACTIVAS.
+   */
+  async prepareAccountForReactivation(userId, newData) {
+    // 1️⃣ Buscar al usuario y verificar si está inactivo
+    const usuario = await Usuario.findByPk(userId);
+
+    if (!usuario) {
+      throw new Error(`❌ No se encontró un usuario con ID ${userId}.`);
+    }
+    if (usuario.activo) {
+      throw new Error(
+        `❌ La cuenta con ID ${userId} ya está activa. No requiere preparación.`
+      );
+    }
+
+    const { email, nombre_usuario, dni } = newData; // 2️⃣ Validar nuevo Email (si se proporciona Y es diferente al actual)
+
+    if (email && email !== usuario.email) {
+      const existingEmail = await Usuario.findOne({
+        where: {
+          email: email,
+          activo: true, // SOLO buscar conflictos en cuentas ACTIVAS
+          id: { [Op.ne]: userId },
+        },
+      });
+
+      if (existingEmail) {
+        throw new Error(
+          `❌ El Email "${email}" ya está en uso por otra cuenta ACTIVA (ID: ${existingEmail.id}).`
+        );
+      }
+    } // 3️⃣ Validar nuevo Nombre de Usuario (si se proporciona Y es diferente al actual)
+
+    if (nombre_usuario && nombre_usuario !== usuario.nombre_usuario) {
+      const existingUsername = await Usuario.findOne({
+        where: {
+          nombre_usuario: nombre_usuario,
+          activo: true, // SOLO buscar conflictos en cuentas ACTIVAS
+          id: { [Op.ne]: userId },
+        },
+      });
+
+      if (existingUsername) {
+        throw new Error(
+          `❌ El Nombre de Usuario "${nombre_usuario}" ya está en uso por otra cuenta ACTIVA (ID: ${existingUsername.id}).`
+        );
+      }
+    } // 4️⃣ Validar nuevo DNI (si se proporciona Y es diferente al actual)
+
+    if (dni && dni !== usuario.dni) {
+      const existingDNI = await Usuario.findOne({
+        where: {
+          dni: dni,
+          activo: true, // ✅ CRÍTICO: SOLO BUSCAR CONFLICTOS ACTIVOS
+          id: { [Op.ne]: userId },
+        },
+      });
+
+      if (existingDNI) {
+        throw new Error(
+          `❌ El DNI "${dni}" ya está en uso por otra cuenta ACTIVA (ID: ${existingDNI.id}).`
+        );
+      }
+    } // 5️⃣ Actualizar solo los campos permitidos y proporcionados
+
+    const allowedFields = ["email", "nombre_usuario", "dni"];
+    const filteredData = {};
+
+    for (const field of allowedFields) {
+      if (newData[field]) {
+        filteredData[field] = newData[field];
+      }
+    } // 6️⃣ Aplicar actualización
+
+    if (Object.keys(filteredData).length === 0) {
+      return usuario; // No hay cambios para aplicar, retornar el usuario original
+    }
+
+    return usuario.update(filteredData);
+  },
+  /**
+   * @async
+   * @function reactivateAccount
+   * @description Reactiva una cuenta inactiva. Debe llamarse DESPUÉS de resolver conflictos.
+   * @param {number} userId - ID del usuario a reactivar.
+   * @returns {Promise<Usuario>} Usuario reactivado.
+   * @throws {Error} Si la cuenta no existe o ya está activa.
+   */
+  async reactivateAccount(userId) {
+    const usuario = await this.findById(userId);
+
+    if (!usuario) {
+      throw new Error("Usuario no encontrado.");
+    }
+
+    if (usuario.activo) {
+      throw new Error("❌ Esta cuenta ya está activa.");
+    }
+
+    // ⚠️ VALIDACIÓN FINAL: Verificar que no haya conflictos antes de reactivar
+    const conflictoEmail = await Usuario.findOne({
+      where: {
+        email: usuario.email,
+        activo: true,
+        id: { [Op.ne]: userId },
+      },
+    });
+
+    if (conflictoEmail) {
+      throw new Error(
+        `❌ No se puede reactivar. El email "${usuario.email}" ya está en uso por una cuenta activa (ID: ${conflictoEmail.id}). Debes cambiar el email antes de reactivar.`
+      );
+    }
+
+    const conflictoUsername = await Usuario.findOne({
+      where: {
+        nombre_usuario: usuario.nombre_usuario,
+        activo: true,
+        id: { [Op.ne]: userId },
+      },
+    });
+
+    if (conflictoUsername) {
+      throw new Error(
+        `❌ No se puede reactivar. El nombre de usuario "${usuario.nombre_usuario}" ya está en uso por una cuenta activa (ID: ${conflictoUsername.id}). Debes cambiar el username antes de reactivar.`
+      );
+    }
+
+    // ✅ Reactivar la cuenta
+    const usuarioReactivado = await usuario.update({ activo: true });
+
+    // 🆕 ENVÍO DE EMAIL DE CONFIRMACIÓN
+    try {
+      if (usuario.email) {
+        await emailService.notificarReactivacionCuenta(usuarioReactivado);
+      }
+    } catch (error) {
+      console.error(
+        `Error al enviar email de reactivación al usuario ${userId}:`,
+        error.message
+      );
+      // No lanzamos el error para que la reactivación se complete igual
+    }
+
+    return usuarioReactivado;
+  },
+  /**
+   * @async
+   * @function get2FASecret
+   * @description Obtiene el secreto 2FA (twofa_secret) de un usuario.
+   * @param {number} userId - ID del usuario.
+   * @returns {Promise<string|null>} El secreto Base32 o null si no está activo.
+   */
+  async get2FASecret(userId) {
+    const usuario = await Usuario.findByPk(userId, {
+      attributes: ["id", "is_2fa_enabled", "twofa_secret"], // Solo recuperamos los campos de 2FA
+    });
+
+    if (!usuario || !usuario.is_2fa_enabled) {
+      return null;
+    }
+    return usuario.twofa_secret;
   },
 };
 

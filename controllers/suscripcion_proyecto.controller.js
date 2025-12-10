@@ -412,16 +412,19 @@ const suscripcionProyectoController = {
    * @function softDeleteMySubscription
    * @description Realiza el "soft delete" (cancelación) de la propia suscripción del usuario.
    */
+  /**
+   * @async
+   * @function softDeleteMySubscription
+   * @description Realiza el "soft delete" (cancelación) de la propia suscripción del usuario.
+   */
   async softDeleteMySubscription(req, res) {
     try {
       const { id } = req.params;
-      const userId = req.user.id;
+      const usuarioAutenticado = req.user; // 🛑 CORRECCIÓN: Usar el objeto completo // 1. Ejecutar el soft delete con validación de propiedad dentro del servicio
 
-      // 1. Ejecutar el soft delete con validación de propiedad dentro del servicio
-      // NOTA: El servicio softDelete DEBE recibir el userId para validar la propiedad.
       const suscripcionCancelada = await suscripcionProyectoService.softDelete(
         id,
-        userId // 🛑 Paso el ID de usuario para que el servicio valide la propiedad
+        usuarioAutenticado // 👈 Se pasa el objeto completo (ID y rol)
       );
 
       res.status(200).json({
@@ -438,22 +441,37 @@ const suscripcionProyectoController = {
   /**
    * @async
    * @function softDelete
-   * @description Realiza el "soft delete" (cancelación) de una suscripción por ID (para administradores).
+   * @description Realiza el "soft delete" (cancelación) de una suscripción por ID. (Ruta de Admin)
    */
   async softDelete(req, res) {
     try {
-      // NOTA: Asumiendo que el usuario es un administrador y puede saltarse la validación de propiedad
+      // 🛑 CORRECCIÓN: Usamos req.user, que es lo que funciona en el resto del controlador
+      const usuarioAutenticado = req.user; // Asegurarse de que el usuario esté autenticado y su objeto esté disponible
+
+      if (!usuarioAutenticado || !usuarioAutenticado.id) {
+        return res
+          .status(401)
+          .json({ error: "Usuario no autenticado o ID de usuario faltante." });
+      }
+
       const suscripcionEliminada = await suscripcionProyectoService.softDelete(
         req.params.id,
-        null // Se pasa null o un ID especial para indicar que es un admin
+        usuarioAutenticado // 👈 Se pasa el objeto completo (req.user)
       );
+
       if (!suscripcionEliminada) {
         return res.status(404).json({ error: "Suscripción no encontrada" });
       }
-      res.status(200).json({ message: "Suscripción eliminada correctamente." });
+
+      res.status(200).json({ message: "Suscripción cancelada correctamente." });
     } catch (error) {
-      // 400 para errores de negocio (ej. no se puede cancelar por puja pagada)
-      const statusCode = error.message.startsWith("❌") ? 400 : 500;
+      // Manejo de errores específicos de negocio (400) vs errores de servidor (500)
+      const isBusinessError =
+        error.message.startsWith("❌") ||
+        error.message.includes("Acceso denegado") ||
+        error.message.includes("ya ha sido cancelada");
+
+      const statusCode = isBusinessError ? 400 : 500;
       res.status(statusCode).json({ error: error.message });
     }
   },

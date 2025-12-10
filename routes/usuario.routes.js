@@ -45,7 +45,16 @@ router.get("/confirmar/:token", usuarioController.confirmEmail);
 // Rutas /me: Van antes de /:id para que "me" no sea tomado como ID.
 router.get("/me", authMiddleware.authenticate, usuarioController.findMe);
 router.put("/me", authMiddleware.authenticate, usuarioController.updateMe);
-router.delete(
+
+// 🆕 NUEVA RUTA: Validar antes de desactivar (para mostrar advertencias)
+router.get(
+  "/me/validate-deactivation",
+  authMiddleware.authenticate,
+  usuarioController.validateDeactivation
+);
+
+// 🟢 Mantenemos DELETE /me, el controlador softDeleteMe espera twofaCode en req.body
+router.post(
   "/me",
   authMiddleware.authenticate,
   usuarioController.softDeleteMe
@@ -56,10 +65,23 @@ router.delete(
 // Estas DEBEN ir al final.
 // ===========================================
 router.patch(
-    "/:id/reset-2fa",
-    authMiddleware.authenticate,
-    authMiddleware.authorizeAdmin, // 🛡️ CRÍTICO: SOLO ADMIN
-    usuarioController.adminReset2FA // Controlador que creamos
+  "/:id/prepare-reactivation",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  usuarioController.prepareForReactivation
+);
+
+router.patch(
+  "/:id/reactivate",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  usuarioController.reactivateAccount
+);
+router.patch(
+  "/:id/reset-2fa",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  usuarioController.adminReset2FA
 );
 
 router.get(

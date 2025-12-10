@@ -1,4 +1,3 @@
-
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Pago = require("../models/Pago");
@@ -19,13 +18,11 @@ const suscripcionService = {
    */
   async findById(id) {
     return SuscripcionProyecto.findByPk(id);
-  }
+  },
   /**
    * @async
    * @function findByUserIdAndProjectId
-   */,
-
-  async findByUserIdAndProjectId(userId, projectId) {
+   */ async findByUserIdAndProjectId(userId, projectId) {
     return SuscripcionProyecto.findOne({
       where: {
         id_usuario: userId,
@@ -33,50 +30,50 @@ const suscripcionService = {
         activo: true,
       },
     });
-  }
+  },
   /**
    * @async
    * @function softDelete
    * @description **DELEGADO:** Llama al softDelete del servicio principal.
    * @param {number} suscripcionId - ID de la suscripción a cancelar.
-   * @param {number} userId - ID del usuario. 🆕 PARÁMETRO AÑADIDO
+   * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol). 👈 CAMBIO AQUÍ
    * @returns {Promise<SuscripcionProyecto>}
-   * @throws {Error} Si la cancelación falla (incluida la validación de puja).
-   */,
-
-  async softDelete(suscripcionId, userId) {
-    // 🆕 Se añade 'userId' para pasar al servicio principal.
-    // 🛑 Delega la lógica de negocio al servicio consolidado.
-    return suscripcionProyectoService.softDelete(suscripcionId, userId);
-  }
+   * @throws {Error} Si la cancelación falla.
+   */ async softDelete(suscripcionId, usuarioAutenticado) {
+    // 👈 Acepta el objeto completo
+    // Delega la lógica de negocio al servicio consolidado.
+    return suscripcionProyectoService.softDelete(
+      suscripcionId,
+      usuarioAutenticado
+    ); // 👈 Pasa el objeto completo
+  },
+  // ...
   /**
    * @async
    * @function findAllCanceladas
    * @description **DELEGADO**
-   */,
-  async findAllCanceladas() {
+   */ async findAllCanceladas() {
     // 🛑 Delega la consulta al servicio consolidado.
     return suscripcionProyectoService.findAllCanceladas();
-  }
+  },
   /**
    * @async
    * @function findMyCanceladas
    * @description **DELEGADO**
-   */,
-  async findMyCanceladas(userId) {
+   */ async findMyCanceladas(userId) {
     // 🛑 Delega la consulta al servicio consolidado.
     return suscripcionProyectoService.findMyCanceladas(userId);
   },
   /**
-     * @async
-     * @function findByProjectCanceladas
-     * @description **DELEGADO**
-     */
-    async findByProjectCanceladas(projectId) { // 👈 ¡Añadir esta función!
-        // 🛑 Delega la consulta al servicio consolidado.
-        return suscripcionProyectoService.findByProjectCanceladas(projectId);
-    },
-
+   * @async
+   * @function findByProjectCanceladas
+   * @description **DELEGADO**
+   */
+  async findByProjectCanceladas(projectId) {
+    // 👈 ¡Añadir esta función!
+    // 🛑 Delega la consulta al servicio consolidado.
+    return suscripcionProyectoService.findByProjectCanceladas(projectId);
+  },
 };
 
 module.exports = suscripcionService;

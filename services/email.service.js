@@ -20,27 +20,33 @@ const transporter = nodemailer.createTransport({
  * @returns {string} El HTML completo del correo electrónico.
  */
 function obtenerPlantillaHtml(contenidoPrincipalHtml) {
-  // CRÍTICO: Estas URLs y colores deben ser configurados para la identidad de la marca.
   const LOGO_URL =
     "https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg";
-  const FONDO_HEADER_FOOTER = "#0b1b36"; // Azul oscuro del branding
-  const COLOR_ACCION = "#FF5733"; // Naranja de acción (se usa en el contenido interno)
+  const FONDO_HEADER_FOOTER = "#0b1b36";
 
   return `
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f6f6f6;">
       <tr>
         <td align="center">
           <table class="content-table" width="600" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            
+            <!-- ENCABEZADO CON FONDO BLANCO FORZADO -->
             <tr>
-              <td align="center" style="padding: 20px 0; background-color: #ffffff; border-bottom: 2px solid #eeeeee;">
-                <img src="${LOGO_URL}" alt="Logo Loteplan.com" width="200" style="display: block; border: 0;" />
+              <td align="center" style="padding: 20px 0; background-color: #ffffff !important; border-bottom: 2px solid #eeeeee; color-scheme: light only;">
+                <div style="background-color: #ffffff; padding: 0; mso-line-height-rule: exactly;">
+                  <img src="${LOGO_URL}" alt="Logo Loteplan.com" width="200" style="display: block; border: 0; max-width: 200px; height: auto;" />
+                </div>
               </td>
             </tr>
+            
+            <!-- CONTENIDO PRINCIPAL -->
             <tr>
               <td style="padding: 30px 40px; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333333;">
                 ${contenidoPrincipalHtml}
               </td>
             </tr>
+            
+            <!-- FOOTER -->
             <tr>
               <td align="center" style="background-color: ${FONDO_HEADER_FOOTER}; padding: 30px 40px 20px;">
                 <p style="margin: 0; color: #ffffff; font-size: 14px; font-family: Arial, sans-serif;">
@@ -59,7 +65,6 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
  * Servicio para el envío de correos electrónicos transaccionales.
  */
 const emailService = {
-  
   /**
    * Función base para enviar un correo electrónico.
    * Incluye manejo de errores para el envío.
@@ -85,7 +90,7 @@ const emailService = {
       console.error(`Error al enviar correo a ${to}:`, error);
       // Opcional: Podría lanzarse un error aquí si la falla de envío es crítica.
     }
-  }, 
+  },
 
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
@@ -97,7 +102,7 @@ const emailService = {
   async notificarInicioSubasta(email, lote, esSubastaPrivada) {
     const tipoSubasta = esSubastaPrivada ? "Privada" : "Pública";
     const subject = `¡NUEVO LOTE EN SUBASTA (${tipoSubasta})! Lote #${lote.id}`;
-    
+
     // El mensaje de exclusividad es crítico para la UX y las reglas de negocio.
     const mensajeExclusividad = esSubastaPrivada
       ? `**IMPORTANTE: Esta es una subasta privada y solo los suscriptores del proyecto asociado pueden participar.**`
@@ -137,7 +142,7 @@ const emailService = {
     }. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
 
     await this.sendEmail(email, subject, text, html);
-  }, 
+  },
 
   /**
    * Envía el correo electrónico de confirmación de cuenta.
@@ -168,7 +173,7 @@ const emailService = {
       `Confirma tu cuenta en ${confirmationLink}`,
       html
     );
-  }, 
+  },
 
   /**
    * Notifica al usuario que ha ganado un lote.
@@ -217,7 +222,7 @@ const emailService = {
       `Ganaste el Lote #${loteId}. Fecha límite de pago: ${fechaLimite}`,
       html
     );
-  }, 
+  },
 
   /**
    * Notifica al usuario que ha perdido un lote por no cumplir con el plazo de pago.
@@ -247,7 +252,7 @@ const emailService = {
       `Lote #${loteId} perdido por impago. Token devuelto.`,
       html
     );
-  }, 
+  },
 
   // -----------------------------------------------------------
   // FUNCIONES DE NOTIFICACIÓN ESPECÍFICAS DE PROYECTO
@@ -285,7 +290,7 @@ const emailService = {
         await this.sendEmail(usuario.email, subject, text, html);
       }
     }
-  }, 
+  },
 
   /**
    * Notifica a un **ADMINISTRADOR** que un proyecto alcanzó su objetivo y ha comenzado.
@@ -313,7 +318,7 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha comenzado su proceso de inversión.`,
       html
     );
-  }, 
+  },
 
   /**
    * Notifica a un **USUARIO/SUSCRIPTOR** la pausa de un proyecto.
@@ -338,7 +343,7 @@ const emailService = {
     const html = obtenerPlantillaHtml(contenidoInterno);
 
     await this.sendEmail(user.email, subject, text, html);
-  }, 
+  },
 
   /**
    * Notifica a un **ADMINISTRADOR** la reversión de un proyecto.
@@ -367,7 +372,7 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha sido revertido a 'En Espera'.`,
       html
     );
-  }, 
+  },
 
   /**
    * Notifica a un **ADMINISTRADOR** que un proyecto ha completado su plazo.
@@ -404,7 +409,7 @@ const emailService = {
       `El proyecto ${proyecto.nombre_proyecto} ha finalizado. Revisar cierre.`,
       html
     );
-  }, 
+  },
 
   /**
    * Notifica al usuario que se ha generado su pago mensual.
@@ -449,7 +454,7 @@ const emailService = {
       }. Vence el ${fechaVencimiento}.`,
       html
     );
-  }, 
+  },
 
   /**
    * Envía un correo con el enlace para restablecer la contraseña.
@@ -1063,5 +1068,204 @@ const emailService = {
       html
     );
   },
+  /**
+   * @async
+   * @function notificarDesactivacionCuenta
+   * @description Notifica al usuario que su cuenta ha sido desactivada exitosamente.
+   * Incluye información sobre qué pueden y no pueden hacer con una cuenta desactivada.
+   * @param {object} usuario - Objeto del usuario (debe contener nombre, email, nombre_usuario).
+   */
+  async notificarDesactivacionCuenta(usuario) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = `✅ Confirmación: Tu cuenta ha sido desactivada - Loteplan.com`;
+    const fechaDesactivacion = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // --- Contenido para el Usuario ---
+    const contenidoInterno = `
+    <h2 style="color: #0b1b36; margin-top: 0;">Confirmación de Desactivación de Cuenta</h2>
+    <p>Estimado/a <strong>${usuario.nombre}</strong>,</p>
+    <p>Te confirmamos que tu cuenta (<strong>${usuario.nombre_usuario}</strong>) ha sido desactivada exitosamente el <strong>${fechaDesactivacion}</strong>.</p>
+
+    <div style="border-left: 4px solid #ffc107; padding: 15px; background-color: #fff9e6; margin: 20px 0;">
+      <h3 style="color: #856404; margin-top: 0; font-size: 16px;">⚠️ Consecuencias de la Desactivación</h3>
+      <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8; color: #856404;">
+        <li>Ya <strong>no podrás acceder</strong> a tu cuenta con tus credenciales actuales</li>
+        <li>Tu perfil y publicaciones ya <strong>no serán visibles</strong> para otros usuarios</li>
+        <li>No recibirás notificaciones ni correos electrónicos del sistema</li>
+        <li><strong>No podrás descargar contratos firmados</strong> ni acceder a documentos anteriores</li>
+      </ul>
+    </div>
+
+    <h3 style="color: #0b1b36;">📋 Datos Importantes Sobre Tu Desactivación</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Usuario:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.nombre_usuario}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Email:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.email}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Fecha de Desactivación:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${fechaDesactivacion}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Estado Actual:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><span style="color: #d9534f; font-weight: bold;">Inactiva</span></td>
+      </tr>
+    </table>
+
+    <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
+      <h3 style="color: #2e7d32; margin-top: 0; font-size: 16px;">💡 ¿Cambiaste de Opinión?</h3>
+      <p style="margin: 5px 0; color: #2e7d32;">Si deseas <strong>reactivar tu cuenta</strong> en el futuro, puedes contactarnos en cualquier momento:</p>
+      <p style="margin: 10px 0;">
+        <strong>Email de Soporte:</strong> <a href="mailto:soporte@loteplan.com" style="color: #0b1b36; text-decoration: none; font-weight: bold;">soporte@loteplan.com</a>
+      </p>
+      <p style="margin: 5px 0; font-size: 13px; color: #555;">Necesitaremos verificar tu identidad antes de proceder con la reactivación.</p>
+    </div>
+
+    <h3 style="color: #0b1b36;">🔐 Recordatorios Importantes</h3>
+    <ul style="line-height: 1.8; padding-left: 20px;">
+      <li>Si tenías <strong>pujas ganadoras pendientes de pago</strong>, aún tienes 90 días para completar el pago. Después de ese período, perderás el lote.</li>
+      <li>Si tenías <strong>contratos firmados</strong>, te recomendamos que los hayas descargado antes de desactivar tu cuenta, ya que ya no podrás acceder a ellos.</li>
+      <li>Tus datos personales se mantienen almacenados de forma segura según nuestra política de privacidad.</li>
+    </ul>
+
+    <p style="margin-top: 30px; color: #555;">Lamentamos verte partir. Si hay algo que podamos mejorar, no dudes en compartir tu opinión con nosotros.</p>
+    
+    <p style="margin-top: 20px;">Saludos cordiales,</p>
+    <p style="font-weight: bold; margin: 5px 0;">El Equipo de Loteplan.com</p>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+
+    const textPlain = `
+Confirmación de Desactivación de Cuenta
+
+Estimado/a ${usuario.nombre},
+
+Tu cuenta (${usuario.nombre_usuario}) ha sido desactivada exitosamente el ${fechaDesactivacion}.
+
+Consecuencias:
+- No podrás acceder a tu cuenta
+- Tu perfil ya no será visible
+- No recibirás más notificaciones
+- No podrás descargar contratos firmados
+
+Si deseas reactivar tu cuenta en el futuro, contáctanos en: soporte@loteplan.com
+
+Saludos,
+El Equipo de Loteplan.com
+  `.trim();
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
+  /**
+   * @async
+   * @function notificarReactivacionCuenta
+   * @description Notifica al usuario que su cuenta ha sido reactivada exitosamente.
+   * @param {object} usuario - Objeto del usuario (debe contener nombre, email, nombre_usuario).
+   */
+  async notificarReactivacionCuenta(usuario) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = `🎉 ¡Bienvenido de Nuevo! Tu cuenta ha sido reactivada - Loteplan.com`;
+    const fechaReactivacion = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // --- Contenido para el Usuario ---
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">¡Tu Cuenta ha Sido Reactivada!</h2>
+    <p>Estimado/a <strong>${usuario.nombre}</strong>,</p>
+    <p>Nos complace informarte que tu cuenta (<strong>${usuario.nombre_usuario}</strong>) ha sido <strong>reactivada exitosamente</strong> el <strong>${fechaReactivacion}</strong>.</p>
+
+    <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
+      <h3 style="color: #2e7d32; margin-top: 0; font-size: 16px;">✅ ¡Ya Puedes Acceder Nuevamente!</h3>
+      <p style="margin: 5px 0; color: #2e7d32;">Tu cuenta está completamente activa y puedes iniciar sesión con tus credenciales actuales.</p>
+    </div>
+
+    <h3 style="color: #0b1b36;">📋 Información de Tu Cuenta Reactivada</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Usuario:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.nombre_usuario}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Email:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.email}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Fecha de Reactivación:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${fechaReactivacion}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Estado Actual:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><span style="color: #4CAF50; font-weight: bold;">✅ Activa</span></td>
+      </tr>
+    </table>
+
+    <h3 style="color: #0b1b36;">🔓 ¿Qué Puedes Hacer Ahora?</h3>
+    <ul style="line-height: 1.8; padding-left: 20px;">
+      <li>Acceder a tu panel de usuario con tu email y contraseña</li>
+      <li>Ver y gestionar tus inversiones y suscripciones</li>
+      <li>Participar en subastas de lotes</li>
+      <li>Descargar tus contratos firmados (si aplica)</li>
+      <li>Actualizar tu perfil y preferencias</li>
+    </ul>
+
+    <div style="border-left: 4px solid #ffc107; padding: 15px; background-color: #fff9e6; margin: 20px 0;">
+      <h3 style="color: #856404; margin-top: 0; font-size: 16px;">⚠️ Recordatorio Importante</h3>
+      <p style="margin: 5px 0; color: #856404;">Si olvidaste tu contraseña, puedes restablecerla usando la opción "¿Olvidaste tu contraseña?" en la página de inicio de sesión.</p>
+      <p style="margin: 5px 0; color: #856404;">Recuerda que tus seguridades fueron desactivadas (2FA) necesita activarlas nuevamente para realizar operaciones por medio de la pagina</p>
+    </div>
+
+    <a href="&{FRONTEND_URL}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Iniciar Sesión Ahora
+    </a>
+
+    <p style="margin-top: 30px; color: #555;">¡Nos alegra tenerte de vuelta! Si tienes alguna pregunta o necesitas asistencia, no dudes en contactarnos.</p>
+    
+    <p style="margin-top: 20px;">Saludos cordiales,</p>
+    <p style="font-weight: bold; margin: 5px 0;">El Equipo de Loteplan.com</p>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+
+    const textPlain = `
+¡Tu Cuenta ha Sido Reactivada!
+
+Estimado/a ${usuario.nombre},
+
+Tu cuenta (${usuario.nombre_usuario}) ha sido reactivada exitosamente el ${fechaReactivacion}.
+
+Ya puedes acceder nuevamente a tu cuenta con tus credenciales actuales.
+
+Información de tu cuenta:
+- Usuario: ${usuario.nombre_usuario}
+- Email: ${usuario.email}
+- Estado: Activa ✅
+
+¡Nos alegra tenerte de vuelta!
+
+Saludos,
+El Equipo de Loteplan.com
+  `.trim();
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
 };
+
 module.exports = emailService;
