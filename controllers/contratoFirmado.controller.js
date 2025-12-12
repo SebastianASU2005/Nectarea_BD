@@ -13,9 +13,6 @@ const contratoFirmaController = {
         id_contrato_plantilla,
         id_proyecto,
         id_usuario_firmante,
-        // ❌ YA NO SE REQUIEREN:
-        // id_inversion_asociada,
-        // id_suscripcion_asociada,
         hash_archivo_firmado,
         latitud_verificacion,
         longitud_verificacion,
@@ -24,7 +21,10 @@ const contratoFirmaController = {
 
       const pdfFile = req.file;
 
-      // 1. Validaciones básicas
+      // ============================================================
+      // FASE 1: VALIDACIONES BÁSICAS
+      // ============================================================
+
       if (!pdfFile || !pdfFile.buffer) {
         return res.status(400).json({
           message: "No se encontró el archivo PDF en la solicitud.",
@@ -37,7 +37,10 @@ const contratoFirmaController = {
         });
       }
 
-      // 2. VERIFICACIÓN CRÍTICA DEL CÓDIGO 2FA
+      // ============================================================
+      // FASE 2: VERIFICACIÓN 2FA
+      // ============================================================
+
       const user = await UsuarioService.findById(id_usuario_firmante);
 
       if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
@@ -59,7 +62,10 @@ const contratoFirmaController = {
         });
       }
 
-      // 3. Verificación del Hash del Archivo
+      // ============================================================
+      // FASE 3: VERIFICACIÓN DE HASH
+      // ============================================================
+
       const hashVerificadoBackend =
         localFileStorageService.calculateHashFromBuffer(pdfFile.buffer);
 
@@ -73,7 +79,25 @@ const contratoFirmaController = {
         });
       }
 
-      // 4. Subida y Almacenamiento Final
+      // ============================================================
+      // FASE 4: PRE-VALIDACIÓN DE NEGOCIO (SIN GUARDAR NADA)
+      // ============================================================
+      // ✅ SOLUCIÓN SIMPLE: Validamos ANTES de guardar el PDF
+
+      // Llamamos a una función de validación que NO crea el registro
+      await contratoFirmadoService.validateContractEligibility({
+        id_usuario_firmante,
+        id_proyecto,
+        id_contrato_plantilla,
+      });
+
+      // ✅ Si llegamos aquí, todas las validaciones pasaron
+      // Ahora SÍ guardamos el PDF
+
+      // ============================================================
+      // FASE 5: GUARDAR PDF (SOLO SI VALIDACIONES PASARON)
+      // ============================================================
+
       const fileName = `contrato-${id_usuario_firmante}-${Date.now()}.pdf`;
       const relativeFilePath = `contratos/${id_proyecto}/${fileName}`;
 
@@ -82,18 +106,18 @@ const contratoFirmaController = {
         relativeFilePath
       );
 
-      // 5. Registro de la Auditoría Final (AUTO-DETECCIÓN INTERNA)
+      // ============================================================
+      // FASE 6: CREAR REGISTRO EN BASE DE DATOS
+      // ============================================================
+
       const firmaData = {
         id_contrato_plantilla,
         nombre_archivo: fileName,
         url_archivo: url_archivo_final,
-        hash_archivo_firmado,
+        hash_archivo_firmado: hashVerificadoBackend,
         firma_digital: `Firma Protocolo Propio - Usuario ID ${id_usuario_firmante} - 2FA Verificado`,
         id_proyecto,
         id_usuario_firmante,
-        // ✅ YA NO SE ENVÍAN - El servicio los detecta automáticamente:
-        // id_inversion_asociada: null,
-        // id_suscripcion_asociada: null,
         ip_firma: getIpAddress(req),
         geolocalizacion_firma: `${latitud_verificacion || "N/A"},${
           longitud_verificacion || "N/A"
@@ -111,7 +135,7 @@ const contratoFirmaController = {
           nombre_archivo: contratoFirmado.nombre_archivo,
           fecha_firma: contratoFirmado.fecha_firma,
           estado_firma: contratoFirmado.estado_firma,
-          // ✅ Información útil para el frontend:
+          url_archivo: url_archivo_final,
           tipo_autorizacion: contratoFirmado.id_inversion_asociada
             ? "inversion"
             : "suscripcion",
