@@ -1,11 +1,11 @@
-// routes/pago.routes.js
+// routes/pago.routes.js (ACTUALIZADO CON NUEVAS RUTAS)
 
 const express = require("express");
 const router = express.Router();
 const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
-const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
+const { blockAdminTransactions } = require("../middleware/roleValidation");
 
 // =================================================================
 // 1. RUTAS ESTÁTICAS Y SEMI-DINÁMICAS (USUARIO y ADMIN)
@@ -23,9 +23,27 @@ router.get(
 router.post(
   "/confirmar-pago-2fa",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  blockAdminTransactions,
   checkKYCandTwoFA,
   pagoController.confirmarPagoYContinuar
+);
+
+// 🆕 POST /generar-adelantados (SOLO ADMIN)
+// Permite generar múltiples pagos por adelantado para una suscripción
+router.post(
+  "/generar-adelantados",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.generateAdvancePayments
+);
+
+// 🆕 GET /pendientes/suscripcion/:id_suscripcion (SOLO ADMIN)
+// Obtiene pagos pendientes de una suscripción específica
+router.get(
+  "/pendientes/suscripcion/:id_suscripcion",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.getPendingPaymentsBySubscription
 );
 
 // GET /metricas/mensuales (Admin)
@@ -69,9 +87,18 @@ router.post(
 router.post(
   "/pagar-mes/:id",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  blockAdminTransactions,
   checkKYCandTwoFA,
   pagoController.requestCheckout
+);
+
+// 🆕 PATCH /:id/monto (Admin)
+// Permite cambiar el monto de un pago pendiente/vencido
+router.patch(
+  "/:id/monto",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.updatePaymentAmount
 );
 
 // =================================================================

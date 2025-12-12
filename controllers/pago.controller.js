@@ -5,6 +5,7 @@ const transaccionService = require("../services/transaccion.service");
 // 🛑 NUEVAS IMPORTACIONES REQUERIDAS PARA LA LÓGICA 2FA 🛑
 const auth2faService = require("../services/auth2fa.service");
 const usuarioService = require("../services/usuario.service");
+const { sequelize } = require("../config/database");
 
 /**
  * Controlador de Express para gestionar los pagos pendientes, incluyendo
@@ -383,6 +384,103 @@ const pagoController = {
       res.status(500).json({
         error: "Error interno al procesar la tasa de pagos a tiempo.",
       });
+    }
+  },
+  /**
+   * @async
+   * @function generateAdvancePayments
+   * @description Genera múltiples pagos por adelantado para una suscripción. (Admin/Sistema)
+   * @param {object} req - Se espera req.body.id_suscripcion, req.body.cantidad_meses, [req.body.monto_por_mes].
+   */
+  async generateAdvancePayments(req, res) {
+    const t = await sequelize.transaction();
+    try {
+      const { id_suscripcion, cantidad_meses, monto_por_mes } = req.body;
+      
+      // La validación de parámetros (números, rangos) debe ir en el middleware de rutas (express-validator)
+
+      const pagosGenerados = await pagoService.generarPagosAdelantados(
+        id_suscripcion,
+        cantidad_meses,
+        monto_por_mes,
+        { transaction: t }
+      );
+
+      await t.commit();
+      
+      return res.status(201).json({
+        message: `Generados ${pagosGenerados.length} pagos adelantados para la suscripción ID ${id_suscripcion}.`,
+        pagos: pagosGenerados.map(p => ({
+          id: p.id,
+          monto: p.monto,
+          mes: p.mes,
+          estado_pago: p.estado_pago
+        }))
+      });
+
+    } catch (error) {
+      await t.rollback();
+      console.error("Error en generateAdvancePayments:", error.message);
+      return res.status(400).json({ error: error.message || "Error al generar pagos adelantados." });
+    }
+  },
+  /**
+   * @async
+   * @function getPendingPaymentsBySubscription
+   * @description Obtiene todos los pagos pendientes o vencidos de una suscripción. (Admin)
+   * @param {object} req - Se espera req.params.id_suscripcion.
+   */
+  async getPendingPaymentsBySubscription(req, res) {
+    try {
+      const id_suscripcion = parseInt(req.params.id_suscripcion);
+
+      if (isNaN(id_suscripcion)) {
+        return res.status(400).json({ error: "ID de suscripción inválido." });
+      }
+
+      const pagos = await pagoService.findPendingPaymentsBySubscription(id_suscripcion);
+      
+      return res.status(200).json({
+        message: `Pagos pendientes/vencidos para la suscripción ID ${id_suscripcion}.`,
+        data: pagos
+      });
+      
+    } catch (error) {
+      console.error("Error en getPendingPaymentsBySubscription:", error.message);
+      res.status(500).json({ error: "Error al obtener pagos pendientes por suscripción." });
+    }
+  },
+  /**
+   * @async
+   * @function updatePaymentAmount
+   * @description Permite actualizar el monto de un pago PENDIENTE o VENCIDO. (Admin)
+   * @param {object} req - Se espera req.params.id (ID de pago), req.body.monto y [req.body.motivo_cambio].
+   */
+  async updatePaymentAmount(req, res) {
+    try {
+      const pagoId = parseInt(req.params.id);
+      // Usamos 'monto' en el body, en lugar de 'nuevo_monto' para simplificar el DTO
+      const { monto, motivo_cambio } = req.body; 
+
+      const pagoActualizado = await pagoService.actualizarMontoPago(
+        pagoId,
+        monto,
+        motivo_cambio
+      );
+
+      return res.status(200).json({
+        message: `Monto del Pago ID ${pagoId} actualizado a $${pagoActualizado.monto}.`,
+        pago: {
+          id: pagoActualizado.id,
+          monto: pagoActualizado.monto,
+          estado_pago: pagoActualizado.estado_pago,
+          motivo_cambio: motivo_cambio || 'N/A'
+        },
+      });
+
+    } catch (error) {
+      console.error("Error en updatePaymentAmount:", error.message);
+      return res.status(400).json({ error: error.message || "Error al actualizar el monto del pago." });
     }
   },
 };

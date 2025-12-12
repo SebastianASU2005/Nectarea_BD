@@ -1,3 +1,5 @@
+// Archivo: app.js (CORREGIDO)
+
 const express = require("express");
 const app = express();
 const PORT = 3000;
@@ -22,9 +24,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "========================================================================="
   );
   console.error(
-    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
   );
-  console.error("       El servicio de pagos NO funcionará.");
+  console.error("       El servicio de pagos NO funcionará.");
   console.error(
     "========================================================================="
   );
@@ -183,15 +185,25 @@ console.log(
 
 console.log("📦 Registrando rutas con Multer (sin body parsing)...");
 
-app.use('/api/kyc', (req, res, next) => {
-  console.log('\n🔍 ===== DEBUG PRE-KYC =====');
-  console.log('📍 URL:', req.url);
-  console.log('📍 Method:', req.method);
-  console.log('📍 Content-Type:', req.get('content-type'));
-  console.log('📍 Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('📍 Body ya parseado?:', !!req.body, '- Keys:', Object.keys(req.body || {}));
-  console.log('📍 Files ya parseados?:', !!req.files, '- Keys:', Object.keys(req.files || {}));
-  console.log('🔍 ===========================\n');
+app.use("/api/kyc", (req, res, next) => {
+  console.log("\n🔍 ===== DEBUG PRE-KYC =====");
+  console.log("📍 URL:", req.url);
+  console.log("📍 Method:", req.method);
+  console.log("📍 Content-Type:", req.get("content-type"));
+  console.log("📍 Headers:", JSON.stringify(req.headers, null, 2));
+  console.log(
+    "📍 Body ya parseado?:",
+    !!req.body,
+    "- Keys:",
+    Object.keys(req.body || {})
+  );
+  console.log(
+    "📍 Files ya parseados?:",
+    !!req.files,
+    "- Keys:",
+    Object.keys(req.files || {})
+  );
+  console.log("🔍 ===========================\n");
   next();
 });
 
@@ -214,6 +226,9 @@ console.log("✅ Body parsing activado");
 // ====================================================================
 // 5.4. RESTO DE RUTAS DE LA API (CON BODY PARSING)
 // ====================================================================
+// 🚨 Nota: El orden de estas rutas es importante si tienen prefijos genéricos.
+// Dado que la ruta "/api/pagos" no tiene parámetros dinámicos, el orden actual es adecuado.
+
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
@@ -222,7 +237,7 @@ app.use("/api/pujas", pujaRoutes);
 app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
 app.use("/api/suscripcionesCanceladas", suscripcionRoutes);
-app.use("/api/pagos", pagoRoutes);
+app.use("/api/pagos", pagoRoutes); // ✅ Aquí se monta el router de pagos
 app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
@@ -322,12 +337,12 @@ async function synchronizeDatabase() {
       console.log(`Servidor escuchando en http://localhost:${PORT}`);
       console.log("=".repeat(70));
       console.log("📋 ORDEN DE MIDDLEWARES CONFIGURADO:");
-      console.log("   1. CORS");
-      console.log("   2. Archivos estáticos (/uploads)");
-      console.log("   3. Webhook (con raw body)");
-      console.log("   4. Rutas con Multer (KYC, Contratos, Imágenes)");
-      console.log("   5. Body parsing global (express.json)");
-      console.log("   6. Resto de rutas de la API");
+      console.log("   1. CORS");
+      console.log("   2. Archivos estáticos (/uploads)");
+      console.log("   3. Webhook (con raw body)");
+      console.log("   4. Rutas con Multer (KYC, Contratos, Imágenes)");
+      console.log("   5. Body parsing global (express.json)");
+      console.log("   6. Resto de rutas de la API");
       console.log("=".repeat(70));
     });
   } catch (error) {

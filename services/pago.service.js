@@ -35,17 +35,15 @@ const pagoService = {
    */
   async create(data, options = {}) {
     return Pago.create(data, options);
-  }
+  },
   /**
    * @async
    * @function findAll
    * @description Obtiene todos los registros de Pagos.
    * @returns {Promise<Pago[]>} Lista de todos los pagos.
-   */,
-
-  async findAll() {
+   */ async findAll() {
     return Pago.findAll();
-  }
+  },
   /**
    * @async
    * @function findById
@@ -53,20 +51,16 @@ const pagoService = {
    * @param {number} id - ID del pago.
    * @param {object} [options] - Opciones de Sequelize (ej. include).
    * @returns {Promise<Pago|null>} El pago encontrado.
-   */,
-
-  async findById(id, options = {}) {
+   */ async findById(id, options = {}) {
     return Pago.findByPk(id, options);
-  }
+  },
   /**
    * @async
    * @function findByUserId
    * @description Obtiene todos los pagos asociados a las suscripciones de un usuario.
    * @param {number} id_usuario - ID del usuario.
    * @returns {Promise<Pago[]>} Lista de pagos del usuario.
-   */,
-
-  async findByUserId(id_usuario) {
+   */ async findByUserId(id_usuario) {
     return Pago.findAll({
       include: [
         {
@@ -79,7 +73,7 @@ const pagoService = {
         },
       ],
     });
-  }
+  },
   /**
    * @async
    * @function getValidPaymentDetails
@@ -88,9 +82,7 @@ const pagoService = {
    * @param {number} userId - El ID del usuario autenticado.
    * @returns {Promise<Pago>} El objeto Pago validado (con `suscripcion` adjunta en `dataValues`).
    * @throws {Error} Si el pago no existe, no es del usuario, está inactivo o ya fue pagado/cancelado.
-   */,
-
-  async getValidPaymentDetails(pagoId, userId) {
+   */ async getValidPaymentDetails(pagoId, userId) {
     try {
       // 1. Buscar el Pago base
       const pago = await Pago.findByPk(pagoId);
@@ -135,7 +127,7 @@ const pagoService = {
     } catch (error) {
       throw new Error(`Error en la validación del pago: ${error.message}`);
     }
-  }
+  },
   /**
    * @async
    * @function generarPagoMensualConDescuento
@@ -144,9 +136,7 @@ const pagoService = {
    * @param {object} [options] - Opciones de Sequelize (ej. transaction).
    * @returns {Promise<Pago|object>} El nuevo pago generado o un mensaje si no hay meses restantes.
    * @throws {Error} Si la suscripción o proyecto no existen o faltan IDs clave.
-   */,
-
-  async generarPagoMensualConDescuento(suscripcionId, options = {}) {
+   */ async generarPagoMensualConDescuento(suscripcionId, options = {}) {
     const t = options.transaction || (await sequelize.transaction());
     try {
       // 1. Buscar Suscripción y Proyecto asociado
@@ -224,7 +214,7 @@ const pagoService = {
       if (t && !options.transaction) await t.rollback();
       throw error;
     }
-  }
+  },
   /**
    * @async
    * @function handlePaymentFailure
@@ -234,9 +224,7 @@ const pagoService = {
    * @param {object} t - Objeto de transacción de Sequelize.
    * @returns {Promise<Pago>} El pago actualizado.
    * @throws {Error} Si el pago no es encontrado.
-   */,
-
-  async handlePaymentFailure(pagoId, t) {
+   */ async handlePaymentFailure(pagoId, t) {
     const pago = await Pago.findByPk(pagoId, { transaction: t });
 
     if (!pago) {
@@ -258,7 +246,7 @@ const pagoService = {
       `Pago ID ${pagoId} (Mes ${pago.mes}) mantiene su estado pendiente/vencido tras la falla de la transacción.`
     );
     return pago;
-  }
+  },
   /**
    * @async
    * @function markAsPaid
@@ -267,9 +255,7 @@ const pagoService = {
    * @param {object} t - Objeto de transacción de Sequelize.
    * @returns {Promise<Pago>} El pago confirmado.
    * @throws {Error} Si el pago, usuario o proyecto no son encontrados.
-   */,
-
-  async markAsPaid(pagoId, t) {
+   */ async markAsPaid(pagoId, t) {
     try {
       const pago = await Pago.findByPk(pagoId, {
         transaction: t,
@@ -323,7 +309,7 @@ const pagoService = {
     } catch (error) {
       throw error;
     }
-  }
+  },
   /**
    * @async
    * @function markOverduePayments
@@ -331,9 +317,7 @@ const pagoService = {
    * Actualiza el resumen de cuenta para reflejar la nueva cuota vencida.
    * @returns {Promise<number>} Número de pagos actualizados a 'vencido'.
    * @throws {Error} Si ocurre un error de base de datos.
-   */,
-
-  async markOverduePayments() {
+   */ async markOverduePayments() {
     const t = await sequelize.transaction();
     try {
       const today = new Date();
@@ -370,16 +354,14 @@ const pagoService = {
       console.error("Error en markOverduePayments:", error.message);
       throw new Error(`Error al procesar pagos vencidos: ${error.message}`);
     }
-  }
+  },
   /**
    * @async
    * @function deleteCanceledPayments
    * @description Elimina físicamente los registros de pagos que están en estado `cancelado`.
    * @returns {Promise<number>} Número de filas eliminadas.
    * @throws {Error} Si ocurre un error de base de datos.
-   */,
-
-  async deleteCanceledPayments() {
+   */ async deleteCanceledPayments() {
     try {
       const result = await Pago.destroy({
         where: { estado_pago: "cancelado" },
@@ -388,15 +370,13 @@ const pagoService = {
     } catch (error) {
       throw new Error(`Error al eliminar pagos cancelados: ${error.message}`);
     }
-  }
+  },
   /**
    * @async
    * @function findPaymentsDueSoon
    * @description Busca pagos pendientes cuya fecha de vencimiento esté entre hoy y los próximos 3 días (para recordatorios).
    * @returns {Promise<Pago[]>} Lista de pagos a vencer pronto, incluyendo detalles de proyecto y usuario.
-   */,
-
-  async findPaymentsDueSoon() {
+   */ async findPaymentsDueSoon() {
     const today = new Date();
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(today.getDate() + 3);
@@ -422,15 +402,13 @@ const pagoService = {
         },
       ],
     });
-  }
+  },
   /**
    * @async
    * @function findOverduePayments
    * @description Busca pagos que ya fueron marcados como 'vencido'.
    * @returns {Promise<Pago[]>} Lista de pagos vencidos, incluyendo detalles de proyecto y usuario.
-   */,
-
-  async findOverduePayments() {
+   */ async findOverduePayments() {
     return Pago.findAll({
       where: { estado_pago: "vencido" },
       include: [
@@ -444,16 +422,14 @@ const pagoService = {
         },
       ],
     });
-  }
+  },
   /**
    * @async
    * @function updateLastNotificationDate
    * @description Actualiza la fecha de la última notificación de un pago.
    * @param {number} id_pago - ID del pago a actualizar.
    * @throws {Error} Si falla la actualización.
-   */,
-
-  async updateLastNotificationDate(id_pago) {
+   */ async updateLastNotificationDate(id_pago) {
     try {
       await Pago.update(
         { fecha_ultima_notificacion: new Date() },
@@ -462,7 +438,7 @@ const pagoService = {
     } catch (error) {
       throw error;
     }
-  }
+  },
   /**
    * @async
    * @function getMonthlyPaymentMetrics
@@ -471,9 +447,7 @@ const pagoService = {
    * @param {number} mes - El mes a consultar (1-12).
    * @param {number} anio - El año a consultar.
    * @returns {Promise<object>} Objeto con las métricas agregadas.
-   */,
-
-  async getMonthlyPaymentMetrics(mes, anio) {
+   */ async getMonthlyPaymentMetrics(mes, anio) {
     // 1. Definir el rango de fechas (fecha de creación del pago)
     const fechaInicio = new Date(anio, mes - 1, 1);
     const fechaFin = new Date(anio, mes, 0);
@@ -524,7 +498,7 @@ const pagoService = {
       tasa_morosidad: tasaMorosidad.toFixed(2), // KPI 1
       total_pagos_pagados: parseInt(data.total_pagos_pagados || 0),
     };
-  }
+  },
   /**
    * @async
    * @function getOnTimePaymentRate
@@ -533,9 +507,7 @@ const pagoService = {
    * @param {number} mes - Mes a consultar (1-12).
    * @param {number} anio - Año a consultar.
    * @returns {Promise<object>} Objeto con el porcentaje de pagos a tiempo.
-   */,
-
-  async getOnTimePaymentRate(mes, anio) {
+   */ async getOnTimePaymentRate(mes, anio) {
     const fechaInicio = new Date(anio, mes - 1, 1);
     const fechaFin = new Date(anio, mes, 0);
     fechaFin.setHours(23, 59, 59, 999); // 1. Denominador: Contar todos los pagos que SÍ se pagaron en el mes
@@ -570,6 +542,217 @@ const pagoService = {
       pagos_a_tiempo: pagosATiempo,
       tasa_pagos_a_tiempo: tasaATiempo.toFixed(2), // KPI 3
     };
+  },
+  /**
+   * @async
+   * @function actualizarMontoPago
+   * @description Permite cambiar el monto de un pago PENDIENTE o VENCIDO.
+   * Solo permite modificar pagos que aún no han sido pagados.
+   * @param {number} pagoId - ID del pago a modificar.
+   * @param {number} nuevoMonto - Nuevo monto del pago.
+   * @param {string} [motivoCambio] - Razón del cambio de monto (para auditoría).
+   * @returns {Promise<Pago>} El pago actualizado.
+   * @throws {Error} Si el pago no existe, no está en estado modificable o el monto es inválido.
+   */
+  async actualizarMontoPago(pagoId, nuevoMonto, motivoCambio = null) {
+    const pago = await Pago.findByPk(pagoId);
+
+    if (!pago) {
+      throw new Error(`Pago ID ${pagoId} no encontrado.`);
+    }
+
+    // Solo se pueden modificar pagos pendientes o vencidos
+    if (!["pendiente", "vencido"].includes(pago.estado_pago)) {
+      throw new Error(
+        `No se puede modificar el monto de un pago en estado '${pago.estado_pago}'. Solo se permiten estados: pendiente, vencido.`
+      );
+    }
+
+    if (nuevoMonto <= 0 || isNaN(nuevoMonto)) {
+      throw new Error("El nuevo monto debe ser un número positivo válido.");
+    }
+
+    // Registrar el cambio para auditoría
+    console.log(`[AUDITORÍA] Cambio de monto en Pago ID ${pagoId}:
+    Monto anterior: $${pago.monto}
+    Monto nuevo: $${nuevoMonto}
+    Motivo: ${motivoCambio || "No especificado"}
+    Fecha: ${new Date().toISOString()}`);
+
+    await pago.update({
+      monto: parseFloat(nuevoMonto).toFixed(2),
+    });
+
+    return pago;
+  },
+
+  /**
+   * @async
+   * @function generarPagosAdelantados
+   * @description Genera múltiples pagos por adelantado para una suscripción.
+   * Útil cuando un usuario quiere pagar varios meses de una vez.
+   * @param {number} suscripcionId - ID de la suscripción.
+   * @param {number} cantidadMeses - Número de meses a generar.
+   * @param {number} [montoPorMes] - Monto personalizado por mes (opcional, por defecto usa el del proyecto).
+   * @param {object} [options] - Opciones de Sequelize (ej. transaction).
+   * @returns {Promise<Pago[]>} Array de pagos generados.
+   * @throws {Error} Si la suscripción no existe, no tiene meses restantes o los parámetros son inválidos.
+   */
+  async generarPagosAdelantados(
+    suscripcionId,
+    cantidadMeses,
+    montoPorMes = null,
+    options = {}
+  ) {
+    const t = options.transaction || (await sequelize.transaction());
+
+    try {
+      // 1. Validar la suscripción
+      const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
+        transaction: t,
+        include: [{ model: Proyecto, as: "proyectoAsociado" }],
+      });
+
+      if (!suscripcion || !suscripcion.proyectoAsociado) {
+        if (!options.transaction) await t.rollback();
+        throw new Error(
+          `Suscripción ID ${suscripcionId} no encontrada o sin proyecto asociado.`
+        );
+      }
+
+      if (!suscripcion.activo) {
+        if (!options.transaction) await t.rollback();
+        throw new Error(`La suscripción ID ${suscripcionId} no está activa.`);
+      }
+
+      // 2. Validar parámetros
+      if (!cantidadMeses || cantidadMeses < 1 || cantidadMeses > 12) {
+        if (!options.transaction) await t.rollback();
+        throw new Error("La cantidad de meses debe estar entre 1 y 12.");
+      }
+
+      if (suscripcion.meses_a_pagar <= 0) {
+        if (!options.transaction) await t.rollback();
+        throw new Error("Esta suscripción no tiene meses restantes por pagar.");
+      }
+
+      // Limitar la cantidad de meses a generar por los meses restantes
+      const mesesAGenerar = Math.min(cantidadMeses, suscripcion.meses_a_pagar);
+
+      if (mesesAGenerar < cantidadMeses) {
+        console.warn(
+          `⚠️ Solo se generarán ${mesesAGenerar} pagos (meses restantes en la suscripción).`
+        );
+      }
+
+      // 3. Determinar el monto por mes
+      const montoBase = montoPorMes
+        ? parseFloat(montoPorMes)
+        : parseFloat(suscripcion.proyectoAsociado.monto_inversion);
+
+      if (montoBase <= 0 || isNaN(montoBase)) {
+        if (!options.transaction) await t.rollback();
+        throw new Error("El monto por mes debe ser un número positivo válido.");
+      }
+
+      // 4. Encontrar el último mes pagado/generado
+      const ultimoPago = await Pago.findOne({
+        where: { id_suscripcion: suscripcionId },
+        order: [["mes", "DESC"]],
+        transaction: t,
+      });
+
+      const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
+
+      // 5. Generar los pagos
+      const pagosGenerados = [];
+      let saldoRestante = parseFloat(suscripcion.saldo_a_favor);
+
+      for (let i = 0; i < mesesAGenerar; i++) {
+        const numeroMes = proximoMes + i;
+
+        // Aplicar saldo a favor si existe
+        let montoAPagar = montoBase;
+        let estadoPago = "pendiente";
+
+        if (saldoRestante > 0) {
+          const descuentoAplicado = Math.min(montoBase, saldoRestante);
+          montoAPagar = montoBase - descuentoAplicado;
+          saldoRestante -= descuentoAplicado;
+
+          if (montoAPagar === 0) {
+            estadoPago = "cubierto_por_puja";
+          }
+        }
+
+        // Calcular fecha de vencimiento (día 10 del mes correspondiente)
+        const now = new Date();
+        const fechaVencimiento = new Date(
+          now.getFullYear(),
+          now.getMonth() + i,
+          10
+        );
+        fechaVencimiento.setHours(0, 0, 0, 0);
+
+        // Crear el pago
+        const nuevoPago = await Pago.create(
+          {
+            id_suscripcion: suscripcion.id,
+            id_usuario: suscripcion.id_usuario,
+            id_proyecto: suscripcion.id_proyecto,
+            monto: montoAPagar.toFixed(2),
+            fecha_vencimiento: fechaVencimiento,
+            estado_pago: estadoPago,
+            mes: numeroMes,
+          },
+          { transaction: t }
+        );
+
+        pagosGenerados.push(nuevoPago);
+
+        // Decrementar meses_a_pagar de la suscripción
+        await suscripcion.decrement("meses_a_pagar", { by: 1, transaction: t });
+      }
+
+      // 6. Actualizar el saldo a favor si cambió
+      if (saldoRestante !== parseFloat(suscripcion.saldo_a_favor)) {
+        await suscripcion.update(
+          { saldo_a_favor: saldoRestante.toFixed(2) },
+          { transaction: t }
+        );
+      }
+
+      if (!options.transaction) await t.commit();
+
+      console.log(
+        `✅ Generados ${pagosGenerados.length} pagos adelantados para la Suscripción ID ${suscripcionId}`
+      );
+
+      return pagosGenerados;
+    } catch (error) {
+      if (t && !options.transaction) await t.rollback();
+      throw error;
+    }
+  },
+
+  /**
+   * @async
+   * @function findPendingPaymentsBySubscription
+   * @description Obtiene todos los pagos pendientes de una suscripción específica.
+   * Útil para ver qué pagos ya fueron generados antes de crear nuevos.
+   * @param {number} suscripcionId - ID de la suscripción.
+   * @returns {Promise<Pago[]>} Lista de pagos pendientes/vencidos.
+   */
+  async findPendingPaymentsBySubscription(suscripcionId) {
+    return Pago.findAll({
+      where: {
+        id_suscripcion: suscripcionId,
+        estado_pago: {
+          [Op.in]: ["pendiente", "vencido"],
+        },
+      },
+      order: [["mes", "ASC"]],
+    });
   },
 };
 
