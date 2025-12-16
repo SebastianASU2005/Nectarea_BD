@@ -96,10 +96,17 @@ const configureAssociations = () => {
     onDelete: "RESTRICT",
   });
 
-  // Un Usuario tiene un registro de VerificacionIdentidad (uno a uno).
+  // 🆕 Un Usuario tiene un registro de VerificacionIdentidad (uno a uno).
   Usuario.hasOne(VerificacionIdentidad, {
     foreignKey: "id_usuario",
     as: "verificacion_identidad",
+    onDelete: "RESTRICT",
+  });
+
+  // 🆕 Un Usuario (admin) puede haber verificado múltiples solicitudes KYC.
+  Usuario.hasMany(VerificacionIdentidad, {
+    foreignKey: "id_verificador",
+    as: "verificaciones_realizadas",
     onDelete: "RESTRICT",
   });
 
@@ -515,7 +522,7 @@ const configureAssociations = () => {
   });
 
   // -------------------------------------------------------------------
-  // --- Relaciones de VerificacionIdentidad ---
+  // --- 🆕 Relaciones de VerificacionIdentidad ---
   // -------------------------------------------------------------------
 
   // Un registro de Verificación pertenece a un Usuario (el verificado).
@@ -524,7 +531,7 @@ const configureAssociations = () => {
     as: "usuario",
   });
 
-  // Un registro de Verificación pertenece a un Usuario (el que verifica).
+  // Un registro de Verificación pertenece a un Usuario (el que verifica - Admin).
   VerificacionIdentidad.belongsTo(Usuario, {
     foreignKey: "id_verificador",
     as: "verificador",

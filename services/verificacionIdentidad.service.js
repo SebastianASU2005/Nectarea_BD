@@ -1,4 +1,5 @@
 const VerificacionIdentidad = require("../models/verificacion_identidad");
+const Usuario = require("../models/usuario");
 const localFileStorageService = require("./localFileStorage.service");
 
 const verificacionIdentidadService = {
@@ -205,6 +206,22 @@ const verificacionIdentidadService = {
           "url_video_verificacion",
         ],
       },
+      // 🆕 Incluir información del verificador si existe
+      include: [
+        {
+          model: Usuario,
+          as: "verificador",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "nombre_usuario",
+            "rol",
+          ],
+          required: false,
+        },
+      ],
     });
   },
 
@@ -263,13 +280,32 @@ const verificacionIdentidadService = {
   /**
    * @async
    * @function findPendingVerifications
-   * @description Obtiene todas las solicitudes PENDIENTES.
+   * @description Obtiene todas las solicitudes PENDIENTES con info del usuario.
    */
   async findPendingVerifications() {
     return VerificacionIdentidad.findAll({
       where: {
         estado_verificacion: "PENDIENTE",
       },
+      // 🆕 Incluir información completa del usuario que envió la solicitud
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "dni",
+            "nombre_usuario",
+            "numero_telefono",
+            "fecha_registro",
+            "rol",
+          ],
+          required: true,
+        },
+      ],
       order: [["createdAt", "ASC"]],
     });
   },
@@ -277,13 +313,44 @@ const verificacionIdentidadService = {
   /**
    * @async
    * @function findApprovedVerifications
-   * @description Obtiene todas las solicitudes APROBADAS.
+   * @description Obtiene todas las solicitudes APROBADAS con info completa.
    */
   async findApprovedVerifications() {
     return VerificacionIdentidad.findAll({
       where: {
         estado_verificacion: "APROBADA",
       },
+      // 🆕 Incluir tanto el usuario como el verificador
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "dni",
+            "nombre_usuario",
+            "numero_telefono",
+            "rol",
+          ],
+          required: true,
+        },
+        {
+          model: Usuario,
+          as: "verificador",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "nombre_usuario",
+            "rol",
+          ],
+          required: false,
+        },
+      ],
       order: [["fecha_verificacion", "DESC"]],
     });
   },
@@ -291,13 +358,44 @@ const verificacionIdentidadService = {
   /**
    * @async
    * @function findRejectedVerifications
-   * @description Obtiene todas las solicitudes RECHAZADAS.
+   * @description Obtiene todas las solicitudes RECHAZADAS con info completa.
    */
   async findRejectedVerifications() {
     return VerificacionIdentidad.findAll({
       where: {
         estado_verificacion: "RECHAZADA",
       },
+      // 🆕 Incluir tanto el usuario como el verificador
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "dni",
+            "nombre_usuario",
+            "numero_telefono",
+            "rol",
+          ],
+          required: true,
+        },
+        {
+          model: Usuario,
+          as: "verificador",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "nombre_usuario",
+            "rol",
+          ],
+          required: false,
+        },
+      ],
       order: [["fecha_verificacion", "DESC"]],
     });
   },
@@ -305,13 +403,44 @@ const verificacionIdentidadService = {
   /**
    * @async
    * @function findAllProcessedVerifications
-   * @description Obtiene todas las solicitudes procesadas (APROBADAS y RECHAZADAS).
+   * @description Obtiene todas las solicitudes procesadas (APROBADAS y RECHAZADAS) con info completa.
    */
   async findAllProcessedVerifications() {
     return VerificacionIdentidad.findAll({
       where: {
         estado_verificacion: ["APROBADA", "RECHAZADA"],
       },
+      // 🆕 Incluir tanto el usuario como el verificador
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "dni",
+            "nombre_usuario",
+            "numero_telefono",
+            "rol",
+          ],
+          required: true,
+        },
+        {
+          model: Usuario,
+          as: "verificador",
+          attributes: [
+            "id",
+            "nombre",
+            "apellido",
+            "email",
+            "nombre_usuario",
+            "rol",
+          ],
+          required: false,
+        },
+      ],
       order: [["fecha_verificacion", "DESC"]],
     });
   },

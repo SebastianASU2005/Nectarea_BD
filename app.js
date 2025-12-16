@@ -127,6 +127,7 @@ const transaccionRoutes = require("./routes/transaccion.routes");
 const contratoRoutes = require("./routes/contrato.routes");
 const suscripcionProyectoRoutes = require("./routes/suscripcion_proyecto.routes");
 const suscripcionRoutes = require("./routes/suscripcion.routes");
+const developerRoutes = require("./routes/developer.routes");
 const pagoRoutes = require("./routes/pago.routes");
 const authRoutes = require("./routes/auth.routes");
 const mensajeRoutes = require("./routes/mensaje.routes");
@@ -236,6 +237,7 @@ app.use("/api/proyectos", proyectoRoutes);
 app.use("/api/pujas", pujaRoutes);
 app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
+app.use("/api/developer", developerRoutes);
 app.use("/api/suscripcionesCanceladas", suscripcionRoutes);
 app.use("/api/pagos", pagoRoutes); // ✅ Aquí se monta el router de pagos
 app.use("/api/auth", authRoutes);
