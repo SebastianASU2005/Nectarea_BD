@@ -17,14 +17,14 @@ router.get(
 // 🎯 NUEVA RUTA: Proyectos de Ahorristas (Mensual)
 router.get(
   "/activos/ahorristas",
-  authMiddleware.authenticate,
+  
   proyectoController.findAllActivoAhorristas
 );
 
 // 🎯 NUEVA RUTA: Proyectos de Inversionistas (Directo)
 router.get(
   "/activos/inversionistas",
-  authMiddleware.authenticate,
+
   proyectoController.findAllActivoInversionistas
 );
 // Ruta de usuario para proyectos propios (asumo que es /me o similar, si no está definida)
