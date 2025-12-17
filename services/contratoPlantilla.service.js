@@ -1,7 +1,7 @@
 // services/contratoPlantillaService.js
 
 const ContratoPlantilla = require("../models/ContratoPlantilla");
-const localFileStorageService = require("./localFileStorage.service"); // Servicio de almacenamiento y gestión de archivos
+const localFileStorageService = require("./localFileStorage.service");
 
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Plantilla.
@@ -16,9 +16,7 @@ const contratoPlantillaService = {
    * @returns {Promise<ContratoPlantilla>} La plantilla creada.
    */
   async create(data) {
-    // Asegura que el estado inicial sea activo para que la plantilla pueda ser utilizada o asignada.
     data.activo = true;
-
     return ContratoPlantilla.create(data);
   },
 
@@ -37,31 +35,24 @@ const contratoPlantillaService = {
       where: { id_proyecto, version, activo: true },
     });
 
-    // Solo procede con la verificación si la plantilla existe y tiene un hash de referencia.
     if (!plantilla || !plantilla.hash_archivo_original) {
       return plantilla;
     }
 
-    // --- Lógica de Verificación de Integridad Criptográfica ---
     try {
-      // 1. Calcula el hash actual del archivo físico.
       const hashActual = await localFileStorageService.calculateHashFromFile(
         plantilla.url_archivo
       );
 
-      // 2. Compara el hash calculado con el hash guardado en la DB.
       if (hashActual !== plantilla.hash_archivo_original) {
         console.warn(
           `🚨 ALERTA DE INTEGRIDAD: Plantilla ID ${plantilla.id} manipulada. Hash esperado: ${plantilla.hash_archivo_original}, Hash actual: ${hashActual}`
         );
-        // Marca si se detecta alteración.
         plantilla.dataValues.integrity_compromised = true;
       } else {
-        // Marca si la integridad es correcta.
         plantilla.dataValues.integrity_compromised = false;
       }
     } catch (error) {
-      // Marca como comprometido si el archivo físico no es accesible/leíble.
       console.error(
         `Error al verificar integridad del archivo plantilla ${plantilla.id} (Archivo físico no encontrado/leíble):`,
         error.message
@@ -104,7 +95,7 @@ const contratoPlantillaService = {
   async findUnassociated() {
     return ContratoPlantilla.findAll({
       where: {
-        id_proyecto: null, // Busca registros donde la asociación de proyecto es NULL
+        id_proyecto: null,
         activo: true,
       },
       order: [["id", "DESC"]],
@@ -132,12 +123,73 @@ const contratoPlantillaService = {
    * @returns {Promise<ContratoPlantilla[]>} Lista de plantillas activas del proyecto.
    */
   async findAllActivoByProyecto(id_proyecto) {
-    return this.findByProjectId(id_proyecto); // Reutiliza la función principal
+    return this.findByProjectId(id_proyecto);
   },
 
   // ----------------------------------------------------
   // 3. FUNCIONES DE MUTACIÓN (ACTUALIZACIÓN Y BORRADO LÓGICO)
   // ----------------------------------------------------
+
+  /**
+   * 🆕 Actualiza los datos de una plantilla (nombre, proyecto asignado, versión, etc.)
+   * NO modifica el archivo PDF ni el hash.
+   * @param {number} id - ID de la plantilla a actualizar.
+   * @param {object} updateData - Objeto con los campos a actualizar.
+   * @returns {Promise<ContratoPlantilla>} La plantilla actualizada.
+   * @throws {Error} Si la plantilla no existe.
+   */
+  async updatePlantillaData(id, updateData) {
+    const plantilla = await ContratoPlantilla.findByPk(id);
+
+    if (!plantilla) {
+      throw new Error(`Plantilla con ID ${id} no encontrada.`);
+    }
+
+    // Campos permitidos para actualizar
+    const allowedFields = ["nombre_archivo", "id_proyecto", "version"];
+
+    // Filtra solo los campos permitidos que vengan en updateData
+    const dataToUpdate = {};
+    allowedFields.forEach((field) => {
+      if (updateData[field] !== undefined) {
+        dataToUpdate[field] = updateData[field];
+      }
+    });
+
+    // Si se está asignando a un proyecto, validar que no exista otra plantilla con la misma versión
+    if (
+      dataToUpdate.id_proyecto !== undefined &&
+      dataToUpdate.id_proyecto !== null
+    ) {
+      const version = dataToUpdate.version || plantilla.version;
+      const existingPlantilla = await ContratoPlantilla.findOne({
+        where: {
+          id_proyecto: dataToUpdate.id_proyecto,
+          version: version,
+          id: { [require("../config/database").Op.ne]: id }, // Excluir la plantilla actual
+          activo: true,
+        },
+      });
+
+      if (existingPlantilla) {
+        throw new Error(
+          `Ya existe una plantilla activa con versión ${version} para el proyecto ${dataToUpdate.id_proyecto}.`
+        );
+      }
+    }
+
+    dataToUpdate.fecha_actualizacion = new Date();
+
+    const [, [updatedPlantilla]] = await ContratoPlantilla.update(
+      dataToUpdate,
+      {
+        where: { id },
+        returning: true,
+      }
+    );
+
+    return updatedPlantilla;
+  },
 
   /**
    * Actualiza el archivo PDF físico de una plantilla y recalcula/actualiza su hash criptográfico.
@@ -155,21 +207,46 @@ const contratoPlantillaService = {
       throw new Error(`Plantilla con ID ${id} no encontrada.`);
     }
 
-    // 1. Genera el nuevo Hash CRIPTOGRÁFICO desde el Buffer (asegura la integridad del nuevo archivo).
     const newHash =
       localFileStorageService.calculateHashFromBuffer(newPdfBuffer);
 
-    // 2. Sube el nuevo archivo, sobrescribiendo o guardando en la nueva ubicación.
     const newUrl = await localFileStorageService.uploadBuffer(
       newPdfBuffer,
       relativePath
     );
 
-    // 3. Actualiza la base de datos con la nueva URL y el nuevo HASH.
     const [, [updatedPlantilla]] = await ContratoPlantilla.update(
       {
         url_archivo: newUrl,
         hash_archivo_original: newHash,
+        fecha_actualizacion: new Date(),
+      },
+      {
+        where: { id },
+        returning: true,
+      }
+    );
+
+    return updatedPlantilla;
+  },
+
+  /**
+   * 🆕 Cambia el estado activo de una plantilla (activar/desactivar).
+   * @param {number} id - ID de la plantilla.
+   * @param {boolean} activo - Nuevo estado (true para activar, false para desactivar).
+   * @returns {Promise<ContratoPlantilla>} La plantilla actualizada.
+   * @throws {Error} Si la plantilla no existe.
+   */
+  async toggleActive(id, activo) {
+    const plantilla = await ContratoPlantilla.findByPk(id);
+
+    if (!plantilla) {
+      throw new Error(`Plantilla con ID ${id} no encontrada.`);
+    }
+
+    const [, [updatedPlantilla]] = await ContratoPlantilla.update(
+      {
+        activo: activo,
         fecha_actualizacion: new Date(),
       },
       {
@@ -188,7 +265,6 @@ const contratoPlantillaService = {
    * @throws {Error} Si la plantilla ya está inactiva o no existe.
    */
   async softDelete(id) {
-    // Solo intenta actualizar si la plantilla está activa para evitar borrados redundantes.
     const [updatedCount] = await ContratoPlantilla.update(
       {
         activo: false,

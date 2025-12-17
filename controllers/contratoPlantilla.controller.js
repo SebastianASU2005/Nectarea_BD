@@ -1,7 +1,6 @@
 // controllers/contratoPlantillaController.js
 
 const contratoPlantillaService = require("../services/contratoPlantilla.service");
-// Necesarios para manejar el archivo subido (hash y guardado)
 const localFileStorageService = require("../services/localFileStorage.service");
 const { formatErrorResponse } = require("../utils/responseUtils");
 
@@ -20,11 +19,7 @@ const contratoPlantillaController = {
       const id_usuario_creacion = req.user.id;
       const pdfFile = req.file;
 
-      const {
-        nombre_archivo,
-        version,
-        id_proyecto, // ✅ AHORA SÍ SE EXTRAE (puede ser null o un número)
-      } = req.body;
+      const { nombre_archivo, version, id_proyecto } = req.body;
 
       if (!pdfFile || !pdfFile.buffer) {
         return res.status(400).json({
@@ -50,7 +45,7 @@ const contratoPlantillaController = {
         url_archivo,
         hash_archivo_original,
         version: version ? parseInt(version) : 1,
-        id_proyecto: id_proyecto ? parseInt(id_proyecto) : null, // ✅ CORREGIDO
+        id_proyecto: id_proyecto ? parseInt(id_proyecto) : null,
         id_usuario_creacion,
       };
 
@@ -66,6 +61,48 @@ const contratoPlantillaController = {
       console.error("Error al crear plantilla:", error);
       const statusCode = error.message.includes("sin proyecto asignado")
         ? 400
+        : 500;
+      return res.status(statusCode).json(formatErrorResponse(error.message));
+    }
+  },
+
+  /**
+   * 🆕 @route PUT /api/contratos/plantillas/:id
+   * @description Actualiza los datos de una plantilla (nombre, proyecto asignado, versión).
+   * NO modifica el archivo PDF.
+   */
+  async updatePlantillaData(req, res) {
+    try {
+      const { id } = req.params;
+      const { nombre_archivo, id_proyecto, version } = req.body;
+
+      const updateData = {};
+      if (nombre_archivo !== undefined)
+        updateData.nombre_archivo = nombre_archivo;
+      if (id_proyecto !== undefined) {
+        updateData.id_proyecto =
+          id_proyecto === "" || id_proyecto === "null"
+            ? null
+            : parseInt(id_proyecto);
+      }
+      if (version !== undefined) updateData.version = parseInt(version);
+
+      const plantillaActualizada =
+        await contratoPlantillaService.updatePlantillaData(
+          parseInt(id),
+          updateData
+        );
+
+      return res.status(200).json({
+        message: `Plantilla ${id} actualizada con éxito.`,
+        plantilla: plantillaActualizada,
+      });
+    } catch (error) {
+      console.error("Error al actualizar datos de plantilla:", error);
+      const statusCode = error.message.includes("no encontrada")
+        ? 404
+        : error.message.includes("Ya existe")
+        ? 409
         : 500;
       return res.status(statusCode).json(formatErrorResponse(error.message));
     }
@@ -108,6 +145,39 @@ const contratoPlantillaController = {
   },
 
   /**
+   * 🆕 @route PUT /api/contratos/plantillas/toggle-active/:id
+   * @description Activa o desactiva una plantilla.
+   */
+  async toggleActivePlantilla(req, res) {
+    try {
+      const { id } = req.params;
+      const { activo } = req.body;
+
+      if (activo === undefined || typeof activo !== "boolean") {
+        return res.status(400).json({
+          message:
+            "El campo 'activo' es requerido y debe ser un booleano (true/false).",
+        });
+      }
+
+      const plantillaActualizada = await contratoPlantillaService.toggleActive(
+        parseInt(id),
+        activo
+      );
+
+      const accion = activo ? "activada" : "desactivada";
+      return res.status(200).json({
+        message: `Plantilla ${id} ${accion} con éxito.`,
+        plantilla: plantillaActualizada,
+      });
+    } catch (error) {
+      console.error("Error al cambiar estado de plantilla:", error);
+      const statusCode = error.message.includes("no encontrada") ? 404 : 500;
+      return res.status(statusCode).json(formatErrorResponse(error.message));
+    }
+  },
+
+  /**
    * @route PUT /api/contratos/plantillas/soft-delete/:id
    * @description Realiza el borrado lógico de una plantilla.
    */
@@ -144,6 +214,23 @@ const contratoPlantillaController = {
         .status(500)
         .json(
           formatErrorResponse("Fallo interno al listar todas las plantillas.")
+        );
+    }
+  },
+
+  /**
+   * 🆕 @route GET /api/contratos/plantillas/active
+   * @description Lista todas las plantillas ACTIVAS. (Solo Admin)
+   */
+  async findAllActivePlantillas(req, res) {
+    try {
+      const plantillas = await contratoPlantillaService.findAllActivo();
+      return res.status(200).json(plantillas);
+    } catch (error) {
+      return res
+        .status(500)
+        .json(
+          formatErrorResponse("Fallo interno al listar plantillas activas.")
         );
     }
   },

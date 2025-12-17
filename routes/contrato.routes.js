@@ -4,7 +4,7 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
-const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
+const { blockAdminTransactions } = require("../middleware/roleValidation");
 
 const contratoPlantillaController = require("../controllers/contratoPlantilla.controller");
 const contratoFirmaController = require("../controllers/contratoFirmado.controller");
@@ -19,6 +19,7 @@ const {
 // 1. RUTAS DE GESTIÓN DE PLANTILLAS (ADMINISTRACIÓN)
 // ===============================================
 
+// 🆕 Crear nueva plantilla
 router.post(
   "/plantillas/upload",
   authMiddleware.authenticate,
@@ -27,6 +28,15 @@ router.post(
   contratoPlantillaController.createPlantilla
 );
 
+// 🆕 Actualizar datos de plantilla (nombre, proyecto, versión) - SIN modificar PDF
+router.put(
+  "/plantillas/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.updatePlantillaData
+);
+
+// Actualizar archivo PDF de plantilla
 router.post(
   "/plantillas/update-pdf/:id",
   authMiddleware.authenticate,
@@ -35,6 +45,15 @@ router.post(
   contratoPlantillaController.updatePlantillaPdf
 );
 
+// 🆕 Activar/Desactivar plantilla (toggle)
+router.put(
+  "/plantillas/toggle-active/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.toggleActivePlantilla
+);
+
+// Borrado lógico (soft delete)
 router.put(
   "/plantillas/soft-delete/:id",
   authMiddleware.authenticate,
@@ -42,6 +61,7 @@ router.put(
   contratoPlantillaController.softDeletePlantilla
 );
 
+// Listar TODAS las plantillas (activas e inactivas)
 router.get(
   "/plantillas/all",
   authMiddleware.authenticate,
@@ -49,6 +69,15 @@ router.get(
   contratoPlantillaController.findAllPlantillas
 );
 
+// 🆕 Listar solo plantillas ACTIVAS
+router.get(
+  "/plantillas/active",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  contratoPlantillaController.findAllActivePlantillas
+);
+
+// Listar plantillas sin proyecto asignado
 router.get(
   "/plantillas/unassociated",
   authMiddleware.authenticate,
@@ -56,18 +85,21 @@ router.get(
   contratoPlantillaController.findUnassociatedPlantillas
 );
 
+// Obtener plantilla específica por proyecto y versión (con verificación de integridad)
 router.get(
   "/plantilla/:idProyecto/:version",
   authMiddleware.authenticate,
   contratoPlantillaController.getPlantillaByProjectVersion
 );
 
+// Listar plantillas de un proyecto específico
 router.get(
   "/plantillas/project/:idProyecto",
   authMiddleware.authenticate,
   contratoPlantillaController.findPlantillasByProject
 );
 
+// Alias para compatibilidad
 router.get(
   "/plantillas/:idProyecto",
   authMiddleware.authenticate,
@@ -83,7 +115,7 @@ router.get(
 router.post(
   "/firmar",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  blockAdminTransactions,
   checkKYCandTwoFA,
   uploadSignedContract,
   contratoFirmaController.registrarFirma
