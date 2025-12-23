@@ -73,7 +73,6 @@ router.get(
 router.get(
   "/plantillas/active",
   authMiddleware.authenticate,
-  authMiddleware.authorizeAdmin,
   contratoPlantillaController.findAllActivePlantillas
 );
 

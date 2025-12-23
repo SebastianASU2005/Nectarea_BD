@@ -279,7 +279,7 @@ const contratoPlantillaService = {
         `No se pudo realizar el borrado lógico a la plantilla con ID ${id} (ya inactiva o no existe).`
       );
     }
-
+    
     return true;
   },
 };
