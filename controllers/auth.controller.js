@@ -1,5 +1,3 @@
-// Archivo: controllers/auth.controller.js
-
 const crypto = require("crypto");
 const usuarioService = require("../services/usuario.service");
 const authService = require("../services/auth.service");
@@ -20,14 +18,41 @@ const authController = {
    * @async
    * @function register
    * @description Registra un nuevo usuario, hashea la contraseña y dispara el email de confirmación.
+   * 🔒 SEGURIDAD: Solo permite campos específicos, ignorando intentos de escalar privilegios
    * @param {object} req - Objeto de solicitud de Express (con datos del usuario en `body`).
    * @param {object} res - Objeto de respuesta de Express.
    */
   async register(req, res) {
     try {
-      const { email, nombre_usuario, contraseña, dni } = req.body;
+      // 🔒 WHITELIST DE CAMPOS PERMITIDOS - Previene Mass Assignment
+      const allowedFields = [
+        'email',
+        'nombre_usuario', 
+        'contraseña',
+        'dni',
+        'nombre',
+        'apellido',
+        'numero_telefono'
+      ];
 
-      // 🎯 1. VALIDACIÓN DE UNICIDAD DE EMAIL, NOMBRE DE USUARIO Y DNI
+      // Extraer SOLO los campos permitidos
+      const sanitizedData = {};
+      allowedFields.forEach(field => {
+        if (req.body[field] !== undefined) {
+          sanitizedData[field] = req.body[field];
+        }
+      });
+
+      const { email, nombre_usuario, contraseña, dni } = sanitizedData;
+
+      // 🎯 1. VALIDACIÓN DE CAMPOS REQUERIDOS
+      if (!email || !nombre_usuario || !contraseña || !dni) {
+        return res.status(400).json({
+          error: "Faltan campos requeridos: email, nombre_usuario, contraseña, dni"
+        });
+      }
+
+      // 🎯 2. VALIDACIÓN DE UNICIDAD DE EMAIL, NOMBRE DE USUARIO Y DNI
 
       // A. Verificar Email
       const existingUserByEmail = await usuarioService.findByEmail(email);
@@ -55,16 +80,25 @@ const authController = {
         });
       }
 
-      // 2. Hashear la contraseña usando el servicio de autenticación
+      // 3. Hashear la contraseña usando el servicio de autenticación
       const hashedPassword = await authService.hashPassword(contraseña);
 
+      // 🔒 4. CONSTRUIR EL OBJETO DE USUARIO CON VALORES SEGUROS
       const userData = {
-        ...req.body,
+        ...sanitizedData,
         contraseña_hash: hashedPassword,
+        rol: 'cliente', // 🔒 SIEMPRE cliente por defecto - No se puede cambiar en registro
+        activo: false, // Por defecto desactivado hasta confirmar email
+        confirmado_email: false,
+        is_2fa_enabled: false
       };
 
-      // 3. Crear el usuario en la base de datos (si las validaciones pasan)
+      // Eliminar la contraseña en texto plano del objeto
+      delete userData.contraseña;
+
+      // 5. Crear el usuario en la base de datos
       const newUser = await usuarioService.create(userData);
+      
       res.status(201).json({
         message:
           "Usuario registrado exitosamente. Se ha enviado un enlace de confirmación a su correo.",
@@ -72,6 +106,7 @@ const authController = {
           id: newUser.id,
           nombre_usuario: newUser.nombre_usuario,
           email: newUser.email,
+          rol: newUser.rol // Mostrar que se creó como cliente
         },
       });
     } catch (error) {
