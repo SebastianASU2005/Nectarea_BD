@@ -1,5 +1,5 @@
 // scripts/seedAdmin.js
-require('dotenv').config(); // Cargar variables de entorno
+require("dotenv").config(); // Cargar variables de entorno
 
 const { sequelize } = require("../config/database");
 const Usuario = require("../models/usuario");
@@ -8,9 +8,9 @@ const authService = require("../services/auth.service");
 /**
  * Script para crear el primer usuario administrador del sistema.
  * Este script debe ejecutarse SOLO UNA VEZ durante la instalación inicial.
- * 
+ *
  * Uso: node scripts/seedAdmin.js
- * 
+ *
  * Puedes configurar los datos del admin en variables de entorno (.env):
  * - ADMIN_EMAIL
  * - ADMIN_USERNAME
@@ -26,21 +26,57 @@ async function seedAdmin() {
     await sequelize.authenticate();
     console.log("✅ Conexión establecida\n");
 
-    // Verificar si ya existe un admin
+    // ✅ CORRECCIÓN: Verificar si ya existe un admin ACTIVO
     const existingAdmin = await Usuario.findOne({
-      where: { rol: "admin" },
+      where: {
+        rol: "admin",
+        activo: true, // 🔥 CAMBIO CRÍTICO: Solo buscar admins activos
+      },
     });
 
     if (existingAdmin) {
-      console.log("⚠️  Ya existe un usuario administrador en el sistema");
+      console.log(
+        "⚠️  Ya existe un usuario administrador ACTIVO en el sistema"
+      );
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log(`   📧 Email:   ${existingAdmin.email}`);
       console.log(`   👤 Usuario: ${existingAdmin.nombre_usuario}`);
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
       console.log("❌ No se creará un nuevo admin.");
-      console.log("   Si necesitas otro admin, usa el endpoint de administración.\n");
+      console.log(
+        "   Si necesitas otro admin, usa el endpoint de administración.\n"
+      );
       await sequelize.close();
       process.exit(0);
+    }
+
+    // 🆕 INFORMACIÓN ADICIONAL: Verificar si hay admins inactivos
+    const inactiveAdmins = await Usuario.findAll({
+      where: {
+        rol: "admin",
+        activo: false,
+      },
+      attributes: ["id", "email", "nombre_usuario"],
+    });
+
+    if (inactiveAdmins.length > 0) {
+      console.log("⚠️  ADVERTENCIA: Se encontraron administradores INACTIVOS:");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      inactiveAdmins.forEach((admin) => {
+        console.log(
+          `   🔒 ID: ${admin.id} | Email: ${admin.email} | Usuario: ${admin.nombre_usuario}`
+        );
+      });
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log(
+        "   Si deseas reactivar una de estas cuentas en lugar de crear una nueva,"
+      );
+      console.log(
+        "   usa el endpoint PATCH /api/usuarios/:id/reactivate desde otro admin.\n"
+      );
+      console.log(
+        "   ⏩ Procediendo a crear un nuevo administrador ACTIVO...\n"
+      );
     }
 
     // 🔒 Datos del primer administrador
@@ -61,32 +97,43 @@ async function seedAdmin() {
 
     console.log("🔍 Verificando disponibilidad de datos...");
 
-    // Verificar que el email no exista
+    // ✅ CORRECCIÓN: Verificar email solo en cuentas ACTIVAS
     const existingEmail = await Usuario.findOne({
-      where: { email: adminData.email },
+      where: {
+        email: adminData.email,
+        activo: true, // 🔥 Solo verificar conflictos con cuentas activas
+      },
     });
     if (existingEmail) {
-      console.log("❌ Error: El email ya está en uso");
+      console.log("❌ Error: El email ya está en uso por una cuenta ACTIVA");
       await sequelize.close();
       process.exit(1);
     }
 
-    // Verificar que el nombre de usuario no exista
+    // ✅ CORRECCIÓN: Verificar username solo en cuentas ACTIVAS
     const existingUsername = await Usuario.findOne({
-      where: { nombre_usuario: adminData.nombre_usuario },
+      where: {
+        nombre_usuario: adminData.nombre_usuario,
+        activo: true, // 🔥 Solo verificar conflictos con cuentas activas
+      },
     });
     if (existingUsername) {
-      console.log("❌ Error: El nombre de usuario ya está en uso");
+      console.log(
+        "❌ Error: El nombre de usuario ya está en uso por una cuenta ACTIVA"
+      );
       await sequelize.close();
       process.exit(1);
     }
 
-    // Verificar que el DNI no exista
+    // ✅ CORRECCIÓN: Verificar DNI solo en cuentas ACTIVAS
     const existingDni = await Usuario.findOne({
-      where: { dni: adminData.dni },
+      where: {
+        dni: adminData.dni,
+        activo: true, // 🔥 Solo verificar conflictos con cuentas activas
+      },
     });
     if (existingDni) {
-      console.log("❌ Error: El DNI ya está en uso");
+      console.log("❌ Error: El DNI ya está en uso por una cuenta ACTIVA");
       await sequelize.close();
       process.exit(1);
     }
@@ -124,7 +171,9 @@ async function seedAdmin() {
     console.log("2. 🔄 Cambia la contraseña INMEDIATAMENTE");
     console.log("3. 🛡️  Activa 2FA desde el panel de configuración");
     console.log("4. 🗑️  Elimina o asegura este script en producción");
-    console.log("5. 🔒 Si usaste variables de entorno, elimina ADMIN_PASSWORD del .env");
+    console.log(
+      "5. 🔒 Si usaste variables de entorno, elimina ADMIN_PASSWORD del .env"
+    );
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
     await sequelize.close();
@@ -134,7 +183,7 @@ async function seedAdmin() {
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.error(error.message);
     console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
+
     if (sequelize) {
       await sequelize.close();
     }
