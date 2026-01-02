@@ -357,7 +357,8 @@ const authController = {
    * @async
    * @function forgotPassword
    * @description Genera un token de restablecimiento de contraseña y envía el enlace por email.
-   * Envía una respuesta genérica por motivos de seguridad (evitar enumeración de emails).
+   * ✅ CORREGIDO: Ya NO envía email duplicado desde aquí.
+   * El email lo envía automáticamente usuarioService.generatePasswordResetToken()
    * @param {object} req - Objeto de solicitud de Express (con `email` en `body`).
    * @param {object} res - Objeto de respuesta de Express.
    */
@@ -365,33 +366,18 @@ const authController = {
     try {
       const { email } = req.body;
 
-      const resetToken = await usuarioService.generatePasswordResetToken(email);
+      // ✅ CORRECCIÓN: Solo llama al servicio, que YA se encarga de enviar el email
+      // No necesitamos el resetToken de retorno ni enviar otro email aquí
+      await usuarioService.generatePasswordResetToken(email);
 
-      if (resetToken) {
-        // Generar el enlace de restablecimiento (usar la URL del frontend)
-        const resetLink = `http://localhost:3000/reset-password/${resetToken}`;
-
-        const emailHtml = `
-          <p>Has solicitado restablecer tu contraseña.</p>
-          <p>Haz clic en el siguiente enlace para completar el proceso:</p>
-          <a href="${resetLink}">Restablecer Contraseña</a>
-          <p>Este enlace expirará en una hora.</p>
-        `;
-
-        await emailService.sendEmail(
-          email,
-          "Restablecimiento de Contraseña",
-          emailHtml
-        );
-      }
-
-      // Respuesta genérica por motivos de seguridad
+      // Respuesta genérica por motivos de seguridad (evitar enumeración de usuarios)
       res.status(200).json({
         message:
           "Si existe una cuenta con ese correo, hemos enviado instrucciones para restablecer tu contraseña.",
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error("Error en forgotPassword:", error);
+      res.status(500).json({ error: "Error al procesar la solicitud." });
     }
   },
 
