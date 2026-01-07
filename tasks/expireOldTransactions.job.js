@@ -57,9 +57,6 @@ async function expirarTransaccionesAntiguas() {
   }
 }
 
-/**
- * Configura el cron job para ejecutarse cada 2 horas
- */
 function iniciarCronJobExpiracion() {
   // 🎯 CAMBIO CRÍTICO: Ejecuta cada 2 horas (a los 0 minutos de cada dos horas)
   cron.schedule("0 */2 * * *", async () => {

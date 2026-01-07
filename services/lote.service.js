@@ -56,54 +56,46 @@ const loteService = {
     } // 4. Crear el lote.
 
     return await Lote.create(data);
-  }
+  },
   /**
    * @async
    * @function findAll
    * @description Busca todos los lotes, incluyendo sus imágenes asociadas.
    * @returns {Promise<Lote[]>} Lista de todos los lotes (incluye inactivos para administración).
-   */,
-
-  async findAll() {
+   */ async findAll() {
     return await Lote.findAll({
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function findAllActivo
    * @description Busca todos los lotes que están activos (`activo: true`).
    * @returns {Promise<Lote[]>} Lista de lotes activos, incluyendo sus imágenes.
-   */,
-
-  async findAllActivo() {
+   */ async findAllActivo() {
     return await Lote.findAll({
       where: { activo: true },
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function findById
    * @description Busca un lote por ID, incluyendo imágenes.
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote o `null`.
-   */,
-
-  async findById(id) {
+   */ async findById(id) {
     return await Lote.findByPk(id, {
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function findByIdActivo
    * @description Busca un lote por ID, solo si está activo.
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote activo o `null`.
-   */,
-
-  async findByIdActivo(id) {
+   */ async findByIdActivo(id) {
     return await Lote.findOne({
       where: {
         id: id,
@@ -111,7 +103,7 @@ const loteService = {
       },
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function update
@@ -119,9 +111,7 @@ const loteService = {
    * @param {number} id - ID del lote.
    * @param {LoteData} data - Datos a actualizar.
    * @returns {Promise<Lote|null>} El lote actualizado o `null`.
-   */,
-
-  async update(id, data) {
+   */ async update(id, data) {
     const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
@@ -152,10 +142,11 @@ const loteService = {
 
       if (esSubastaPrivada) {
         // Privada: Solo suscriptores del proyecto.
-        const suscripcionService = require("./suscripcion.service");
-        usuariosParaNotificar = await suscripcionService.findUsersByProyectoId(
-          loteActualizado.id_proyecto
-        );
+        const suscripcionProyectoService = require("./suscripcion_proyecto.service");
+        usuariosParaNotificar =
+          await suscripcionProyectoService.findUsersByProjectId(
+            loteActualizado.id_proyecto
+          );
       } else {
         // Pública: Todos los usuarios activos.
         usuariosParaNotificar = await usuarioService.findAllActivos();
@@ -197,23 +188,21 @@ const loteService = {
     }
 
     return loteActualizado;
-  }
+  },
   /**
    * @async
    * @function softDelete
    * @description Realiza una eliminación lógica (soft delete) al marcar el lote como inactivo (`activo = false`).
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote actualizado (inactivo) o `null`.
-   */,
-
-  async softDelete(id) {
+   */ async softDelete(id) {
     const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
     }
     lote.activo = false;
     return await lote.save();
-  }
+  },
   /**
    * @async
    * @function endAuction
@@ -222,9 +211,7 @@ const loteService = {
    * @param {number} id - ID del lote a finalizar.
    * @returns {Promise<Puja|null>} La puja ganadora o `null` si no hubo postores.
    * @throws {Error} Si el lote no existe, no está activo o falla la transacción.
-   */,
-
-  async endAuction(id) {
+   */ async endAuction(id) {
     const t = await sequelize.transaction();
     const PujaService = require("./puja.service"); // Dependencia dinámica
     let pujaGanadora = null;
@@ -304,15 +291,13 @@ const loteService = {
     } // Retorna null si el lote finalizó sin pujas.
 
     return null;
-  }
+  },
   /**
    * @async
    * @function findLotesSinProyecto
    * @description Busca todos los lotes activos que NO están asociados a un proyecto (`id_proyecto` es NULL).
    * @returns {Promise<Lote[]>} Lista de lotes disponibles para subasta pública o para ser asignados a un proyecto.
-   */,
-
-  async findLotesSinProyecto() {
+   */ async findLotesSinProyecto() {
     return await Lote.findAll({
       where: {
         id_proyecto: null,
@@ -320,7 +305,7 @@ const loteService = {
       },
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function findLotesByProyectoId
@@ -328,9 +313,7 @@ const loteService = {
    * @param {number} idProyecto - ID del proyecto.
    * @returns {Promise<Lote[]>} Lista de lotes del proyecto.
    * @throws {Error} Si el ID del proyecto es nulo o indefinido.
-   */,
-
-  async findLotesByProyectoId(idProyecto) {
+   */ async findLotesByProyectoId(idProyecto) {
     if (!idProyecto) {
       throw new Error("El ID del proyecto es requerido.");
     }
@@ -341,7 +324,7 @@ const loteService = {
       },
       include: [{ model: Imagen, as: "imagenes" }],
     });
-  }
+  },
   /**
    * @async
    * @function asignarSiguientePuja
@@ -350,9 +333,7 @@ const loteService = {
    * @param {Lote} lote - Instancia del modelo Lote (debe ser la instancia en la transacción).
    * @param {object} transaction - Transacción de Sequelize (requerida).
    * @returns {Promise<Puja|null>} La nueva puja ganadora asignada o `null` si no hay más postores válidos.
-   */,
-
-  async asignarSiguientePuja(lote, transaction) {
+   */ async asignarSiguientePuja(lote, transaction) {
     const PujaService = require("./puja.service"); // 1. Buscar la puja más alta que NO esté en estado 'ganadora_incumplimiento' o 'pagado'.
 
     const siguientePuja = await PujaService.findNextHighestBid(
@@ -399,7 +380,7 @@ const loteService = {
       return siguientePuja;
     }
     return null;
-  }
+  },
   /**
    * @async
    * @function prepararLoteParaReingreso
@@ -407,9 +388,7 @@ const loteService = {
    * Se llama cuando se agotan los postores válidos o se cumplen los 3 intentos de pago fallidos.
    * @param {Lote} lote - Instancia del modelo Lote (debe ser la instancia en la transacción).
    * @param {object} transaction - Transacción de Sequelize (requerida).
-   */,
-
-  async prepararLoteParaReingreso(lote, transaction) {
+   */ async prepararLoteParaReingreso(lote, transaction) {
     const PujaService = require("./puja.service"); // 1. Liberar el token del último postor que quedó activo/pendiente (si existe).
 
     const ultimaPujaActiva = await Puja.findOne({
@@ -449,7 +428,7 @@ const loteService = {
       1, // ID del administrador/sistema
       `El lote ${lote.nombre_lote} (ID: ${lote.id}) ha agotado 3 intentos de pago o no tuvo más postores válidos y será reingresado en la próxima subasta anual.`
     );
-  }
+  },
   /**
    * @async
    * @function procesarImpagoLote
@@ -458,9 +437,7 @@ const loteService = {
    * y decidir si reasignar al siguiente postor o preparar el lote para reingreso.
    * @param {number} loteId - ID del lote afectado.
    * @throws {Error} Si el lote no es encontrado o falla la transacción.
-   */,
-
-  async procesarImpagoLote(loteId) {
+   */ async procesarImpagoLote(loteId) {
     const t = await sequelize.transaction();
     const PujaService = require("./puja.service");
 
@@ -523,16 +500,14 @@ const loteService = {
       await t.rollback(); // Revertir en caso de error.
       throw error;
     }
-  }
+  },
   /**
    * @async
    * @function findLotesToStart
    * @description Busca lotes en estado 'pendiente' cuya fecha de inicio ya haya pasado.
    * Función utilizada por un job de cron para automatizar el inicio de subastas.
    * @returns {Promise<Lote[]>} Lista de lotes listos para iniciar subasta.
-   */,
-
-  async findLotesToStart() {
+   */ async findLotesToStart() {
     return Lote.findAll({
       where: {
         estado_subasta: "pendiente",
@@ -542,16 +517,14 @@ const loteService = {
         activo: true,
       },
     });
-  }
+  },
   /**
    * @async
    * @function findLotesToEnd
    * @description Busca lotes en estado 'activa' cuya fecha de fin ya haya pasado.
    * Función utilizada por un job de cron para automatizar el cierre de subastas.
    * @returns {Promise<Lote[]>} Lista de lotes listos para finalizar subasta.
-   */,
-
-  async findLotesToEnd() {
+   */ async findLotesToEnd() {
     return Lote.findAll({
       where: {
         estado_subasta: "activa",
@@ -561,7 +534,7 @@ const loteService = {
         activo: true,
       },
     });
-  }
+  },
   /**
    * @async
    * @function updateLotesProyecto
@@ -570,9 +543,7 @@ const loteService = {
    * @param {number} idProyecto - ID del proyecto al que se asociarán.
    * @param {object} transaction - Transacción de Sequelize (requerida).
    * @returns {Promise<[number]>} Resultado de la operación de actualización (número de filas afectadas).
-   */,
-
-  async updateLotesProyecto(lotesIds, idProyecto, transaction) {
+   */ async updateLotesProyecto(lotesIds, idProyecto, transaction) {
     return Lote.update(
       { id_proyecto: idProyecto },
       {
