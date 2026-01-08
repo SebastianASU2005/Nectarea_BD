@@ -8,6 +8,11 @@ const ProyectoService = require("./proyecto.service");
 const PagoService = require("./pago.service");
 // 🟢 CORRECCIÓN 1: Importar el nuevo servicio
 const ResumenCuentaService = require("./resumen_cuenta.service");
+const emailService = require("./email.service");
+const MensajeService = require("./mensaje.service");
+const SuscripcionService = require("./suscripcion_proyecto.service");
+const LoteService = require("./lote.service"); // Ya existe como require dinámico, pero mejor tenerlo arriba
+const Usuario = require("../models/usuario");
 
 // Helper para garantizar que un valor es un número flotante (decimal)
 const toFloat = (value) => parseFloat(value);
@@ -328,12 +333,6 @@ const pujaService = {
       // Calcular el excedente: Monto Pujado - Precio Base
       let excedente = toFloat(puja.monto_puja) - toFloat(lote.precio_base);
       excedente = calculateFloat(excedente);
-
-      // 2. Actualizar el monto ganador del lote
-      await lote.update(
-        { monto_ganador_lote: puja.monto_puja },
-        { transaction: t }
-      );
 
       // 3. Prioridad 1: Cubrir pagos de suscripción pendientes
       const pagosPendientes = await Pago.findAll({
@@ -803,6 +802,131 @@ const pujaService = {
     const puja = await this.findById(id);
     if (!puja) return null;
     return puja.update({ activo: false });
+  },
+  /**
+   * @async
+   * @function cancelarPujaGanadoraAnticipada
+   * @description CANCELACIÓN MANUAL por administrador de una puja ganadora_pendiente.
+   * Ejecuta la misma lógica que el impago automático pero sin esperar los 90 días.
+   *
+   * FLUJO:
+   * 1. Valida que la puja exista y esté en estado 'ganadora_pendiente'
+   * 2. Marca la puja como 'ganadora_incumplimiento' (cancelación administrativa)
+   * 3. Devuelve el token al usuario incumplidor
+   * 4. Notifica al usuario por email y mensaje interno
+   * 5. Intenta reasignar al siguiente postor (P2 → P3)
+   * 6. Si no hay más postores O se alcanzaron 3 intentos: limpia el lote para reingreso
+   *
+   * @param {number} pujaId - ID de la puja ganadora a cancelar
+   * @param {string} motivoCancelacion - Razón administrativa (opcional)
+   * @returns {Promise<object>} Resultado de la operación
+   * @throws {Error} Si la puja no existe o no está en estado válido
+   */
+  async cancelarPujaGanadoraAnticipada(
+    pujaId,
+    motivoCancelacion = "Cancelación administrativa"
+  ) {
+    const SERVICE_NAME = "PujaService.cancelarPujaGanadoraAnticipada";
+    const t = await sequelize.transaction();
+
+    try {
+      console.log(
+        `[${SERVICE_NAME}] Iniciando cancelación de puja ID: ${pujaId}`
+      );
+
+      // === 1. VALIDAR PUJA EXISTE Y ESTÁ EN ESTADO CORRECTO ===
+      const pujaGanadora = await Puja.findByPk(pujaId, {
+        include: [
+          { model: Usuario, as: "usuario" },
+          { model: Lote, as: "lote" },
+          { model: SuscripcionProyecto, as: "suscripcion" },
+        ],
+        transaction: t,
+      });
+
+      if (!pujaGanadora) {
+        throw {
+          statusCode: 404,
+          message: `No se encontró la puja con ID ${pujaId}.`,
+        };
+      }
+
+      if (pujaGanadora.estado_puja !== "ganadora_pendiente") {
+        throw {
+          statusCode: 400,
+          message: `La puja ID ${pujaId} no está en estado 'ganadora_pendiente'. Estado actual: ${pujaGanadora.estado_puja}`,
+        };
+      }
+
+      const loteId = pujaGanadora.id_lote;
+      const usuarioIncumplidor = pujaGanadora.usuario;
+
+      console.log(
+        `[${SERVICE_NAME}] ✅ Puja válida. Lote: ${loteId}, Usuario: ${usuarioIncumplidor.id}`
+      );
+
+      // === 2. MARCAR PUJA COMO INCUMPLIMIENTO (cancelación administrativa) ===
+      await pujaGanadora.update(
+        {
+          estado_puja: "ganadora_incumplimiento",
+          fecha_vencimiento_pago: null,
+        },
+        { transaction: t }
+      );
+
+      console.log(
+        `[${SERVICE_NAME}] ✅ Puja ${pujaId} marcada como 'ganadora_incumplimiento'.`
+      );
+
+      // === 3. DEVOLVER TOKEN AL USUARIO ===
+      await this.devolverTokenPorImpago(pujaGanadora.id_usuario, loteId, t);
+
+      console.log(
+        `[${SERVICE_NAME}] ✅ Token devuelto a suscripción ID: ${pujaGanadora.id_suscripcion}`
+      );
+
+      // === 4. NOTIFICAR AL USUARIO ===
+      const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
+
+      await emailService.notificarImpago(usuarioIncumplidor, loteId);
+
+      await MensajeService.create({
+        id_usuario: usuarioIncumplidor.id,
+        titulo: "⚠️ Puja Ganadora Cancelada",
+        mensaje: motivoCompleto,
+        tipo_mensaje: "alerta",
+        leido: false,
+      });
+
+      console.log(
+        `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`
+      );
+
+      // === 5. PROCESAR REASIGNACIÓN O LIMPIEZA DEL LOTE ===
+      // Usamos el mismo servicio que el cron de impagos
+      await LoteService.procesarImpagoLote(loteId, t);
+
+      console.log(
+        `[${SERVICE_NAME}] ✅ Lote ${loteId} procesado para reasignación/limpieza.`
+      );
+
+      await t.commit();
+
+      return {
+        success: true,
+        message: `Puja ID ${pujaId} cancelada exitosamente. Token devuelto al usuario. Lote procesado.`,
+        data: {
+          pujaId,
+          loteId,
+          usuarioAfectado: usuarioIncumplidor.id,
+          estadoFinal: "ganadora_incumplimiento",
+        },
+      };
+    } catch (error) {
+      await t.rollback();
+      console.error(`[${SERVICE_NAME}] ❌ ERROR:`, error.message);
+      throw error;
+    }
   },
 };
 

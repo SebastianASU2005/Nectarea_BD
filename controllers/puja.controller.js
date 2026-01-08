@@ -351,6 +351,57 @@ const pujaController = {
       res.status(500).json({ error: error.message });
     }
   },
+  /**
+   * @async
+   * @function cancelarPujaGanadoraAnticipada
+   * @description Permite al administrador cancelar anticipadamente una puja ganadora_pendiente
+   * cuando el usuario avisa que no podrá pagar. Intenta reasignar al siguiente postor o
+   * reinicia el lote si no hay más postores válidos.
+   * @param {object} req - Request con id de la puja y opcionalmente motivo_cancelacion
+   * @param {object} res - Response
+   */
+  async cancelarPujaGanadoraAnticipada(req, res) {
+    const CONTROLLER_NAME = "PujaController.cancelarPujaGanadoraAnticipada";
+
+    try {
+      const { id } = req.params;
+      const { motivo_cancelacion } = req.body; // Opcional: razón administrativa
+
+      console.log(
+        `[${CONTROLLER_NAME}] Solicitando cancelación anticipada de puja ID: ${id}`
+      );
+
+      // Validar que el ID sea válido
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: "ID de puja inválido.",
+        });
+      }
+
+      // Llamar al servicio que maneja toda la lógica
+      const resultado = await pujaService.cancelarPujaGanadoraAnticipada(
+        parseInt(id),
+        motivo_cancelacion ||
+          "Cancelación administrativa - Usuario notificó incapacidad de pago"
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: resultado.message,
+        data: resultado.data,
+      });
+    } catch (error) {
+      console.error(`[${CONTROLLER_NAME}] ERROR:`, error.message);
+      console.error(`[${CONTROLLER_NAME}] Stack:`, error.stack);
+
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Error al cancelar la puja ganadora.",
+        error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
+    }
+  },
 };
 
 module.exports = pujaController;

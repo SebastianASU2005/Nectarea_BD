@@ -92,6 +92,12 @@ router.get(
   authMiddleware.authorizeAdmin,
   pujaController.findById
 );
+router.post(
+  "/cancelar_puja_ganadora/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.cancelarPujaGanadoraAnticipada
+);
 router.put(
   "/:id",
   authMiddleware.authenticate,

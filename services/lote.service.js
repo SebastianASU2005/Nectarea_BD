@@ -1,11 +1,12 @@
 const Lote = require("../models/lote");
 const Imagen = require("../models/imagen");
-const Puja = require("../models/puja"); // Importación del modelo Puja para operaciones internas (relaciones)
+const Puja = require("../models/puja");
 const { Op } = require("sequelize");
 const mensajeService = require("./mensaje.service");
 const usuarioService = require("./usuario.service");
-const emailService = require("./email.service"); // Servicio para enviar notificaciones por correo
+const emailService = require("./email.service");
 const { sequelize } = require("../config/database");
+const Usuario = require("../models/usuario");
 
 // NOTA: PujaService y Proyecto se requieren dinámicamente dentro de las funciones para evitar dependencias circulares.
 
@@ -42,60 +43,71 @@ const loteService = {
       if (!proyecto) {
         throw new Error(`El proyecto con ID ${id_proyecto} no fue encontrado.`);
       }
-    } // 2. Validación de Coordenadas: Si se proporciona una, se requiere la otra.
+    }
 
+    // 2. Validación de Coordenadas: Si se proporciona una, se requiere la otra.
     if ((latitud && !longitud) || (!latitud && longitud)) {
       throw new Error(
         "Si proporciona latitud, debe proporcionar longitud y viceversa."
       );
-    } // 3. Conversión de tipo: Asegurar que las coordenadas sean de tipo numérico.
+    }
 
+    // 3. Conversión de tipo: Asegurar que las coordenadas sean de tipo numérico.
     if (latitud && longitud) {
       data.latitud = parseFloat(latitud);
       data.longitud = parseFloat(longitud);
-    } // 4. Crear el lote.
+    }
 
+    // 4. Crear el lote.
     return await Lote.create(data);
   },
+
   /**
    * @async
    * @function findAll
    * @description Busca todos los lotes, incluyendo sus imágenes asociadas.
    * @returns {Promise<Lote[]>} Lista de todos los lotes (incluye inactivos para administración).
-   */ async findAll() {
+   */
+  async findAll() {
     return await Lote.findAll({
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function findAllActivo
    * @description Busca todos los lotes que están activos (`activo: true`).
    * @returns {Promise<Lote[]>} Lista de lotes activos, incluyendo sus imágenes.
-   */ async findAllActivo() {
+   */
+  async findAllActivo() {
     return await Lote.findAll({
       where: { activo: true },
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function findById
    * @description Busca un lote por ID, incluyendo imágenes.
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote o `null`.
-   */ async findById(id) {
+   */
+  async findById(id) {
     return await Lote.findByPk(id, {
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function findByIdActivo
    * @description Busca un lote por ID, solo si está activo.
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote activo o `null`.
-   */ async findByIdActivo(id) {
+   */
+  async findByIdActivo(id) {
     return await Lote.findOne({
       where: {
         id: id,
@@ -104,6 +116,7 @@ const loteService = {
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function update
@@ -111,26 +124,31 @@ const loteService = {
    * @param {number} id - ID del lote.
    * @param {LoteData} data - Datos a actualizar.
    * @returns {Promise<Lote|null>} El lote actualizado o `null`.
-   */ async update(id, data) {
+   */
+  async update(id, data) {
     const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
-    } // 1. Validación de Coordenadas: Asegurar consistencia si se actualizan.
+    }
 
+    // 1. Validación de Coordenadas: Asegurar consistencia si se actualizan.
     const { latitud, longitud } = data;
     if ((latitud && !longitud) || (!latitud && longitud)) {
       throw new Error(
         "Si proporciona latitud, debe proporcionar longitud y viceversa."
       );
-    } // Conversión de tipo.
+    }
+
+    // Conversión de tipo.
     if (latitud && longitud) {
       data.latitud = parseFloat(latitud);
       data.longitud = parseFloat(longitud);
     }
 
     const estadoOriginal = lote.estado_subasta;
-    const loteActualizado = await lote.update(data); // 2. Lógica de Notificación: Si el estado cambia a 'activa'.
+    const loteActualizado = await lote.update(data);
 
+    // 2. Lógica de Notificación: Si el estado cambia a 'activa'.
     if (
       loteActualizado.estado_subasta === "activa" &&
       estadoOriginal !== "activa"
@@ -138,8 +156,9 @@ const loteService = {
       // 2.1 Determinar si es una subasta privada (asociada a un proyecto).
       const esSubastaPrivada = !!loteActualizado.id_proyecto;
       const remitente_id = 1; // ID del sistema
-      let usuariosParaNotificar = []; // 2.2 Obtener los usuarios relevantes.
+      let usuariosParaNotificar = [];
 
+      // 2.2 Obtener los usuarios relevantes.
       if (esSubastaPrivada) {
         // Privada: Solo suscriptores del proyecto.
         const suscripcionProyectoService = require("./suscripcion_proyecto.service");
@@ -150,8 +169,9 @@ const loteService = {
       } else {
         // Pública: Todos los usuarios activos.
         usuariosParaNotificar = await usuarioService.findAllActivos();
-      } // 2.3 Procesar y enviar las notificaciones.
+      }
 
+      // 2.3 Procesar y enviar las notificaciones.
       if (usuariosParaNotificar.length > 0) {
         const tipoSubasta = esSubastaPrivada ? "PRIVADA" : "PÚBLICA";
         const asunto = `NUEVO LOTE EN SUBASTA (${tipoSubasta})`;
@@ -170,7 +190,9 @@ const loteService = {
               id_receptor: usuario.id,
               contenido: contenidoMsg,
               asunto: asunto,
-            }); // Notificación B: Email
+            });
+
+            // Notificación B: Email
             try {
               await emailService.notificarInicioSubasta(
                 usuario.email,
@@ -189,13 +211,15 @@ const loteService = {
 
     return loteActualizado;
   },
+
   /**
    * @async
    * @function softDelete
    * @description Realiza una eliminación lógica (soft delete) al marcar el lote como inactivo (`activo = false`).
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>} El lote actualizado (inactivo) o `null`.
-   */ async softDelete(id) {
+   */
+  async softDelete(id) {
     const lote = await Lote.findByPk(id);
     if (!lote) {
       return null;
@@ -203,6 +227,7 @@ const loteService = {
     lote.activo = false;
     return await lote.save();
   },
+
   /**
    * @async
    * @function endAuction
@@ -211,7 +236,8 @@ const loteService = {
    * @param {number} id - ID del lote a finalizar.
    * @returns {Promise<Puja|null>} La puja ganadora o `null` si no hubo postores.
    * @throws {Error} Si el lote no existe, no está activo o falla la transacción.
-   */ async endAuction(id) {
+   */
+  async endAuction(id) {
     const t = await sequelize.transaction();
     const PujaService = require("./puja.service"); // Dependencia dinámica
     let pujaGanadora = null;
@@ -221,10 +247,12 @@ const loteService = {
       const lote = await Lote.findByPk(id, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
       if (lote.estado_subasta !== "activa")
-        throw new Error("La subasta no está activa."); // 1. Encontrar la puja más alta.
+        throw new Error("La subasta no está activa.");
 
-      pujaGanadora = await PujaService.findHighestBidForLote(id); // 2. Finalizar el lote en DB.
+      // 1. Encontrar la puja más alta.
+      pujaGanadora = await PujaService.findHighestBidForLote(id);
 
+      // 2. Finalizar el lote en DB.
       await lote.update(
         {
           estado_subasta: "finalizada",
@@ -241,11 +269,13 @@ const loteService = {
             intentos_fallidos_pago: 1, // Primer intento asignado al ganador
           },
           { transaction: t }
-        ); // 4. Calcular y establecer la fecha de vencimiento (90 días).
+        );
 
+        // 4. Calcular y establecer la fecha de vencimiento (90 días).
         fechaVencimiento = new Date();
-        fechaVencimiento.setDate(fechaVencimiento.getDate() + 90); // 5. Marcar la puja ganadora con el estado y plazo de pago.
+        fechaVencimiento.setDate(fechaVencimiento.getDate() + 90);
 
+        // 5. Marcar la puja ganadora con el estado y plazo de pago.
         await pujaGanadora.update(
           {
             estado_puja: "ganadora_pendiente",
@@ -259,7 +289,11 @@ const loteService = {
     } catch (error) {
       await t.rollback();
       throw error;
-    } // ------------------------------------------------------------------- // 🔔 LÓGICA ASÍNCRONA DE NOTIFICACIONES Y LIBERACIÓN DE TOKENS (FUERA DE TRANSACCIÓN) // -------------------------------------------------------------------
+    }
+
+    // -------------------------------------------------------------------
+    // 🔔 LÓGICA ASÍNCRONA DE NOTIFICACIONES Y LIBERACIÓN DE TOKENS (FUERA DE TRANSACCIÓN)
+    // -------------------------------------------------------------------
 
     if (pujaGanadora) {
       try {
@@ -273,11 +307,14 @@ const loteService = {
             id,
             fechaLimiteStr,
             false // Indica que no es reasignación.
-          ); // Mensaje Interno al ganador.
+          );
+
+          // Mensaje Interno al ganador.
           const contenidoMsg = `¡Felicidades! Has ganado el Lote #${id}. Tienes 90 días, hasta el ${fechaLimiteStr}, para completar el pago.`;
           await mensajeService.enviarMensajeSistema(ganador.id, contenidoMsg);
-        } // Gestión de tokens: Libera los tokens de los postores perdedores (excepto el Top 3, según la lógica interna).
+        }
 
+        // Gestión de tokens: Libera los tokens de los postores perdedores (excepto el Top 3, según la lógica interna).
         await PujaService.gestionarTokensAlFinalizar(id);
         return pujaGanadora;
       } catch (error) {
@@ -288,16 +325,19 @@ const loteService = {
         );
         return pujaGanadora;
       }
-    } // Retorna null si el lote finalizó sin pujas.
+    }
 
+    // Retorna null si el lote finalizó sin pujas.
     return null;
   },
+
   /**
    * @async
    * @function findLotesSinProyecto
    * @description Busca todos los lotes activos que NO están asociados a un proyecto (`id_proyecto` es NULL).
    * @returns {Promise<Lote[]>} Lista de lotes disponibles para subasta pública o para ser asignados a un proyecto.
-   */ async findLotesSinProyecto() {
+   */
+  async findLotesSinProyecto() {
     return await Lote.findAll({
       where: {
         id_proyecto: null,
@@ -306,6 +346,7 @@ const loteService = {
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function findLotesByProyectoId
@@ -313,7 +354,8 @@ const loteService = {
    * @param {number} idProyecto - ID del proyecto.
    * @returns {Promise<Lote[]>} Lista de lotes del proyecto.
    * @throws {Error} Si el ID del proyecto es nulo o indefinido.
-   */ async findLotesByProyectoId(idProyecto) {
+   */
+  async findLotesByProyectoId(idProyecto) {
     if (!idProyecto) {
       throw new Error("El ID del proyecto es requerido.");
     }
@@ -325,6 +367,7 @@ const loteService = {
       include: [{ model: Imagen, as: "imagenes" }],
     });
   },
+
   /**
    * @async
    * @function asignarSiguientePuja
@@ -333,9 +376,11 @@ const loteService = {
    * @param {Lote} lote - Instancia del modelo Lote (debe ser la instancia en la transacción).
    * @param {object} transaction - Transacción de Sequelize (requerida).
    * @returns {Promise<Puja|null>} La nueva puja ganadora asignada o `null` si no hay más postores válidos.
-   */ async asignarSiguientePuja(lote, transaction) {
-    const PujaService = require("./puja.service"); // 1. Buscar la puja más alta que NO esté en estado 'ganadora_incumplimiento' o 'pagado'.
+   */
+  async asignarSiguientePuja(lote, transaction) {
+    const PujaService = require("./puja.service");
 
+    // 1. Buscar la puja más alta que NO esté en estado 'ganadora_incumplimiento' o 'pagado'.
     const siguientePuja = await PujaService.findNextHighestBid(
       lote.id,
       transaction
@@ -344,21 +389,24 @@ const loteService = {
     if (siguientePuja) {
       // 2. Calcular el nuevo plazo de 90 días.
       const fechaVencimiento = new Date();
-      fechaVencimiento.setDate(fechaVencimiento.getDate() + 90); // 3. Actualizar la puja con el nuevo estado y plazo.
+      fechaVencimiento.setDate(fechaVencimiento.getDate() + 90);
 
+      // 3. Actualizar la puja con el nuevo estado y plazo.
       await siguientePuja.update(
         {
           estado_puja: "ganadora_pendiente",
           fecha_vencimiento_pago: fechaVencimiento,
         },
         { transaction }
-      ); // 4. Asignar el nuevo ganador al Lote.
+      );
 
+      // 4. Asignar el nuevo ganador al Lote.
       await lote.update(
         { id_ganador: siguientePuja.id_usuario },
         { transaction }
-      ); // 5. Notificación al nuevo ganador (Lógica asíncrona fuera de la transacción si es posible). // NOTA: Aquí el código original hace la notificación dentro de la función transaccional, pero el envío de email es inherentemente asíncrono e idealmente no transaccional.
+      );
 
+      // 5. Notificación al nuevo ganador (Lógica asíncrona fuera de la transacción si es posible).
       const nuevoGanador = await usuarioService.findById(
         siguientePuja.id_usuario
       );
@@ -381,6 +429,7 @@ const loteService = {
     }
     return null;
   },
+
   /**
    * @async
    * @function prepararLoteParaReingreso
@@ -388,9 +437,11 @@ const loteService = {
    * Se llama cuando se agotan los postores válidos o se cumplen los 3 intentos de pago fallidos.
    * @param {Lote} lote - Instancia del modelo Lote (debe ser la instancia en la transacción).
    * @param {object} transaction - Transacción de Sequelize (requerida).
-   */ async prepararLoteParaReingreso(lote, transaction) {
-    const PujaService = require("./puja.service"); // 1. Liberar el token del último postor que quedó activo/pendiente (si existe).
+   */
+  async prepararLoteParaReingreso(lote, transaction) {
+    const PujaService = require("./puja.service");
 
+    // 1. Liberar el token del último postor que quedó activo/pendiente (si existe).
     const ultimaPujaActiva = await Puja.findOne({
       where: {
         id_lote: lote.id,
@@ -407,10 +458,12 @@ const loteService = {
         lote.id,
         transaction
       );
-    } // 2. LIMPIEZA CRÍTICA: Borrar TODAS las pujas asociadas al lote (es un borrado físico de los registros de puja).
+    }
 
-    await PujaService.clearBidsByLoteId(lote.id, transaction); // 3. Reiniciar los campos del Lote a su estado inicial.
+    // 2. LIMPIEZA CRÍTICA: Borrar TODAS las pujas asociadas al lote (es un borrado físico de los registros de puja).
+    await PujaService.clearBidsByLoteId(lote.id, transaction);
 
+    // 3. Reiniciar los campos del Lote a su estado inicial.
     await lote.update(
       {
         estado_subasta: "pendiente",
@@ -422,119 +475,196 @@ const loteService = {
         excedente_visualizacion: 0,
       },
       { transaction }
-    ); // 4. Notificación al administrador sobre la acción realizada.
+    );
 
+    // 4. Notificación al administrador sobre la acción realizada.
     await mensajeService.enviarMensajeSistema(
       1, // ID del administrador/sistema
       `El lote ${lote.nombre_lote} (ID: ${lote.id}) ha agotado 3 intentos de pago o no tuvo más postores válidos y será reingresado en la próxima subasta anual.`
     );
   },
+
   /**
    * @async
    * @function procesarImpagoLote
-   * @description Maneja el proceso de impago de una puja 'ganadora_pendiente' con plazo vencido.
-   * Se encarga de marcar el incumplimiento, devolver el token, incrementar el contador de fallos
-   * y decidir si reasignar al siguiente postor o preparar el lote para reingreso.
-   * @param {number} loteId - ID del lote afectado.
-   * @throws {Error} Si el lote no es encontrado o falla la transacción.
-   */ async procesarImpagoLote(loteId) {
-    const t = await sequelize.transaction();
-    const PujaService = require("./puja.service");
+   * @description LÓGICA CENTRAL de manejo de impagos. Reasigna al siguiente postor válido
+   * o limpia el lote si no hay más postores. Maneja los 3 intentos máximos.
+   *
+   * PUEDE SER LLAMADA POR:
+   * - Cron de impagos automáticos (ManejoImpagoPuja.js)
+   * - Cancelación manual de administrador (PujaService.cancelarPujaGanadoraAnticipada)
+   *
+   * @param {number} loteId - ID del lote a procesar
+   * @param {object} transaccion - Transacción de Sequelize (opcional)
+   * @throws {Error} Si el lote no existe o hay error de BD
+   */
+  async procesarImpagoLote(loteId, transaccion = null) {
+    const SERVICE_NAME = "LoteService.procesarImpagoLote";
+    const t = transaccion || (await sequelize.transaction());
+    const shouldCommit = !transaccion;
 
     try {
+      console.log(
+        `[${SERVICE_NAME}] 🔄 Procesando impago para Lote ID: ${loteId}`
+      );
+
+      // === 1. OBTENER LOTE ===
       const lote = await Lote.findByPk(loteId, { transaction: t });
-      if (!lote) throw new Error("Lote no encontrado."); // 1. Encontrar y marcar la puja incumplidora.
 
-      const pujaIncumplidora =
-        await PujaService.findExpiredGanadoraPendienteByLote(loteId, t);
-
-      if (pujaIncumplidora) {
-        // A. Marcar la puja como incumplimiento.
-        await pujaIncumplidora.update(
-          { estado_puja: "ganadora_incumplimiento" },
-          { transaction: t }
-        ); // B. Devolver el token (debe ocurrir dentro de la transacción).
-
-        await PujaService.devolverTokenPorImpago(
-          pujaIncumplidora.id_usuario,
-          loteId,
-          t
-        ); // C. Notificar el impago al usuario incumplidor.
-
-        const usuarioIncumplidor = await usuarioService.findById(
-          pujaIncumplidora.id_usuario
-        );
-
-        if (usuarioIncumplidor) {
-          await emailService.notificarImpago(usuarioIncumplidor, loteId);
-          const contenidoMsg = `ATENCIÓN: Has perdido el Lote #${loteId} por incumplimiento de pago. El plazo de 90 días ha expirado. Tu token ha sido devuelto a tu cuenta.`;
-          await mensajeService.enviarMensajeSistema(
-            usuarioIncumplidor.id,
-            contenidoMsg
-          );
-        } // 2. Lógica de reasignación / reingreso
-
-        const nuevosIntentos = (lote.intentos_fallidos_pago || 0) + 1;
-
-        if (nuevosIntentos <= 3) {
-          // A. Actualizar contador e intentar reasignar.
-          await lote.update(
-            { intentos_fallidos_pago: nuevosIntentos },
-            { transaction: t }
-          );
-
-          const siguientePuja = await this.asignarSiguientePuja(lote, t);
-
-          if (!siguientePuja) {
-            // B. No hay postores válidos restantes: Preparar para reingreso.
-            await this.prepararLoteParaReingreso(lote, t);
-          }
-        } else {
-          // C. Se agotaron los 3 intentos: Limpieza final y reingreso.
-          await this.prepararLoteParaReingreso(lote, t);
-        }
+      if (!lote) {
+        throw new Error(`Lote ${loteId} no encontrado.`);
       }
 
-      await t.commit(); // Confirmar la transacción.
+      // === 2. VALIDAR QUE AÚN NO SE HAYAN SUPERADO LOS 3 INTENTOS ===
+      const intentoActual = lote.intentos_fallidos_pago || 0;
+
+      if (intentoActual >= 3) {
+        console.log(
+          `[${SERVICE_NAME}] ⚠️ Lote ${loteId} ya alcanzó 3 intentos. Limpiando para reingreso...`
+        );
+        await this.prepararLoteParaReingreso(lote, t);
+        if (shouldCommit) await t.commit();
+        return {
+          success: true,
+          accion: "limpieza",
+          message: "Lote limpiado y listo para reingreso a subasta.",
+        };
+      }
+
+      // === 3. INCREMENTAR CONTADOR DE INTENTOS ===
+      await lote.update(
+        { intentos_fallidos_pago: intentoActual + 1 },
+        { transaction: t }
+      );
+
+      console.log(
+        `[${SERVICE_NAME}] ⚠️ Intento fallido #${intentoActual + 1} registrado.`
+      );
+
+      // === 4. BUSCAR SIGUIENTE POSTOR VÁLIDO (P2 o P3) ===
+      const siguientePuja = await Puja.findOne({
+        where: {
+          id_lote: loteId,
+          estado_puja: "activa",
+        },
+        order: [["monto_puja", "DESC"]],
+        include: [{ model: Usuario, as: "usuario" }],
+        transaction: t,
+      });
+
+      // === 5A. SI HAY SIGUIENTE POSTOR: REASIGNAR ===
+      if (siguientePuja) {
+        console.log(
+          `[${SERVICE_NAME}] ✅ Siguiente postor encontrado: Puja ID ${siguientePuja.id}`
+        );
+
+        const nuevaFechaLimite = new Date();
+        nuevaFechaLimite.setDate(nuevaFechaLimite.getDate() + 90);
+
+        await siguientePuja.update(
+          {
+            estado_puja: "ganadora_pendiente",
+            fecha_vencimiento_pago: nuevaFechaLimite,
+          },
+          { transaction: t }
+        );
+
+        await lote.update(
+          {
+            id_ganador: siguientePuja.id_usuario,
+            id_puja_mas_alta: siguientePuja.id,
+          },
+          { transaction: t }
+        );
+
+        // Notificar al nuevo ganador
+        await emailService.notificarGanadorPuja(
+          siguientePuja.usuario,
+          loteId,
+          nuevaFechaLimite.toLocaleDateString("es-ES"),
+          true
+        );
+
+        await mensajeService.enviarMensajeSistema(
+          siguientePuja.id_usuario,
+          `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString(
+            "es-ES"
+          )}).`
+        );
+
+        console.log(
+          `[${SERVICE_NAME}] ✅ Lote ${loteId} reasignado a usuario ${siguientePuja.id_usuario}.`
+        );
+
+        if (shouldCommit) await t.commit();
+
+        return {
+          success: true,
+          accion: "reasignacion",
+          message: `Lote reasignado al siguiente postor (Puja ID: ${siguientePuja.id}).`,
+          nuevoGanador: siguientePuja.id_usuario,
+        };
+      }
+
+      // === 5B. SI NO HAY MÁS POSTORES: LIMPIAR LOTE ===
+      console.log(
+        `[${SERVICE_NAME}] ⚠️ No hay más postores válidos. Limpiando lote ${loteId}...`
+      );
+
+      await this.prepararLoteParaReingreso(lote, t);
+
+      if (shouldCommit) await t.commit();
+
+      return {
+        success: true,
+        accion: "limpieza",
+        message: "No hay más postores. Lote limpiado para reingreso a subasta.",
+      };
     } catch (error) {
-      await t.rollback(); // Revertir en caso de error.
+      if (shouldCommit) await t.rollback();
+      console.error(`[${SERVICE_NAME}] ❌ ERROR:`, error.message);
       throw error;
     }
   },
+
   /**
    * @async
    * @function findLotesToStart
    * @description Busca lotes en estado 'pendiente' cuya fecha de inicio ya haya pasado.
    * Función utilizada por un job de cron para automatizar el inicio de subastas.
    * @returns {Promise<Lote[]>} Lista de lotes listos para iniciar subasta.
-   */ async findLotesToStart() {
+   */
+  async findLotesToStart() {
     return Lote.findAll({
       where: {
         estado_subasta: "pendiente",
         fecha_inicio: {
-          [Op.lte]: new Date(), // Menor o igual a la hora actual.
+          [Op.lte]: new Date(),
         },
         activo: true,
       },
     });
   },
+
   /**
    * @async
    * @function findLotesToEnd
    * @description Busca lotes en estado 'activa' cuya fecha de fin ya haya pasado.
    * Función utilizada por un job de cron para automatizar el cierre de subastas.
    * @returns {Promise<Lote[]>} Lista de lotes listos para finalizar subasta.
-   */ async findLotesToEnd() {
+   */
+  async findLotesToEnd() {
     return Lote.findAll({
       where: {
         estado_subasta: "activa",
         fecha_fin: {
-          [Op.lte]: new Date(), // Menor o igual a la hora actual.
+          [Op.lte]: new Date(),
         },
         activo: true,
       },
     });
   },
+
   /**
    * @async
    * @function updateLotesProyecto
@@ -543,11 +673,12 @@ const loteService = {
    * @param {number} idProyecto - ID del proyecto al que se asociarán.
    * @param {object} transaction - Transacción de Sequelize (requerida).
    * @returns {Promise<[number]>} Resultado de la operación de actualización (número de filas afectadas).
-   */ async updateLotesProyecto(lotesIds, idProyecto, transaction) {
+   */
+  async updateLotesProyecto(lotesIds, idProyecto, transaction) {
     return Lote.update(
       { id_proyecto: idProyecto },
       {
-        where: { id: { [Op.in]: lotesIds } }, // Actualizar solo los IDs en el array.
+        where: { id: { [Op.in]: lotesIds } },
         transaction,
       }
     );
