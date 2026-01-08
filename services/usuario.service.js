@@ -254,19 +254,14 @@ const usuarioService = {
     }
 
     // ------------------------------------------------------------------
-    // 🛑 VALIDACIÓN DE UNICIDAD PARA EMAIL Y NOMBRE DE USUARIO (CUENTAS ACTIVAS)
+    // 🛑 VALIDACIÓN DE UNICIDAD (PARA CUENTAS ACTIVAS)
     // ------------------------------------------------------------------
-
-    const { email, nombre_usuario } = data;
+    const { email, nombre_usuario, dni } = data; // ✅ Extraemos también el DNI
 
     // 1. Validar Email
     if (email && email !== usuario.email) {
       const existingEmailUser = await Usuario.findOne({
-        where: {
-          email: email,
-          activo: true, // Solo cuentas activas
-          id: { [Op.ne]: id }, // Que no sea el usuario actual
-        },
+        where: { email, activo: true, id: { [Op.ne]: id } },
       });
       if (existingEmailUser) {
         throw new Error("❌ El email ya está en uso por otra cuenta activa.");
@@ -276,18 +271,27 @@ const usuarioService = {
     // 2. Validar Nombre de Usuario
     if (nombre_usuario && nombre_usuario !== usuario.nombre_usuario) {
       const existingUsernameUser = await Usuario.findOne({
-        where: {
-          nombre_usuario: nombre_usuario,
-          activo: true, // Solo cuentas activas
-          id: { [Op.ne]: id }, // Que no sea el usuario actual
-        },
+        where: { nombre_usuario, activo: true, id: { [Op.ne]: id } },
       });
       if (existingUsernameUser) {
-        throw new Error(
-          "❌ El nombre de usuario ya está tomado por otra cuenta activa."
-        );
+        throw new Error("❌ El nombre de usuario ya está tomado por otra cuenta activa.");
       }
     }
+
+    // 3. 🔥 NUEVA VALIDACIÓN: Validar DNI
+    if (dni && dni !== usuario.dni) {
+      const existingDniUser = await Usuario.findOne({
+        where: { 
+          dni: dni, 
+          activo: true, 
+          id: { [Op.ne]: id } 
+        },
+      });
+      if (existingDniUser) {
+        throw new Error("❌ El DNI ya está registrado en otra cuenta activa.");
+      }
+    }
+
     return usuario.update(data);
   },
   /**

@@ -131,10 +131,11 @@ const usuarioController = {
         "nombre",
         "apellido",
         "email",
-        "telefono",
+        "numero_telefono", // ✅ Debe coincidir con el modelo (antes decía 'telefono')
         "activo",
-        "rol", // Permitimos que el ADMIN cambie el rol en esta ruta por simplicidad del ejemplo.
-        "nombre_usuario", // Agregado el campo de nombre de usuario
+        "rol",
+        "nombre_usuario",
+        "dni", // ✅ Debe coincidir con el modelo (antes decía 'DNI')
       ];
 
       // Creamos un nuevo objeto solo con las propiedades permitidas.

@@ -154,79 +154,44 @@ const {
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 
 // ====================================================================
-// 5. 🔥 CONFIGURACIÓN CRÍTICA DE RUTAS EN ORDEN ESPECÍFICO
+// 5. 🔥 CONFIGURACIÓN DE RUTAS EN ORDEN ESPECÍFICO
 // ====================================================================
 
-// ====================================================================
-// 5.1. WEBHOOK ROUTER (CON RAW BODY) - DEBE IR PRIMERO
-// ====================================================================
+// 5.1. WEBHOOK (DEBE IR PRIMERO POR EL RAW BODY)
 const webhookRouter = express.Router();
-
-// 🚨 Middleware Específico para el webhook que captura el cuerpo RAW
 webhookRouter.use(
   express.json({ verify: captureRawBody }),
   express.urlencoded({ extended: true, verify: captureRawBody })
 );
-
-// La ruta de webhook se define dentro del router
 webhookRouter.post("/:metodo", paymentController.handleWebhook);
-
-// Aplicar el router SOLO a la ruta base del webhook
 app.use("/api/payment/webhook", webhookRouter);
 
-console.log(
-  "✅ Ruta de webhook configurada: POST /api/payment/webhook/:metodo"
-);
-
-// ====================================================================
-// 5.2. 🔥 RUTAS QUE USAN MULTER (SIN BODY PARSING PREVIO)
-// ====================================================================
-// ⚠️ CRÍTICO: Estas rutas NO deben tener express.json() antes
-// 🎯 Multer maneja el parsing de multipart/form-data internamente
-
-console.log("📦 Registrando rutas con Multer (sin body parsing)...");
-
-app.use("/api/kyc", (req, res, next) => {
-  console.log("\n🔍 ===== DEBUG PRE-KYC =====");
-  console.log("📍 URL:", req.url);
-  console.log("📍 Method:", req.method);
-  console.log("📍 Content-Type:", req.get("content-type"));
-  console.log("📍 Headers:", JSON.stringify(req.headers, null, 2));
-  console.log(
-    "📍 Body ya parseado?:",
-    !!req.body,
-    "- Keys:",
-    Object.keys(req.body || {})
-  );
-  console.log(
-    "📍 Files ya parseados?:",
-    !!req.files,
-    "- Keys:",
-    Object.keys(req.files || {})
-  );
-  console.log("🔍 ===========================\n");
-  next();
-});
-
-app.use("/api/kyc", kycRoutes); // ✅ Usa Multer
-app.use("/api/contratos", contratoRoutes); // ✅ Usa Multer
-app.use("/api/imagenes", imagenRoutes); // ✅ Usa Multer
-
-console.log("✅ Rutas con Multer registradas correctamente");
-
-// ====================================================================
-// 5.3. 🔥 BODY PARSING GLOBAL (PARA TODAS LAS DEMÁS RUTAS)
-// ====================================================================
-console.log("🔧 Activando body parsing global...");
-
+// --------------------------------------------------------------------
+// 5.2. 🔥 BODY PARSING GLOBAL (MOVIDO AQUÍ ABAJO)
+// --------------------------------------------------------------------
+// Esto permitirá que las rutas de abajo (incluyendo KYC) puedan leer req.body en JSON.
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-console.log("✅ Body parsing activado");
+console.log("✅ Body parsing global activado");
 
-// ====================================================================
-// 5.4. RESTO DE RUTAS DE LA API (CON BODY PARSING)
-// ====================================================================
+// --------------------------------------------------------------------
+// 5.3. 🔥 RUTAS DE LA API (INCLUYENDO LAS DE MULTER)
+// --------------------------------------------------------------------
+
+// Debug para ver qué llega (puedes borrarlo después)
+app.use("/api/kyc", (req, res, next) => {
+  console.log(`\n🔍 PETICIÓN KYC: ${req.method} ${req.url}`);
+  console.log("📍 Content-Type:", req.get("content-type"));
+  next();
+});
+
+// AHORA KYC está después de express.json()
+// - Si es Reject (JSON): express.json() llena req.body ✅
+// - Si es Submit (Multipart): express.json() lo ignora y Multer lo procesa ✅
+app.use("/api/kyc", kycRoutes); 
+app.use("/api/contratos", contratoRoutes); 
+app.use("/api/imagenes", imagenRoutes);
 // 🚨 Nota: El orden de estas rutas es importante si tienen prefijos genéricos.
 // Dado que la ruta "/api/pagos" no tiene parámetros dinámicos, el orden actual es adecuado.
 
