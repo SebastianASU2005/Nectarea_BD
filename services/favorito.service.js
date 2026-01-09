@@ -71,9 +71,8 @@ const favoritoService = {
   },
 
   /**
-   * 🆕 NUEVA FUNCIÓN: Obtener estadísticas de favoritos de UN PROYECTO específico
-   * @param {number} idProyecto - ID del proyecto
-   * @returns {Promise<object>} Estadísticas del proyecto
+   * 🆕 SIMPLIFICADO: Estadísticas de UN PROYECTO específico
+   * Solo trae datos básicos del lote (id, nombre_lote, estado_subasta, precio_base)
    */
   async getEstadisticasProyecto(idProyecto) {
     const estadisticas = await Favorito.findAll({
@@ -88,37 +87,15 @@ const favoritoService = {
         {
           model: Lote,
           as: "lote",
-          attributes: [
-            "id",
-            "nombre_lote",
-            "estado_subasta",
-            "precio_base",
-            "id_proyecto",
-          ],
+          attributes: ["id", "nombre_lote", "estado_subasta", "precio_base"],
           where: {
             activo: true,
             id_proyecto: idProyecto,
           },
-          include: [
-            {
-              model: Imagen,
-              as: "imagenes",
-              attributes: ["id", "url_imagen"],
-              limit: 1,
-            },
-          ],
+          required: true,
         },
       ],
-      group: [
-        "Favorito.id_lote",
-        "lote.id",
-        "lote.nombre_lote",
-        "lote.estado_subasta",
-        "lote.precio_base",
-        "lote.id_proyecto",
-        "lote->imagenes.id",
-        "lote->imagenes.url_imagen",
-      ],
+      group: ["Favorito.id_lote", "lote.id"],
       order: [
         [sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")), "DESC"],
       ],
@@ -127,14 +104,10 @@ const favoritoService = {
 
     // Formatear resultados
     const lotesFavoritosFormateados = estadisticas.map((stat) => ({
-      lote: {
-        id: stat.lote.id,
-        nombre_lote: stat.lote.nombre_lote,
-        estado_subasta: stat.lote.estado_subasta,
-        precio_base: parseFloat(stat.lote.precio_base),
-        id_proyecto: stat.lote.id_proyecto,
-        imagenes: stat.lote.imagenes || [],
-      },
+      id_lote: stat.lote.id,
+      nombre_lote: stat.lote.nombre_lote,
+      estado_subasta: stat.lote.estado_subasta,
+      precio_base: parseFloat(stat.lote.precio_base),
       total_favoritos: parseInt(stat.dataValues.total_favoritos),
     }));
 
@@ -149,8 +122,7 @@ const favoritoService = {
   },
 
   /**
-   * 🆕 NUEVA FUNCIÓN: Obtener estadísticas agrupadas por TODOS los proyectos
-   * @returns {Promise<Array>} Array con estadísticas por proyecto
+   * 🆕 SIMPLIFICADO: Estadísticas agrupadas por TODOS los proyectos
    */
   async getEstadisticasTodosProyectos() {
     // 1. Obtener todos los proyectos activos
@@ -185,9 +157,8 @@ const favoritoService = {
   },
 
   /**
-   * 🆕 NUEVA FUNCIÓN: Ranking global de lotes más favoritos (sin filtro de proyecto)
-   * @param {number} [limit=10] - Límite de resultados
-   * @returns {Promise<Array>} Top lotes más favoritos
+   * 🆕 SIMPLIFICADO: Ranking global de lotes más favoritos
+   * Solo trae datos básicos del lote y proyecto
    */
   async getRankingGlobal(limit = 10) {
     const estadisticas = await Favorito.findAll({
@@ -210,33 +181,18 @@ const favoritoService = {
             "id_proyecto",
           ],
           where: { activo: true },
+          required: true,
           include: [
             {
               model: Proyecto,
               as: "proyecto",
               attributes: ["id", "nombre_proyecto"],
-            },
-            {
-              model: Imagen,
-              as: "imagenes",
-              attributes: ["id", "url_imagen"],
-              limit: 1,
+              required: false,
             },
           ],
         },
       ],
-      group: [
-        "Favorito.id_lote",
-        "lote.id",
-        "lote.nombre_lote",
-        "lote.estado_subasta",
-        "lote.precio_base",
-        "lote.id_proyecto",
-        "lote->proyecto.id",
-        "lote->proyecto.nombre_proyecto",
-        "lote->imagenes.id",
-        "lote->imagenes.url_imagen",
-      ],
+      group: ["Favorito.id_lote", "lote.id", "lote->proyecto.id"],
       order: [
         [sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")), "DESC"],
       ],
@@ -245,19 +201,16 @@ const favoritoService = {
     });
 
     return estadisticas.map((stat) => ({
-      lote: {
-        id: stat.lote.id,
-        nombre_lote: stat.lote.nombre_lote,
-        estado_subasta: stat.lote.estado_subasta,
-        precio_base: parseFloat(stat.lote.precio_base),
-        proyecto: stat.lote.proyecto
-          ? {
-              id: stat.lote.proyecto.id,
-              nombre: stat.lote.proyecto.nombre_proyecto,
-            }
-          : null,
-        imagenes: stat.lote.imagenes || [],
-      },
+      id_lote: stat.lote.id,
+      nombre_lote: stat.lote.nombre_lote,
+      estado_subasta: stat.lote.estado_subasta,
+      precio_base: parseFloat(stat.lote.precio_base),
+      proyecto: stat.lote.proyecto
+        ? {
+            id: stat.lote.proyecto.id,
+            nombre: stat.lote.proyecto.nombre_proyecto,
+          }
+        : null,
       total_favoritos: parseInt(stat.dataValues.total_favoritos),
     }));
   },
