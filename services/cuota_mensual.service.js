@@ -1,4 +1,4 @@
-// services/cuotaMensualService.js
+// services/cuotaMensualService.js - VERSIÓN CORREGIDA
 const CuotaMensual = require("../models/CuotaMensual");
 const Proyecto = require("../models/proyecto");
 const ResumenCuenta = require("../models/resumen_cuenta");
@@ -6,30 +6,31 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { sequelize } = require("../config/database");
 
 /**
- * Servicio de lógica de negocio para la gestión y el cálculo de Cuotas Mensuales.
- * CRÍTICO: Asegura que la creación/actualización de una cuota se refleje correctamente
- * en el campo `monto_inversion` del Proyecto asociado, utilizando **transacciones** para garantizar la atomicidad.
- * 🆕 NUEVO: También actualiza automáticamente todos los ResumenCuenta asociados al proyecto.
- * ✅ OPTIMIZADO: Cálculos con precisión mejorada para evitar errores de redondeo.
+ * ✅ SERVICIO CORREGIDO
+ *
+ * CAMBIOS PRINCIPALES:
+ * 1. Los porcentajes ya vienen como decimales (0.85, 0.19, 0.21) desde el front
+ * 2. NO dividir entre 100 nuevamente
+ * 3. Mejorada la precisión de los cálculos
  */
 const cuotaMensualService = {
   /**
    * Función auxiliar para redondeo preciso a 2 decimales
-   * Usa Math.round para redondeo bancario consistente
    */
   _roundTo2(num) {
     return Math.round(num * 100) / 100;
   },
 
   /**
-   * Función privada que calcula el valor total de la cuota mensual
-   * basado en el valor del cemento, unidades y los porcentajes aplicables.
+   * ✅ FUNCIÓN CORREGIDA - Cálculo de valores con porcentajes decimales
    *
-   * OPTIMIZACIÓN: Minimiza errores de redondeo trabajando con precisión extendida
-   * y redondeando solo en los puntos críticos.
+   * IMPORTANTE: Los porcentajes vienen como decimales:
+   * - porcentaje_plan: 0.85 (85%)
+   * - porcentaje_administrativo: 0.19 (19%)
+   * - porcentaje_iva: 0.21 (21%)
    */
   _calculateValues(data) {
-    // Convertir a números de alta precisión
+    // Convertir a números (ya son decimales, NO dividir entre 100)
     const porcentaje_plan = Number(data.porcentaje_plan);
     const porcentaje_administrativo = Number(data.porcentaje_administrativo);
     const porcentaje_iva = Number(data.porcentaje_iva);
@@ -37,37 +38,31 @@ const cuotaMensualService = {
     const valor_cemento_unidades = Number(data.valor_cemento_unidades);
     const total_cuotas_proyecto = Number(data.total_cuotas_proyecto);
 
-    // 1. Valor Móvil Total
-    // Redondear solo después de la multiplicación completa
-    const valor_movil = this._roundTo2(valor_cemento_unidades * valor_cemento);
+    // 1. Valor Móvil Total (cemento × unidades)
+    const valor_movil = this._roundTo2(valor_cemento * valor_cemento_unidades);
 
-    // 2. Valor Mensual "FULL" (El 100% de la cuota si no tuviera plan)
-    // Usamos esto como BASE para calcular la administración
-    // NO redondeamos aquí para mantener precisión
+    // 2. Valor Mensual "FULL" (Base para calcular administración)
+    // Este es el 100% del valor antes de aplicar el plan
     const valor_mensual_full = valor_movil / total_cuotas_proyecto;
 
-    // 3. Valor Mensual del Plan (El capital real que paga el cliente: 85%)
-    // Trabajar con precisión extendida
-    const total_del_plan = valor_movil * (porcentaje_plan / 100);
+    // 3. ✅ CORREGIDO: Total del Plan (85% del valor móvil)
+    // Ahora usa directamente el porcentaje decimal
+    const total_del_plan = valor_movil * porcentaje_plan;
     const valor_mensual_plan = total_del_plan / total_cuotas_proyecto;
 
-    // 4. Carga Administrativa (19% sobre el valor FULL, no sobre el plan)
-    // Calcular sobre el valor FULL sin redondear
-    const carga_administrativa =
-      valor_mensual_full * (porcentaje_administrativo / 100);
+    // 4. ✅ CORREGIDO: Carga Administrativa (19% sobre valor FULL)
+    const carga_administrativa = valor_mensual_full * porcentaje_administrativo;
 
-    // 5. IVA (21% sobre la carga administrativa)
-    const iva_carga_administrativa =
-      carga_administrativa * (porcentaje_iva / 100);
+    // 5. ✅ CORREGIDO: IVA (21% sobre la carga administrativa)
+    const iva_carga_administrativa = carga_administrativa * porcentaje_iva;
 
     // 6. Total Final
-    // Sumar todos los componentes SIN redondear intermedios y redondear solo el resultado final
     const valor_mensual_final =
       valor_mensual_plan + carga_administrativa + iva_carga_administrativa;
 
     // Preparar valores finales con redondeo
     const valores_finales = {
-      valor_movil: valor_movil, // Ya redondeado en paso 1
+      valor_movil: valor_movil,
       total_del_plan: this._roundTo2(total_del_plan),
       valor_mensual: this._roundTo2(valor_mensual_plan),
       carga_administrativa: this._roundTo2(carga_administrativa),
@@ -75,7 +70,7 @@ const cuotaMensualService = {
       valor_mensual_final: this._roundTo2(valor_mensual_final),
     };
 
-    // Verificar que la suma sea consistente (solo en desarrollo)
+    // Verificación en desarrollo
     if (process.env.NODE_ENV !== "production") {
       this._verificarSuma(valores_finales);
     }
@@ -85,7 +80,6 @@ const cuotaMensualService = {
 
   /**
    * Función de verificación para debugging
-   * Valida que la suma de componentes coincida con el total final
    */
   _verificarSuma(calculatedValues) {
     const suma_componentes =
@@ -117,13 +111,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * 🆕 NUEVA FUNCIÓN: Actualiza todos los ResumenCuenta asociados a un proyecto
-   * con los nuevos valores de la CuotaMensual.
-   * @param {number} id_proyecto - ID del proyecto
-   * @param {object} calculatedValues - Valores calculados de la cuota
-   * @param {object} cuotaData - Datos completos de la cuota
-   * @param {object} transaction - Transacción de Sequelize
-   * @returns {Promise<number>} Cantidad de resúmenes actualizados
+   * Actualiza todos los ResumenCuenta asociados a un proyecto
    */
   async _syncResumenesCuenta(
     id_proyecto,
@@ -151,7 +139,7 @@ const cuotaMensualService = {
 
       const idsSuscripciones = suscripciones.map((s) => s.id);
 
-      // 2. Construir el nuevo detalle_cuota con valores ya redondeados
+      // 2. Construir el nuevo detalle_cuota
       const nuevoDetalleCuota = {
         nombre_cemento: cuotaData.nombre_cemento_cemento,
         valor_cemento_unidades: cuotaData.valor_cemento_unidades,
@@ -190,9 +178,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Crea una nueva cuota mensual (calculando todos sus valores) y
-   * **actualiza el Proyecto asociado** con el `valor_mensual_final` resultante.
-   * 🆕 También actualiza todos los ResumenCuenta existentes del proyecto.
+   * Crea una nueva cuota mensual y actualiza el proyecto
    */
   async createAndSetProjectAmount(data) {
     const t = await sequelize.transaction();
@@ -245,7 +231,7 @@ const cuotaMensualService = {
         { where: { id: data.id_proyecto }, transaction: t }
       );
 
-      // 🆕 5. Sincronizar todos los ResumenCuenta del proyecto
+      // 5. Sincronizar ResumenCuenta
       const resumenesActualizados = await this._syncResumenesCuenta(
         data.id_proyecto,
         calculatedValues,
@@ -255,7 +241,6 @@ const cuotaMensualService = {
 
       await t.commit();
 
-      // Retornar la cuota creada + info de sincronización
       return {
         cuota: nuevaCuota,
         resumenes_actualizados: resumenesActualizados,
@@ -273,8 +258,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Actualiza una cuota por su ID, recalcula sus valores y actualiza el proyecto asociado.
-   * 🆕 También sincroniza todos los ResumenCuenta del proyecto.
+   * Actualiza una cuota existente
    */
   async update(id, data) {
     const t = await sequelize.transaction();
@@ -300,7 +284,7 @@ const cuotaMensualService = {
       // 2. Combinar datos
       const mergedData = { ...cuota.dataValues, ...data };
 
-      // 3. Recalcular valores con precisión optimizada
+      // 3. Recalcular valores
       const calculatedValues = this._calculateValues(mergedData);
 
       // 4. Actualizar la cuota
@@ -312,13 +296,13 @@ const cuotaMensualService = {
         { transaction: t }
       );
 
-      // 5. Actualizar el monto_inversion del proyecto
+      // 5. Actualizar el proyecto
       await Proyecto.update(
         { monto_inversion: calculatedValues.valor_mensual_final },
         { where: { id: cuota.id_proyecto }, transaction: t }
       );
 
-      // 🆕 6. Sincronizar todos los ResumenCuenta del proyecto
+      // 6. Sincronizar ResumenCuenta
       const resumenesActualizados = await this._syncResumenesCuenta(
         cuota.id_proyecto,
         calculatedValues,
@@ -328,7 +312,6 @@ const cuotaMensualService = {
 
       await t.commit();
 
-      // Retornar la cuota actualizada + info de sincronización
       return {
         cuota: cuota,
         resumenes_actualizados: resumenesActualizados,
@@ -346,7 +329,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Obtiene todas las cuotas de un proyecto específico.
+   * Obtiene todas las cuotas de un proyecto
    */
   async findByProjectId(id_proyecto) {
     return CuotaMensual.findAll({
@@ -356,7 +339,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Obtiene la cuota más reciente creada para un proyecto.
+   * Obtiene la cuota más reciente de un proyecto
    */
   async findLastByProjectId(id_proyecto) {
     return CuotaMensual.findOne({
@@ -367,7 +350,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Elimina lógicamente una cuota (establece `activo` en false).
+   * Elimina lógicamente una cuota
    */
   async softDelete(id) {
     const cuota = await CuotaMensual.findByPk(id);
