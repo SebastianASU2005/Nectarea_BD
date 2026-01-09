@@ -1,144 +1,114 @@
-// services/favorito.service.js
 const Favorito = require("../models/Favorito");
 const Lote = require("../models/lote");
 const Imagen = require("../models/imagen");
-const { sequelize } = require("../config/database");
-
-// Nota: Se importan para asegurar que Sequelize pueda resolver las relaciones, aunque no se usen directamente.
-const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
+const { sequelize } = require("../config/database");
 
 const favoritoService = {
   /**
-   * @async
-   * @function toggleFavorito
-   * @description Agrega o elimina un lote de favoritos (toggle). Incluye validación de suscripción activa si el lote pertenece a un proyecto privado.
-   * @param {number} idUsuario - ID del usuario.
-   * @param {number} idLote - ID del lote.
-   * @returns {Promise<{agregado: boolean, mensaje: string}>} Objeto indicando si se agregó o eliminó, y un mensaje.
-   * @throws {Error} Si el lote no existe o si el usuario no tiene suscripción activa al proyecto privado asociado.
+   * Toggle favorito (sin cambios)
    */
   async toggleFavorito(idUsuario, idLote) {
-    // 1. Validar que el lote exista y esté activo, incluyendo el ID del proyecto asociado.
     const lote = await Lote.findOne({
       where: { id: idLote, activo: true },
-      attributes: ["id", "id_proyecto"], // Se recupera solo la información necesaria.
+      attributes: ["id", "id_proyecto"],
     });
 
     if (!lote) {
       throw new Error("Lote no encontrado o no está activo.");
     }
 
-    const idProyecto = lote.id_proyecto; // 2. Lógica de acceso: Verificar suscripción activa si el lote está asociado a un proyecto (es un lote privado).
+    const idProyecto = lote.id_proyecto;
 
     if (idProyecto) {
-      // Se re-importa SuscripcionProyecto por si la importación superior no se resolvió correctamente en el scope.
-      const SuscripcionProyecto = require("../models/suscripcion_proyecto"); // Buscar una suscripción activa y válida para este usuario y proyecto.
-
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
       const suscripcion = await SuscripcionProyecto.findOne({
         where: {
           id_usuario: idUsuario,
           id_proyecto: idProyecto,
-          activo: true, // Condición clave: Solo se permite si la suscripción está activa.
+          activo: true,
         },
       });
 
       if (!suscripcion) {
         throw new Error(
-          "Acceso denegado. Para agregar este lote a favoritos, debes tener una **suscripción activa** al proyecto asociado."
+          "Acceso denegado. Para agregar este lote a favoritos, debes tener una suscripción activa al proyecto asociado."
         );
       }
-    } // 3. Buscar si ya existe el favorito (Lógica de "toggle").
+    }
 
     const favoritoExistente = await Favorito.findOne({
-      where: {
-        id_usuario: idUsuario,
-        id_lote: idLote,
-      },
+      where: { id_usuario: idUsuario, id_lote: idLote },
     });
 
     if (favoritoExistente) {
-      // Si existe, lo elimina.
       await favoritoExistente.destroy();
-      return {
-        agregado: false,
-        mensaje: "Lote eliminado de favoritos.",
-      };
+      return { agregado: false, mensaje: "Lote eliminado de favoritos." };
     } else {
-      // Si no existe, lo crea.
-      await Favorito.create({
-        id_usuario: idUsuario,
-        id_lote: idLote,
-      });
-      return {
-        agregado: true,
-        mensaje: "Lote agregado a favoritos.",
-      };
+      await Favorito.create({ id_usuario: idUsuario, id_lote: idLote });
+      return { agregado: true, mensaje: "Lote agregado a favoritos." };
     }
-  }
-  /**
-   * @async
-   * @function findFavoritosByUsuario
-   * @description Obtiene todos los lotes favoritos de un usuario. Incluye los datos del lote y sus imágenes, filtrando solo lotes activos.
-   * @param {number} idUsuario - ID del usuario.
-   * @returns {Promise<Lote[]>} Array de objetos Lote (sin la entidad Favorito).
-   */,
+  },
 
+  /**
+   * Obtener favoritos del usuario (sin cambios)
+   */
   async findFavoritosByUsuario(idUsuario) {
-    // Buscar todos los registros de favoritos para el usuario.
     const favoritos = await Favorito.findAll({
       where: { id_usuario: idUsuario },
       include: [
         {
           model: Lote,
           as: "lote",
-          where: { activo: true }, // Asegura que solo se incluyan lotes activos.
+          where: { activo: true },
           include: [{ model: Imagen, as: "imagenes" }],
         },
       ],
       order: [["fecha_creacion", "DESC"]],
-    }); // Mapear el resultado para retornar solo el objeto Lote (limpieza de la entidad Favorito).
+    });
 
     return favoritos.map((fav) => fav.lote);
-  }
+  },
+
   /**
-   * @async
-   * @function getEstadisticasFavoritos
-   * @description Obtiene el conteo de favoritos por lote, incluyendo los detalles del lote. Opcionalmente filtra por proyecto.
-   * @param {number} [idProyecto] - ID opcional del proyecto para filtrar (usado en la cláusula WHERE del Lote).
-   * @returns {Promise<Array<{lote: object, total_favoritos: number}>>} Array de objetos con el lote y el total de favoritos.
-   */,
-
-  async getEstadisticasFavoritos(idProyecto) {
-    // Construir la condición de búsqueda para el modelo Lote.
-    const loteWhere = { activo: true };
-    if (idProyecto) {
-      loteWhere.id_proyecto = idProyecto;
-    }
-
+   * 🆕 NUEVA FUNCIÓN: Obtener estadísticas de favoritos de UN PROYECTO específico
+   * @param {number} idProyecto - ID del proyecto
+   * @returns {Promise<object>} Estadísticas del proyecto
+   */
+  async getEstadisticasProyecto(idProyecto) {
     const estadisticas = await Favorito.findAll({
-      // Seleccionar el ID del lote y contar cuántos registros de Favorito hay por lote.
       attributes: [
         "id_lote",
         [
           sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")),
-          "total_favoritos", // Alias para el conteo.
+          "total_favoritos",
         ],
       ],
       include: [
         {
           model: Lote,
-          as: "lote", // Definición explícita de atributos con alias para evitar conflictos.
+          as: "lote",
           attributes: [
-            ["id", "lote_id"],
-            ["nombre_lote", "lote_nombre_lote"],
-            ["estado_subasta", "lote_estado_subasta"],
-            ["precio_base", "lote_precio_base"],
-            ["id_proyecto", "lote_id_proyecto"],
+            "id",
+            "nombre_lote",
+            "estado_subasta",
+            "precio_base",
+            "id_proyecto",
           ],
-          where: loteWhere, // Aplicar el filtro de actividad y proyecto (si aplica).
+          where: {
+            activo: true,
+            id_proyecto: idProyecto,
+          },
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              attributes: ["id", "url_imagen"],
+              limit: 1,
+            },
+          ],
         },
-      ], // Agrupar por todos los atributos seleccionados del lote y del favorito.
+      ],
       group: [
         "Favorito.id_lote",
         "lote.id",
@@ -146,45 +116,159 @@ const favoritoService = {
         "lote.estado_subasta",
         "lote.precio_base",
         "lote.id_proyecto",
-      ], // Ordenar por el número de favoritos de forma descendente.
+        "lote->imagenes.id",
+        "lote->imagenes.url_imagen",
+      ],
       order: [
         [sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")), "DESC"],
       ],
-      subQuery: false, // Necesario para evitar problemas con GROUP BY en subconsultas.
-      raw: true, // Retornar resultados sin el objeto Sequelize para facilitar el mapeo posterior.
-    }); // Mapear el resultado raw para reestructurar los datos y convertir el conteo a número.
+      subQuery: false,
+    });
+
+    // Formatear resultados
+    const lotesFavoritosFormateados = estadisticas.map((stat) => ({
+      lote: {
+        id: stat.lote.id,
+        nombre_lote: stat.lote.nombre_lote,
+        estado_subasta: stat.lote.estado_subasta,
+        precio_base: parseFloat(stat.lote.precio_base),
+        id_proyecto: stat.lote.id_proyecto,
+        imagenes: stat.lote.imagenes || [],
+      },
+      total_favoritos: parseInt(stat.dataValues.total_favoritos),
+    }));
+
+    return {
+      id_proyecto: idProyecto,
+      total_lotes_con_favoritos: lotesFavoritosFormateados.length,
+      lote_mas_votado: lotesFavoritosFormateados[0] || null,
+      lote_menos_votado:
+        lotesFavoritosFormateados[lotesFavoritosFormateados.length - 1] || null,
+      estadisticas_lotes: lotesFavoritosFormateados,
+    };
+  },
+
+  /**
+   * 🆕 NUEVA FUNCIÓN: Obtener estadísticas agrupadas por TODOS los proyectos
+   * @returns {Promise<Array>} Array con estadísticas por proyecto
+   */
+  async getEstadisticasTodosProyectos() {
+    // 1. Obtener todos los proyectos activos
+    const proyectos = await Proyecto.findAll({
+      where: { activo: true },
+      attributes: ["id", "nombre_proyecto", "tipo_inversion"],
+    });
+
+    // 2. Para cada proyecto, obtener sus estadísticas
+    const estadisticasPorProyecto = await Promise.all(
+      proyectos.map(async (proyecto) => {
+        const stats = await this.getEstadisticasProyecto(proyecto.id);
+
+        return {
+          id_proyecto: proyecto.id,
+          nombre_proyecto: proyecto.nombre_proyecto,
+          tipo_inversion: proyecto.tipo_inversion,
+          total_lotes_con_favoritos: stats.total_lotes_con_favoritos,
+          lote_mas_votado: stats.lote_mas_votado,
+          total_favoritos_proyecto: stats.estadisticas_lotes.reduce(
+            (sum, item) => sum + item.total_favoritos,
+            0
+          ),
+        };
+      })
+    );
+
+    // 3. Ordenar por total de favoritos del proyecto
+    return estadisticasPorProyecto.sort(
+      (a, b) => b.total_favoritos_proyecto - a.total_favoritos_proyecto
+    );
+  },
+
+  /**
+   * 🆕 NUEVA FUNCIÓN: Ranking global de lotes más favoritos (sin filtro de proyecto)
+   * @param {number} [limit=10] - Límite de resultados
+   * @returns {Promise<Array>} Top lotes más favoritos
+   */
+  async getRankingGlobal(limit = 10) {
+    const estadisticas = await Favorito.findAll({
+      attributes: [
+        "id_lote",
+        [
+          sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")),
+          "total_favoritos",
+        ],
+      ],
+      include: [
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "estado_subasta",
+            "precio_base",
+            "id_proyecto",
+          ],
+          where: { activo: true },
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: ["id", "nombre_proyecto"],
+            },
+            {
+              model: Imagen,
+              as: "imagenes",
+              attributes: ["id", "url_imagen"],
+              limit: 1,
+            },
+          ],
+        },
+      ],
+      group: [
+        "Favorito.id_lote",
+        "lote.id",
+        "lote.nombre_lote",
+        "lote.estado_subasta",
+        "lote.precio_base",
+        "lote.id_proyecto",
+        "lote->proyecto.id",
+        "lote->proyecto.nombre_proyecto",
+        "lote->imagenes.id",
+        "lote->imagenes.url_imagen",
+      ],
+      order: [
+        [sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")), "DESC"],
+      ],
+      limit: limit,
+      subQuery: false,
+    });
 
     return estadisticas.map((stat) => ({
       lote: {
-        // Se usa la notación de corchetes con el prefijo 'lote.' para acceder a los alias de la consulta raw.
-        id: stat["lote.lote_id"],
-        nombre_lote: stat["lote.lote_nombre_lote"],
-        estado_subasta: stat["lote.lote_estado_subasta"],
-        precio_base: stat["lote.lote_precio_base"],
-        id_proyecto: stat["lote.lote_id_proyecto"],
-        imagenes: [], // Se deja vacío ya que las imágenes no se incluyen en esta consulta de estadísticas.
+        id: stat.lote.id,
+        nombre_lote: stat.lote.nombre_lote,
+        estado_subasta: stat.lote.estado_subasta,
+        precio_base: parseFloat(stat.lote.precio_base),
+        proyecto: stat.lote.proyecto
+          ? {
+              id: stat.lote.proyecto.id,
+              nombre: stat.lote.proyecto.nombre_proyecto,
+            }
+          : null,
+        imagenes: stat.lote.imagenes || [],
       },
-      total_favoritos: parseInt(stat.total_favoritos), // Asegurar que sea un número entero.
+      total_favoritos: parseInt(stat.dataValues.total_favoritos),
     }));
-  }
+  },
+
   /**
-   * @async
-   * @function isFavorito
-   * @description Verifica rápidamente si un lote es favorito para un usuario específico.
-   * @param {number} idUsuario - ID del usuario.
-   * @param {number} idLote - ID del lote.
-   * @returns {Promise<boolean>} Retorna true si el lote es favorito, false en caso contrario.
-   */,
-
+   * Verificar si es favorito (sin cambios)
+   */
   async isFavorito(idUsuario, idLote) {
-    // Intenta encontrar un registro de favorito que coincida con ambos IDs.
     const favorito = await Favorito.findOne({
-      where: {
-        id_usuario: idUsuario,
-        id_lote: idLote,
-      },
-    }); // Usa el operador !! para convertir el resultado (objeto o null) a un booleano (true o false).
-
+      where: { id_usuario: idUsuario, id_lote: idLote },
+    });
     return !!favorito;
   },
 };

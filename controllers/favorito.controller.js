@@ -3,16 +3,12 @@ const favoritoService = require("../services/favorito.service");
 
 const favoritoController = {
   /**
-   * @async
-   * @function toggleFavorito
-   * @description Agrega o elimina un lote de favoritos del usuario autenticado.
-   * @param {object} req - Objeto de solicitud (con id_lote en body y usuario en req.user).
-   * @param {object} res - Objeto de respuesta.
+   * Toggle favorito (sin cambios)
    */
   async toggleFavorito(req, res) {
     try {
       const { id_lote } = req.body;
-      const idUsuario = req.user.id; // Asumiendo autenticación con JWT
+      const idUsuario = req.user.id;
 
       if (!id_lote) {
         return res.status(400).json({ error: "El ID del lote es requerido." });
@@ -29,11 +25,7 @@ const favoritoController = {
   },
 
   /**
-   * @async
-   * @function getMisFavoritos
-   * @description Obtiene los lotes favoritos activos del usuario autenticado.
-   * @param {object} req - Objeto de solicitud (usuario en req.user).
-   * @param {object} res - Objeto de respuesta.
+   * Obtener favoritos del usuario (sin cambios)
    */
   async getMisFavoritos(req, res) {
     try {
@@ -46,48 +38,70 @@ const favoritoController = {
   },
 
   /**
-   * @async
-   * @function getEstadisticas
-   * @description Obtiene estadísticas de favoritos (solo administradores) para un proyecto específico.
-   * @param {object} req - Objeto de solicitud (con id_proyecto obligatorio en req.query).
-   * @param {object} res - Objeto de respuesta.
+   * 🆕 MEJORADO: Obtener estadísticas con modo flexible
+   * Soporta 3 modos:
+   * - ?id_proyecto=1 → Estadísticas de un proyecto específico
+   * - ?modo=todos → Estadísticas agrupadas de todos los proyectos
+   * - ?modo=global&limit=20 → Ranking global de lotes (default: top 10)
    */
   async getEstadisticas(req, res) {
     try {
-      const { id_proyecto } = req.query; // Obtener el parámetro de la query // ⬅️ HACER id_proyecto OBLIGATORIO
+      const { id_proyecto, modo, limit } = req.query;
 
-      if (!id_proyecto) {
-        return res.status(400).json({
-          error: "El ID del proyecto es requerido para obtener estadísticas.",
+      // MODO 1: Estadísticas de un proyecto específico
+      if (id_proyecto) {
+        const idProyectoInt = parseInt(id_proyecto);
+
+        if (isNaN(idProyectoInt)) {
+          return res.status(400).json({
+            error: "El ID del proyecto debe ser un número válido.",
+          });
+        }
+
+        const estadisticas = await favoritoService.getEstadisticasProyecto(
+          idProyectoInt
+        );
+        return res.status(200).json(estadisticas);
+      }
+
+      // MODO 2: Estadísticas de todos los proyectos agrupados
+      if (modo === "todos") {
+        const estadisticas =
+          await favoritoService.getEstadisticasTodosProyectos();
+        return res.status(200).json({
+          modo: "todos_proyectos",
+          total_proyectos: estadisticas.length,
+          proyectos: estadisticas,
         });
-      } // Convertir a entero para pasarlo al servicio
+      }
 
-      const idProyectoInt = parseInt(id_proyecto);
+      // MODO 3: Ranking global de lotes
+      if (modo === "global") {
+        const limitInt = limit ? parseInt(limit) : 10;
+        const ranking = await favoritoService.getRankingGlobal(limitInt);
+        return res.status(200).json({
+          modo: "ranking_global",
+          total_resultados: ranking.length,
+          ranking: ranking,
+        });
+      }
 
-      const estadisticas = await favoritoService.getEstadisticasFavoritos(
-        idProyectoInt // ⬅️ Siempre pasamos el ID
-      ); // 🛑 Mantenemos el cálculo de más/menos votado, pero priorizamos la lista completa.
-
-      const masVotado = estadisticas[0] || null;
-      const menosVotado = estadisticas[estadisticas.length - 1] || null; // 🏆 RESPUESTA MODIFICADA: Retorna directamente la lista completa de estadísticas // y añade los metadatos como el ID del proyecto, el total, el más y menos votado.
-
-      res.status(200).json({
-        proyecto_filtrado: idProyectoInt,
-        total_lotes_con_favoritos: estadisticas.length, // Más descriptivo
-        lote_mas_votado: masVotado,
-        lote_menos_votado: menosVotado, // ✅ CAMBIO CLAVE: Retornar la lista completa con todos los lotes
-        estadisticas_lotes: estadisticas,
+      // Si no se especifica ningún parámetro, retornar error con instrucciones
+      return res.status(400).json({
+        error: "Debes especificar un modo de consulta.",
+        modos_disponibles: {
+          proyecto_especifico: "?id_proyecto=1",
+          todos_proyectos: "?modo=todos",
+          ranking_global: "?modo=global&limit=20",
+        },
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
+
   /**
-   * @async
-   * @function checkFavorito
-   * @description Verifica si un lote específico es favorito del usuario.
-   * @param {object} req - Objeto de solicitud (con id en params).
-   * @param {object} res - Objeto de respuesta.
+   * Verificar si es favorito (sin cambios)
    */
   async checkFavorito(req, res) {
     try {
