@@ -71,7 +71,6 @@ router.get(
 // Ruta dinámica específica del usuario (con sufijo)
 router.get(
   "/:id/activo",
-  authMiddleware.authenticate,
   proyectoController.findByIdActivo
 );
 

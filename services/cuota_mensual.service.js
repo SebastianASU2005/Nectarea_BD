@@ -5,14 +5,7 @@ const ResumenCuenta = require("../models/resumen_cuenta");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { sequelize } = require("../config/database");
 
-/**
- * ✅ SERVICIO CORREGIDO
- *
- * CAMBIOS PRINCIPALES:
- * 1. Los porcentajes ya vienen como decimales (0.85, 0.19, 0.21) desde el front
- * 2. NO dividir entre 100 nuevamente
- * 3. Mejorada la precisión de los cálculos
- */
+
 const cuotaMensualService = {
   /**
    * Función auxiliar para redondeo preciso a 2 decimales

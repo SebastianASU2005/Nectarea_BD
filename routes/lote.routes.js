@@ -57,7 +57,6 @@ router.put(
 // Ruta de Lote Activo por ID (con ID y sufijo)
 router.get(
   "/:id/activo",
-  authMiddleware.authenticate,
   loteController.findByIdActivo
 );
 
