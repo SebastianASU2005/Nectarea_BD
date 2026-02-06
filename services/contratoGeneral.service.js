@@ -15,6 +15,23 @@ const contratoGeneralService = {
    */
   async findAll() {
     return ContratoFirmado.findAll({
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioFirmante",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
       order: [["id", "DESC"]],
     });
   },
@@ -25,9 +42,26 @@ const contratoGeneralService = {
    * @returns {Promise<ContratoFirmado|null>} El contrato encontrado.
    */
   async findByPk(id) {
-    return ContratoFirmado.findByPk(id);
+    return ContratoFirmado.findByPk(id, {
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioFirmante",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+    });
   },
-
   /**
    * Obtiene todos los contratos firmados donde el usuario autenticado figura como firmante.
    * @param {number} id_usuario - ID del usuario solicitante.
@@ -38,6 +72,23 @@ const contratoGeneralService = {
       where: {
         id_usuario_firmante: id_usuario,
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioFirmante",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
       order: [["id", "DESC"]],
     });
   },
@@ -77,4 +128,3 @@ const contratoGeneralService = {
 };
 
 module.exports = contratoGeneralService;
-  
