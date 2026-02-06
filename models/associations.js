@@ -500,15 +500,14 @@ const configureAssociations = () => {
   // Un ContratoFirmado pertenece a un Usuario (firmante).
   ContratoFirmado.belongsTo(Usuario, {
     foreignKey: "id_usuario_firmante",
-    as: "firmante",
+    as: "usuarioFirmante", // ✅ CAMBIO: Cambiar "firmante" por "usuarioFirmante"
   });
 
   // Un ContratoFirmado está asociado a un Proyecto.
   ContratoFirmado.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
-    as: "proyecto",
+    as: "proyectoAsociado", // ✅ CAMBIO: Cambiar "proyecto" por "proyectoAsociado"
   });
-
   // Un ContratoFirmado puede estar asociado a una Inversión específica.
   ContratoFirmado.belongsTo(Inversion, {
     foreignKey: "id_inversion_asociada",

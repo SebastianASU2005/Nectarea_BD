@@ -24,19 +24,18 @@ const contratoFirmadoService = {
     const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } =
       signatureData;
 
-    const usuario = await require("./usuario.service").findById(
-      id_usuario_firmante
-    );
+    const usuario =
+      await require("./usuario.service").findById(id_usuario_firmante);
     if (usuario && usuario.rol === "admin") {
       throw new Error(
-        "⛔ Los administradores no pueden firmar contratos como clientes."
+        "⛔ Los administradores no pueden firmar contratos como clientes.",
       );
     }
 
     // 1. VERIFICACIÓN CRÍTICA: Estatus de Verificación de Identidad (KYC).
     const verificacionKYC =
       await verificacionIdentidadService.getVerificationStatus(
-        id_usuario_firmante
+        id_usuario_firmante,
       );
 
     if (
@@ -44,7 +43,7 @@ const contratoFirmadoService = {
       verificacionKYC.estado_verificacion !== "APROBADA"
     ) {
       throw new Error(
-        "❌ Firma rechazada: El usuario no ha completado o aprobado la Verificación de Identidad (KYC)."
+        "❌ Firma rechazada: El usuario no ha completado o aprobado la Verificación de Identidad (KYC).",
       );
     }
 
@@ -65,13 +64,13 @@ const contratoFirmadoService = {
 
     if (plantilla.id_proyecto !== idProyectoNum) {
       throw new Error(
-        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`
+        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
       );
     }
 
     if (!plantilla.activo) {
       throw new Error(
-        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada."
+        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada.",
       );
     }
 
@@ -120,30 +119,30 @@ const contratoFirmadoService = {
     if (!inversionValida && !suscripcionValida) {
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
-          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`
+          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`,
         );
       } else {
         throw new Error(
-          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`
+          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`,
         );
       }
     }
 
     if (inversionValida && suscripcionValida) {
       throw new Error(
-        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte."
+        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte.",
       );
     }
 
     if (inversionValida && proyecto.tipo_inversion !== "directo") {
       throw new Error(
-        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`
+        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`,
       );
     }
 
     if (suscripcionValida && proyecto.tipo_inversion !== "mensual") {
       throw new Error(
-        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`
+        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`,
       );
     }
 
@@ -158,7 +157,7 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta inversión."
+          "❌ Ya existe un contrato firmado para esta inversión.",
         );
       }
     }
@@ -173,7 +172,7 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta suscripción."
+          "❌ Ya existe un contrato firmado para esta suscripción.",
         );
       }
     }
@@ -200,19 +199,18 @@ const contratoFirmadoService = {
     const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } = data;
 
     // Verificar que el usuario no sea admin
-    const usuario = await require("./usuario.service").findById(
-      id_usuario_firmante
-    );
+    const usuario =
+      await require("./usuario.service").findById(id_usuario_firmante);
     if (usuario && usuario.rol === "admin") {
       throw new Error(
-        "⛔ Los administradores no pueden firmar contratos como clientes."
+        "⛔ Los administradores no pueden firmar contratos como clientes.",
       );
     }
 
     // 1. Verificación KYC
     const verificacionKYC =
       await verificacionIdentidadService.getVerificationStatus(
-        id_usuario_firmante
+        id_usuario_firmante,
       );
 
     if (
@@ -220,7 +218,7 @@ const contratoFirmadoService = {
       verificacionKYC.estado_verificacion !== "APROBADA"
     ) {
       throw new Error(
-        "❌ Firma rechazada: El usuario no ha completado o aprobado la Verificación de Identidad (KYC)."
+        "❌ Firma rechazada: El usuario no ha completado o aprobado la Verificación de Identidad (KYC).",
       );
     }
 
@@ -239,13 +237,13 @@ const contratoFirmadoService = {
     const idProyectoNum = parseInt(id_proyecto);
     if (plantilla.id_proyecto !== idProyectoNum) {
       throw new Error(
-        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`
+        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
       );
     }
 
     if (!plantilla.activo) {
       throw new Error(
-        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada."
+        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada.",
       );
     }
 
@@ -294,30 +292,30 @@ const contratoFirmadoService = {
     if (!inversionValida && !suscripcionValida) {
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
-          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`
+          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`,
         );
       } else {
         throw new Error(
-          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`
+          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`,
         );
       }
     }
 
     if (inversionValida && suscripcionValida) {
       throw new Error(
-        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte."
+        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte.",
       );
     }
 
     if (inversionValida && proyecto.tipo_inversion !== "directo") {
       throw new Error(
-        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`
+        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`,
       );
     }
 
     if (suscripcionValida && proyecto.tipo_inversion !== "mensual") {
       throw new Error(
-        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`
+        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`,
       );
     }
 
@@ -332,7 +330,7 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta inversión."
+          "❌ Ya existe un contrato firmado para esta inversión.",
         );
       }
     }
@@ -347,7 +345,7 @@ const contratoFirmadoService = {
 
       if (contratoExistente) {
         throw new Error(
-          "❌ Ya existe un contrato firmado para esta suscripción."
+          "❌ Ya existe un contrato firmado para esta suscripción.",
         );
       }
     }
@@ -371,6 +369,49 @@ const contratoFirmadoService = {
         id_usuario_firmante: userId,
         activo: true,
       },
+      include: [
+        {
+          model: require("../models/usuario"),
+          as: "usuarioFirmante",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: require("../models/proyecto"),
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
+  },
+  /**
+   * Obtiene todos los contratos firmados con información de usuario y proyecto.
+   * @returns {Promise<ContratoFirmado[]>} Lista de todos los contratos firmados.
+   */
+  async findAll() {
+    return ContratoFirmado.findAll({
+      include: [
+        {
+          model: require("../models/usuario"),
+          as: "usuarioFirmante",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: require("../models/proyecto"),
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
       order: [["id", "DESC"]],
     });
   },

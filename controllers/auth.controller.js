@@ -357,17 +357,12 @@ const authController = {
    * @async
    * @function forgotPassword
    * @description Genera un token de restablecimiento de contraseña y envía el enlace por email.
-   * ✅ CORREGIDO: Ya NO envía email duplicado desde aquí.
-   * El email lo envía automáticamente usuarioService.generatePasswordResetToken()
    * @param {object} req - Objeto de solicitud de Express (con `email` en `body`).
    * @param {object} res - Objeto de respuesta de Express.
    */
   async forgotPassword(req, res) {
     try {
       const { email } = req.body;
-
-      // ✅ CORRECCIÓN: Solo llama al servicio, que YA se encarga de enviar el email
-      // No necesitamos el resetToken de retorno ni enviar otro email aquí
       await usuarioService.generatePasswordResetToken(email);
 
       // Respuesta genérica por motivos de seguridad (evitar enumeración de usuarios)
