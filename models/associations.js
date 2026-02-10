@@ -242,6 +242,9 @@ const configureAssociations = () => {
 
   // Una Puja pertenece a un Lote específico.
   Puja.belongsTo(Lote, { foreignKey: "id_lote", as: "lote" });
+  
+  Puja.belongsTo(Proyecto, { foreignKey: "id_proyecto", as: "proyecto" });
+
 
   // Una Puja puede tener una Transacción asociada (uno a uno).
   Puja.hasOne(Transaccion, {

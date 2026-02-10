@@ -169,6 +169,25 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+                "monto_inversion",
+                "moneda",
+              ],
+            },
           ],
         },
       ],
@@ -218,7 +237,26 @@ const pujaService = {
   async getValidPaymentDetails(pujaId, userId, options = {}) {
     try {
       const puja = await Puja.findByPk(pujaId, {
-        include: [{ model: Lote, as: "lote" }],
+        include: [
+          {
+            model: Lote,
+            as: "lote",
+            include: [
+              {
+                model: Proyecto,
+                as: "proyecto",
+                attributes: [
+                  "id",
+                  "nombre_proyecto",
+                  "tipo_inversion",
+                  "estado_proyecto",
+                  "latitud",
+                  "longitud",
+                ],
+              },
+            ],
+          },
+        ],
         ...options,
       });
 
@@ -285,7 +323,13 @@ const pujaService = {
               {
                 association: "proyectoAsociado",
                 required: true,
-                attributes: ["id", "monto_inversion"],
+                attributes: [
+                  "id",
+                  "monto_inversion",
+                  "nombre_proyecto",
+                  "tipo_inversion",
+                  "estado_proyecto",
+                ],
               },
             ],
           },
@@ -293,6 +337,21 @@ const pujaService = {
             model: Lote,
             as: "lote",
             required: true,
+            include: [
+              {
+                model: Proyecto,
+                as: "proyecto",
+                attributes: [
+                  "id",
+                  "nombre_proyecto",
+                  "tipo_inversion",
+                  "estado_proyecto",
+                  "latitud",
+                  "longitud",
+                  "descripcion",
+                ],
+              },
+            ],
           },
         ],
       });
@@ -621,6 +680,22 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+              ],
+            },
           ],
         },
       ],
@@ -657,6 +732,22 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+              ],
+            },
           ],
         },
       ],
@@ -703,6 +794,22 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+              ],
+            },
           ],
         },
       ],
@@ -747,6 +854,22 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+              ],
+            },
           ],
         },
       ],
@@ -817,6 +940,25 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+                "monto_inversion",
+                "moneda",
+              ],
+            },
           ],
         },
         {
@@ -847,6 +989,25 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+                "monto_inversion",
+                "moneda",
+              ],
+            },
           ],
         },
         {
@@ -862,6 +1023,8 @@ const pujaService = {
             "nombre_proyecto",
             "tipo_inversion",
             "estado_proyecto",
+            "latitud",
+            "longitud",
           ],
         },
       ],
@@ -901,6 +1064,23 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+              ],
+            },
           ],
         },
         {
@@ -916,6 +1096,8 @@ const pujaService = {
             "nombre_proyecto",
             "tipo_inversion",
             "estado_proyecto",
+            "latitud",
+            "longitud",
           ],
         },
       ],
@@ -942,6 +1124,23 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+              ],
+            },
           ],
         },
         {
@@ -957,6 +1156,8 @@ const pujaService = {
             "nombre_proyecto",
             "tipo_inversion",
             "estado_proyecto",
+            "latitud",
+            "longitud",
           ],
         },
       ],
@@ -982,6 +1183,25 @@ const pujaService = {
             "precio_base",
             "estado_subasta",
             "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyecto",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+                "latitud",
+                "longitud",
+                "descripcion",
+                "monto_inversion",
+                "moneda",
+              ],
+            },
           ],
         },
         {
@@ -997,6 +1217,8 @@ const pujaService = {
             "nombre_proyecto",
             "tipo_inversion",
             "estado_proyecto",
+            "latitud",
+            "longitud",
           ],
         },
       ],
@@ -1050,9 +1272,30 @@ const pujaService = {
 
       const pujaGanadora = await Puja.findByPk(pujaId, {
         include: [
-          { model: Usuario, as: "usuario" },
-          { model: Lote, as: "lote" },
-          { model: SuscripcionProyecto, as: "suscripcion" },
+          {
+            model: Usuario,
+            as: "usuario",
+          },
+          {
+            model: Lote,
+            as: "lote",
+            include: [
+              {
+                model: Proyecto,
+                as: "proyecto",
+                attributes: [
+                  "id",
+                  "nombre_proyecto",
+                  "tipo_inversion",
+                  "estado_proyecto",
+                ],
+              },
+            ],
+          },
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+          },
         ],
         transaction: t,
       });
