@@ -108,7 +108,7 @@ const SuscripcionCancelada = require("./models/suscripcion_cancelada");
 const Favorito = require("./models/Favorito");
 const VerificacionIdentidad = require("./models/verificacion_identidad");
 const ContratoPlantilla = require("./models/ContratoPlantilla");
-const ContratoFirmado = require("./models/ContratoFirmado ");
+const ContratoFirmado = require("./models/ContratoFirmado");
 
 // Importa la función de asociaciones
 const configureAssociations = require("./models/associations");

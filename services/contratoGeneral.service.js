@@ -1,7 +1,7 @@
-// services/contratoGeneralService.js
-const ContratoFirmado = require("../models/ContratoFirmado ");
-const { Op } = require("sequelize"); // Se mantiene la importación, aunque Op no se usa directamente en este archivo.
-
+const ContratoFirmado = require("../models/ContratoFirmado");
+const Usuario = require("../models/Usuario");
+const Proyecto = require("../models/Proyecto");
+const { Op } = require("sequelize");
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Firmados.
  * Se enfoca en las operaciones de **consulta** (lectura) y la **aplicación de permisos**

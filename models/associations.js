@@ -8,17 +8,17 @@ const Proyecto = require("./proyecto");
 const Puja = require("./puja");
 const Transaccion = require("./transaccion");
 const Imagen = require("./imagen");
-const Contrato = require("./contrato"); // Se mantiene para compatibilidad con modelos antiguos si es necesario.
+const Contrato = require("./contrato");
 const SuscripcionProyecto = require("./suscripcion_proyecto");
 const SuscripcionCancelada = require("./suscripcion_cancelada");
-const Pago = require("./Pago"); // Representa pagos de mensualidad o internos.
-const PagoMercado = require("./pagoMercado"); // Representa pagos procesados por la pasarela (Mercado Pago).
+const Pago = require("./Pago"); // Este SÍ tiene mayúscula
+const PagoMercado = require("./pagoMercado");
 const Mensaje = require("./mensaje");
-const CuotaMensual = require("./CuotaMensual");
+const CuotaMensual = require("./CuotaMensual"); // Este SÍ tiene mayúscula
 const ResumenCuenta = require("./resumen_cuenta");
-const Favorito = require("./Favorito");
-const ContratoPlantilla = require("./ContratoPlantilla");
-const ContratoFirmado = require("./ContratoFirmado "); // Modelo clave para los contratos firmados digitalmente.
+const Favorito = require("./Favorito"); // Este SÍ tiene mayúscula
+const ContratoPlantilla = require("./ContratoPlantilla"); // Este SÍ tiene mayúscula
+const ContratoFirmado = require("./ContratoFirmado"); // Este SÍ tiene mayúscula
 const VerificacionIdentidad = require("./verificacion_identidad");
 
 const configureAssociations = () => {
@@ -500,14 +500,15 @@ const configureAssociations = () => {
   // Un ContratoFirmado pertenece a un Usuario (firmante).
   ContratoFirmado.belongsTo(Usuario, {
     foreignKey: "id_usuario_firmante",
-    as: "usuarioFirmante", // ✅ CAMBIO: Cambiar "firmante" por "usuarioFirmante"
+    as: "usuarioFirmante",
   });
 
   // Un ContratoFirmado está asociado a un Proyecto.
   ContratoFirmado.belongsTo(Proyecto, {
     foreignKey: "id_proyecto",
-    as: "proyectoAsociado", // ✅ CAMBIO: Cambiar "proyecto" por "proyectoAsociado"
+    as: "proyectoAsociado",
   });
+
   // Un ContratoFirmado puede estar asociado a una Inversión específica.
   ContratoFirmado.belongsTo(Inversion, {
     foreignKey: "id_inversion_asociada",

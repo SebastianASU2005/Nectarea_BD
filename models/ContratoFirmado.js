@@ -1,5 +1,6 @@
 // models/ContratoFirmado.js
-const { sequelize, Op, DataTypes } = require("../config/database");
+const { sequelize, DataTypes } = require("../config/database");
+const { Op } = require("sequelize");
 const baseAttributes = require("./base");
 
 const ContratoFirmado = sequelize.define(
@@ -106,7 +107,7 @@ const ContratoFirmado = sequelize.define(
         name: "idx_project_contracts",
       },
     ],
-  }
+  },
 );
 
 module.exports = ContratoFirmado;

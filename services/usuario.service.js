@@ -7,7 +7,7 @@ const crypto = require("crypto");
 // 🛑 IMPORTACIONES FALTANTES PARA validateUserDeactivation
 const SuscripcionProyecto = require("../models/suscripcion_proyecto"); // 🛑
 const Puja = require("../models/puja"); // 🛑
-const ContratoFirmado = require("../models/ContratoFirmado "); // 🛑
+const ContratoFirmado = require("../models/ContratoFirmado"); // 🛑
 
 /**
  * @function generateToken

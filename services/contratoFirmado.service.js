@@ -1,9 +1,10 @@
 // services/contratoFirmadoService.js
-const ContratoFirmado = require("../models/ContratoFirmado ");
+const ContratoFirmado = require("../models/ContratoFirmado");
 const Inversion = require("../models/inversion");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Pago = require("../models/Pago");
+const Usuario = require("../models/usuario");
 const verificacionIdentidadService = require("./verificacionIdentidad.service");
 const ContratoPlantilla = require("../models/ContratoPlantilla");
 
@@ -371,12 +372,12 @@ const contratoFirmadoService = {
       },
       include: [
         {
-          model: require("../models/usuario"),
+          model: Usuario,
           as: "usuarioFirmante",
           attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
         },
         {
-          model: require("../models/proyecto"),
+          model: Proyecto,
           as: "proyectoAsociado",
           attributes: [
             "id",
@@ -389,6 +390,7 @@ const contratoFirmadoService = {
       order: [["id", "DESC"]],
     });
   },
+
   /**
    * Obtiene todos los contratos firmados con información de usuario y proyecto.
    * @returns {Promise<ContratoFirmado[]>} Lista de todos los contratos firmados.
@@ -397,12 +399,12 @@ const contratoFirmadoService = {
     return ContratoFirmado.findAll({
       include: [
         {
-          model: require("../models/usuario"),
+          model: Usuario,
           as: "usuarioFirmante",
           attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
         },
         {
-          model: require("../models/proyecto"),
+          model: Proyecto,
           as: "proyectoAsociado",
           attributes: [
             "id",
