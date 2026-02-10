@@ -32,11 +32,11 @@ const suscripcionProyectoService = {
    */
   async _createSubscriptionRecord(data, t) {
     const usuario = await require("./usuario.service").findById(
-      data.id_usuario
+      data.id_usuario,
     );
     if (usuario && usuario.rol === "admin") {
       throw new Error(
-        "⛔ Los administradores no pueden crear suscripciones como clientes."
+        "⛔ Los administradores no pueden crear suscripciones como clientes.",
       );
     }
     const proyecto = await Proyecto.findByPk(data.id_proyecto, {
@@ -51,13 +51,13 @@ const suscripcionProyectoService = {
       proyecto.estado_proyecto === "Cancelado"
     ) {
       throw new Error(
-        `❌ No se puede iniciar una suscripción, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`
+        `❌ No se puede iniciar una suscripción, el proyecto "${proyecto.nombre_proyecto}" está en estado: ${proyecto.estado_proyecto}.`,
       );
     }
 
     if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
       throw new Error(
-        `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores.`
+        `❌ El proyecto "${proyecto.nombre_proyecto}" ya ha alcanzado su límite máximo de ${proyecto.obj_suscripciones} suscriptores.`,
       );
     }
 
@@ -84,10 +84,9 @@ const suscripcionProyectoService = {
           fecha_inicio_proceso: new Date(),
           meses_restantes: proyecto.plazo_inversion,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
-      // 🔧 CORRECCIÓN: Usar Usuario.findAll directamente
       const todosLosUsuarios = await Usuario.findAll({
         where: { activo: true },
         transaction: t,
@@ -104,44 +103,42 @@ const suscripcionProyectoService = {
               id_receptor: usuario.id,
               contenido: contenido,
             },
-            { transaction: t }
+            { transaction: t },
           );
         }
       }
 
-      // 📧 Email masivo a usuarios
       try {
         await emailService.notificarInicioProyectoMasivo(
           proyecto,
-          todosLosUsuarios
+          todosLosUsuarios,
         );
       } catch (error) {
         console.error(
           `Error al enviar emails masivos de inicio de proyecto ${proyecto.nombre_proyecto}:`,
-          error.message
+          error.message,
         );
       }
 
-      // 📧 Email al administrador - 🔧 CORRECCIÓN: Usar UsuarioService.findAllAdmins()
       try {
-        const admins = await UsuarioService.findAllAdmins(); // ✅ CORREGIDO: Usar UsuarioService con mayúscula
+        const admins = await UsuarioService.findAllAdmins();
         if (admins && admins.length > 0) {
           const adminPrincipal = admins[0];
           if (adminPrincipal.email) {
             await emailService.notificarInicioProyectoAdmin(
               adminPrincipal.email,
-              proyecto
+              proyecto,
             );
           }
         } else {
           console.warn(
-            "No se encontraron administradores para notificar el inicio del proyecto."
+            "No se encontraron administradores para notificar el inicio del proyecto.",
           );
         }
       } catch (error) {
         console.error(
           `Error al enviar email de inicio de proyecto al administrador ${proyecto.nombre_proyecto}:`,
-          error.message
+          error.message,
         );
       }
     }
@@ -163,9 +160,8 @@ const suscripcionProyectoService = {
    * @throws {Error} Si la transacción no es válida o ya fue procesada.
    */
   async confirmarSuscripcion(transaccionId) {
-    const t = await sequelize.transaction(); // Inicia la transacción
+    const t = await sequelize.transaction();
     try {
-      // 1. VALIDACIÓN DE TRANSACCIÓN Y ESTADOS
       const transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
       });
@@ -174,97 +170,87 @@ const suscripcionProyectoService = {
         throw new Error(`Transacción con ID ${transaccionId} no encontrada.`);
       }
 
-      // **VALIDACIÓN CRÍTICA DE FLUJO:** Solo se puede confirmar una transacción en estado 'pendiente'
       if (transaccion.estado_transaccion !== "pendiente") {
         throw new Error(
-          `❌ La Transacción ${transaccionId} ya fue procesada o está en estado no elegible: ${transaccion.estado_transaccion}.`
+          `❌ La Transacción ${transaccionId} ya fue procesada o está en estado no elegible: ${transaccion.estado_transaccion}.`,
         );
       }
 
-      // 2. OBTENER EL PAGO ASOCIADO
       const pago = await Pago.findByPk(transaccion.id_pago_mensual, {
         transaction: t,
       });
 
       if (!pago) {
         throw new Error(
-          `Pago mensual asociado a la transacción ${transaccionId} no encontrado.`
+          `Pago mensual asociado a la transacción ${transaccionId} no encontrado.`,
         );
       }
 
-      // 3. CREACIÓN DEL REGISTRO DE SUSCRIPCIÓN
       const { nuevaSuscripcion, proyecto } =
         await this._createSubscriptionRecord(
           {
             id_usuario: transaccion.id_usuario,
             id_proyecto: transaccion.id_proyecto,
-            monto_total_pagado: transaccion.monto, // Registra el monto del primer pago
-            // otros campos por defecto
+            monto_total_pagado: transaccion.monto,
           },
-          t
+          t,
         );
 
-      // 🔧 SOLUCIÓN: Actualizar el Pago para asociarlo con la nueva Suscripción
       await pago.update(
         {
-          id_suscripcion: nuevaSuscripcion.id, // ✅ Asocia el pago con la suscripción
+          id_suscripcion: nuevaSuscripcion.id,
           estado_pago: "pagado",
         },
-        { transaction: t }
+        { transaction: t },
       );
 
-      // 4. ACTUALIZAR LA TRANSACCIÓN
       await transaccion.update(
         { estado_transaccion: "pagado", fecha_pago: new Date() },
-        { transaction: t }
+        { transaction: t },
       );
 
-      // 5. CREACIÓN DEL RESUMEN DE CUENTA (CRUCIAL para proyectos mensuales)
       if (proyecto.tipo_inversion === "mensual") {
-        // Obtenemos la CuotaMensual dentro de la transacción
         const cuotaMensual = await CuotaMensual.findOne({
           where: { id_proyecto: proyecto.id },
           transaction: t,
         });
 
-        // Este servicio utiliza la CuotaMensual para crear el registro en ResumenCuenta.
         await resumenCuentaService.crearResumenInicial(
           {
             id_suscripcion: nuevaSuscripcion.id,
             id_proyecto: proyecto.id,
             id_usuario: nuevaSuscripcion.id_usuario,
-            detalle_cuota: cuotaMensual, // Se pasa el objeto cuota para el detalle
+            detalle_cuota: cuotaMensual,
           },
-          t
+          t,
         );
       }
 
-      await t.commit(); // Confirma todas las operaciones
+      await t.commit();
 
-      // 6. Envío de email de confirmación (Post-Commit)
       try {
         const usuario = await UsuarioService.findById(
-          nuevaSuscripcion.id_usuario
+          nuevaSuscripcion.id_usuario,
         );
         if (usuario && usuario.email) {
           await emailService.notificarSuscripcionExitosa(
             usuario.email,
-            proyecto
+            proyecto,
           );
         }
       } catch (error) {
         console.error(
           `Error al enviar email de suscripción exitosa al usuario ${nuevaSuscripcion.id_usuario}:`,
-          error.message
+          error.message,
         );
       }
 
       return nuevaSuscripcion;
     } catch (error) {
-      await t.rollback(); // Revierte si algo falla
+      await t.rollback();
       throw error;
     }
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -282,13 +268,14 @@ const suscripcionProyectoService = {
       include: [
         {
           model: Usuario,
-          as: "usuario", // Alias de la relación definido en el modelo
+          as: "usuario",
           where: { activo: true },
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
         },
       ],
-    }); // Mapea y devuelve solo las instancias del modelo Usuario.
+    });
     return suscripciones.map((suscripcion) => suscripcion.usuario);
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -298,8 +285,29 @@ const suscripcionProyectoService = {
    * @returns {Promise<SuscripcionProyecto|null>}
    */
   async findById(id) {
-    return SuscripcionProyecto.findByPk(id);
-  }, // <-- COMA AÑADIDA
+    return SuscripcionProyecto.findByPk(id, {
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
+        },
+      ],
+    });
+  },
 
   /**
    * @async
@@ -314,10 +322,30 @@ const suscripcionProyectoService = {
       where: {
         id,
         id_usuario: userId,
-        activo: true, // Asumimos que solo buscan suscripciones activas
+        activo: true,
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
+        },
+      ],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -334,8 +362,28 @@ const suscripcionProyectoService = {
         id_proyecto: projectId,
         activo: true,
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
+        },
+      ],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -344,8 +392,30 @@ const suscripcionProyectoService = {
    * @returns {Promise<SuscripcionProyecto[]>}
    */
   async findAll() {
-    return SuscripcionProyecto.findAll();
-  }, // <-- COMA AÑADIDA
+    return SuscripcionProyecto.findAll({
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
+  },
 
   /**
    * @async
@@ -360,14 +430,25 @@ const suscripcionProyectoService = {
         {
           model: Proyecto,
           as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
         },
         {
           model: Usuario,
           as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
         },
       ],
+      order: [["id", "DESC"]],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -382,12 +463,27 @@ const suscripcionProyectoService = {
       include: [
         {
           model: Proyecto,
-          as: "proyectoAsociado", // Usa el alias de la relación del modelo.
+          as: "proyectoAsociado",
           where: { activo: true },
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
+        },
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
         },
       ],
+      order: [["id", "DESC"]],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -403,13 +499,27 @@ const suscripcionProyectoService = {
       include: [
         {
           model: Proyecto,
-          as: "proyectoAsociado", // Alias de la relación del modelo.
+          as: "proyectoAsociado",
           where: { objetivo_cumplido: true },
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+            "obj_suscripciones",
+            "suscripciones_actuales",
+          ],
         },
-        Usuario, // Incluye el modelo Usuario (asumiendo que tiene un alias por defecto o está correctamente configurado).
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
       ],
+      order: [["id", "DESC"]],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -425,7 +535,7 @@ const suscripcionProyectoService = {
       return null;
     }
     return suscripcion.update(data);
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -437,12 +547,12 @@ const suscripcionProyectoService = {
    * @throws {Error} Si la suscripción no existe, ya está cancelada, no te pertenece o tiene pujas pagadas asociadas.
    */
   async softDelete(suscripcionId, usuarioAutenticado) {
-    const t = await sequelize.transaction(); // Inicia la transacción de BD.
+    const t = await sequelize.transaction();
     try {
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
       });
-      if (!suscripcion) throw new Error("Suscripción no encontrada."); // 🛑 NUEVA LÓGICA CLAVE: Permitir la cancelación si es el dueño O si es un administrador
+      if (!suscripcion) throw new Error("Suscripción no encontrada.");
 
       const esAdministrador =
         usuarioAutenticado && usuarioAutenticado.rol === "admin";
@@ -451,26 +561,26 @@ const suscripcionProyectoService = {
         !esAdministrador
       ) {
         throw new Error(
-          "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador."
+          "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador.",
         );
-      } // Fin de la verificación de propiedad/rol. // Verificar idempotencia.
+      }
 
       if (!suscripcion.activo)
-        throw new Error("La suscripción ya ha sido cancelada."); // 🛑 1. VALIDACIÓN CRÍTICA: Bloquear si hay una puja ganadora pagada.
+        throw new Error("La suscripción ya ha sido cancelada.");
 
       const hasPaidBid = await pujaService.hasWonAndPaidBid(
-        suscripcion.id_usuario, // Siempre se verifica al dueño original de la suscripción
+        suscripcion.id_usuario,
         suscripcion.id_proyecto,
-        { transaction: t }
+        { transaction: t },
       );
 
       if (hasPaidBid) {
         throw new Error(
-          "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto."
+          "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto.",
         );
-      } // 2. Marcar la suscripción como inactiva (soft delete).
+      }
 
-      await suscripcion.update({ activo: false }, { transaction: t }); // 3. Decrementar el contador de suscriptores en el proyecto.
+      await suscripcion.update({ activo: false }, { transaction: t });
 
       const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
         transaction: t,
@@ -480,7 +590,7 @@ const suscripcionProyectoService = {
           by: 1,
           transaction: t,
         });
-      } // 4. Preparar datos para el registro de cancelación (cálculo de montos pagados).
+      }
 
       const pagosRealizados = await Pago.findAll({
         where: {
@@ -492,8 +602,8 @@ const suscripcionProyectoService = {
 
       const montoTotalPagado = pagosRealizados.reduce(
         (sum, pago) => sum + parseFloat(pago.monto),
-        0
-      ); // 5. Crear un registro en SuscripcionCancelada (Guardamos la instancia creada).
+        0,
+      );
 
       const registroCancelacion = await SuscripcionCancelada.create(
         {
@@ -504,8 +614,8 @@ const suscripcionProyectoService = {
           monto_pagado_total: montoTotalPagado,
           fecha_cancelacion: new Date(),
         },
-        { transaction: t }
-      ); // 🛑 6. REGISTRAR LA CANCELACIÓN EN EL RESUMEN DE CUENTA (Nuevo paso)
+        { transaction: t },
+      );
 
       await resumenCuentaService.registrarEventoCancelacion(
         {
@@ -513,30 +623,58 @@ const suscripcionProyectoService = {
           descripcion: `Suscripción ${suscripcion.id} al Proyecto ${
             suscripcion.id_proyecto
           } cancelada. Monto total pagado a liquidar: $${montoTotalPagado.toFixed(
-            2
+            2,
           )}.`,
           monto: montoTotalPagado,
           referencia_id: registroCancelacion.id,
         },
-        t
+        t,
       );
 
-      await t.commit(); // Confirma todas las operaciones.
+      await t.commit();
       return suscripcion;
     } catch (error) {
-      await t.rollback(); // Revierte si algo falla.
+      await t.rollback();
       throw error;
     }
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
    * @function findAllCanceladas
    * @description Busca todas las suscripciones canceladas. (Para uso de Administradores)
    * @returns {Promise<SuscripcionCancelada[]>}
-   */ // =================================================================== // FUNCIONES DE CONSULTA DE CANCELACIONES // ===================================================================
+   */
   async findAllCanceladas() {
     return SuscripcionCancelada.findAll({
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioCancelador",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoCancelado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcionOriginal",
+          attributes: [
+            "id",
+            "id_usuario",
+            "id_proyecto",
+            "monto_total_pagado",
+            "activo",
+          ],
+        },
+      ],
       order: [["fecha_cancelacion", "DESC"]],
     });
   },
@@ -553,8 +691,26 @@ const suscripcionProyectoService = {
     return SuscripcionProyecto.findAll({
       where: {
         id_proyecto: projectId,
-        activo: true, // ⬅️ CONDICIÓN CLAVE: Solo las activas
+        activo: true,
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+          ],
+        },
+      ],
       transaction: t,
     });
   },
@@ -571,8 +727,25 @@ const suscripcionProyectoService = {
     return SuscripcionProyecto.findAll({
       where: {
         id_proyecto: projectId,
-        // Sin el filtro 'activo: true'
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+            "plazo_inversion",
+          ],
+        },
+      ],
       transaction: t,
     });
   },
@@ -589,9 +762,37 @@ const suscripcionProyectoService = {
       where: {
         id_usuario: userId,
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioCancelador",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoCancelado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcionOriginal",
+          attributes: [
+            "id",
+            "id_usuario",
+            "id_proyecto",
+            "monto_total_pagado",
+            "activo",
+          ],
+        },
+      ],
       order: [["fecha_cancelacion", "DESC"]],
     });
-  }, // <-- COMA AÑADIDA
+  },
 
   /**
    * @async
@@ -605,17 +806,37 @@ const suscripcionProyectoService = {
       where: {
         id_proyecto: projectId,
       },
-      order: [["fecha_cancelacion", "DESC"]], // Puedes incluir el Proyecto y el Usuario si lo necesitas para el reporte // include: [{ model: Proyecto, as: 'proyectoCancelado' }, { model: Usuario, as: 'usuarioCancelador' }]
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioCancelador",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoCancelado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcionOriginal",
+          attributes: [
+            "id",
+            "id_usuario",
+            "id_proyecto",
+            "monto_total_pagado",
+            "activo",
+          ],
+        },
+      ],
+      order: [["fecha_cancelacion", "DESC"]],
     });
   },
-
-  // -------------------------------------------------------------------
-  // 🗓️ FUNCIONES CRON JOB / CICLO MENSUAL
-  // -------------------------------------------------------------------
-  // [La lógica de finalizarMes y findProjectsToRevert iría aquí, si la hubieras aceptado]
-
-  // Si has conservado las funciones de la respuesta anterior, deberías copiarlas aquí.
-  // Por simplicidad, asumo que las funciones están ahí.
 
   // -------------------------------------------------------------------
   // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS
@@ -628,7 +849,6 @@ const suscripcionProyectoService = {
    * @returns {Promise<object>} Objeto con las métricas de morosidad.
    */
   async getMorosityMetrics() {
-    // 1. Calcular el monto total de todos los pagos generados (para la base)
     const totalGeneradoResult = await Pago.sum("monto", {
       where: {
         estado_pago: {
@@ -644,7 +864,6 @@ const suscripcionProyectoService = {
     });
     const totalGenerado = Number(totalGeneradoResult) || 0;
 
-    // 2. Calcular el monto total pendiente y atrasado (en riesgo)
     const totalEnRiesgoResult = await Pago.sum("monto", {
       where: {
         estado_pago: { [Op.in]: ["pendiente", "vencido"] },
@@ -660,13 +879,12 @@ const suscripcionProyectoService = {
       };
     }
 
-    // 3. Calcular la Tasa de Morosidad (Monto en Riesgo / Monto Total Generado)
     const tasaMorosidad = (totalEnRiesgo / totalGenerado) * 100;
 
     return {
       total_pagos_generados: totalGenerado.toFixed(2),
       total_en_riesgo: totalEnRiesgo.toFixed(2),
-      tasa_morosidad: tasaMorosidad.toFixed(2), // Porcentaje
+      tasa_morosidad: tasaMorosidad.toFixed(2),
     };
   },
 
@@ -677,7 +895,6 @@ const suscripcionProyectoService = {
    * @returns {Promise<object>} Objeto con la tasa de cancelación.
    */
   async getCancellationRate() {
-    // 1. Contar el total de suscripciones (Activas + Canceladas)
     const totalSuscripciones = await SuscripcionProyecto.count();
 
     if (totalSuscripciones === 0) {
@@ -688,18 +905,16 @@ const suscripcionProyectoService = {
       };
     }
 
-    // 2. Contar el total de suscripciones canceladas (activo: false)
     const totalCanceladas = await SuscripcionProyecto.count({
       where: { activo: false },
     });
 
-    // 3. Calcular la Tasa de Cancelación (Total Canceladas / Total Suscripciones)
     const tasaCancelacion = (totalCanceladas / totalSuscripciones) * 100;
 
     return {
       total_suscripciones: totalSuscripciones,
       total_canceladas: totalCanceladas,
-      tasa_cancelacion: tasaCancelacion.toFixed(2), // Porcentaje
+      tasa_cancelacion: tasaCancelacion.toFixed(2),
     };
   },
 };

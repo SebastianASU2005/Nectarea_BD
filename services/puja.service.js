@@ -6,13 +6,13 @@ const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const ProyectoService = require("./proyecto.service");
 const PagoService = require("./pago.service");
-// 🟢 CORRECCIÓN 1: Importar el nuevo servicio
 const ResumenCuentaService = require("./resumen_cuenta.service");
 const emailService = require("./email.service");
 const MensajeService = require("./mensaje.service");
 const SuscripcionService = require("./suscripcion_proyecto.service");
-const LoteService = require("./lote.service"); // Ya existe como require dinámico, pero mejor tenerlo arriba
+const LoteService = require("./lote.service");
 const Usuario = require("../models/usuario");
+const Proyecto = require("../models/proyecto");
 
 // Helper para garantizar que un valor es un número flotante (decimal)
 const toFloat = (value) => parseFloat(value);
@@ -37,13 +37,12 @@ const pujaService = {
     const usuario = await require("./usuario.service").findById(id_usuario);
     if (usuario && usuario.rol === "admin") {
       throw new Error(
-        "⛔ Los administradores no pueden participar en subastas como clientes."
+        "⛔ Los administradores no pueden participar en subastas como clientes.",
       );
     }
-    const t = await sequelize.transaction(); // Inicia la transacción.
+    const t = await sequelize.transaction();
 
     try {
-      // 1. Validaciones iniciales del Lote
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
       if (lote.estado_subasta !== "activa")
@@ -51,19 +50,17 @@ const pujaService = {
 
       const id_proyecto = lote.id_proyecto;
 
-      // 2. Buscar la puja activa existente del usuario en este lote
       const pujaExistente = await Puja.findOne({
         where: {
           id_usuario: id_usuario,
           id_lote: id_lote,
-          estado_puja: "activa", // Solo consideramos pujas activas
+          estado_puja: "activa",
         },
         transaction: t,
       });
 
       let pujaActualizada = null;
 
-      // 3. Obtener la puja más alta del lote (para validación)
       let pujaMasAlta = null;
       if (lote.id_puja_mas_alta) {
         pujaMasAlta = await Puja.findByPk(lote.id_puja_mas_alta, {
@@ -71,12 +68,11 @@ const pujaService = {
         });
       }
 
-      // 4. Validaciones de Monto
       const montoPujaActual = pujaExistente ? pujaExistente.monto_puja : 0;
 
       if (monto_puja <= montoPujaActual) {
         throw new Error(
-          "El nuevo monto de la puja debe ser mayor que tu puja actual."
+          "El nuevo monto de la puja debe ser mayor que tu puja actual.",
         );
       }
       if (
@@ -85,28 +81,22 @@ const pujaService = {
         monto_puja <= pujaMasAlta.monto_puja
       ) {
         throw new Error(
-          "El monto de la puja debe ser mayor que la puja actual más alta del lote."
+          "El monto de la puja debe ser mayor que la puja actual más alta del lote.",
         );
       }
       if (monto_puja < lote.precio_base) {
         throw new Error(
-          "El monto de la puja debe ser mayor o igual al precio base."
+          "El monto de la puja debe ser mayor o igual al precio base.",
         );
       }
 
-      // ===================================================================
-      // LÓGICA DE CREACIÓN O ACTUALIZACIÓN
-      // ===================================================================
-
       if (pujaExistente) {
-        // Caso 1: Actualización (El token ya fue consumido, solo se actualiza el monto)
         await pujaExistente.update(
           { monto_puja: monto_puja },
-          { transaction: t }
+          { transaction: t },
         );
         pujaActualizada = pujaExistente;
       } else {
-        // Caso 2: Creación (Se valida y consume el token)
         const suscripcion = await SuscripcionProyecto.findOne({
           where: {
             id_usuario,
@@ -119,7 +109,6 @@ const pujaService = {
         if (!suscripcion)
           throw new Error("No tienes tokens de subasta para este proyecto.");
 
-        // 🚨 TOKEN: Consume el token al hacer la PRIMERA puja
         await suscripcion.decrement("tokens_disponibles", {
           by: 1,
           transaction: t,
@@ -132,26 +121,25 @@ const pujaService = {
             estado_puja: "activa",
             id_suscripcion: suscripcion.id,
           },
-          { transaction: t }
+          { transaction: t },
         );
         pujaActualizada = nuevaPuja;
       }
 
-      // 5. Actualizar el lote con la puja más alta (solo si la nueva es la más alta)
       if (
         !lote.id_puja_mas_alta ||
         monto_puja > (pujaMasAlta ? pujaMasAlta.monto_puja : 0)
       ) {
         await lote.update(
           { id_puja_mas_alta: pujaActualizada.id },
-          { transaction: t }
+          { transaction: t },
         );
       }
 
-      await t.commit(); // Confirma la transacción.
+      await t.commit();
       return pujaActualizada;
     } catch (error) {
-      await t.rollback(); // Revierte la transacción en caso de error.
+      await t.rollback();
       throw error;
     }
   },
@@ -166,6 +154,24 @@ const pujaService = {
   async findHighestBidForLote(loteId) {
     return Puja.findOne({
       where: { id_lote: loteId },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+      ],
       order: [["monto_puja", "DESC"]],
     });
   },
@@ -183,21 +189,19 @@ const pujaService = {
    * @returns {Promise<{ transaccion: object, checkoutUrl: string }>} Información de la transacción y la URL de redirección.
    */
   async requestCheckoutForPuja(pujaId, userId) {
-    // 1. Validación de la puja y obtención de detalles del lote
     const pujaValidada = await this.getValidPaymentDetails(pujaId, userId);
 
-    // Carga dinámica del servicio de Transacción para evitar circular dependency
     const TransaccionService = require("./transaccion.service");
 
     const checkoutResult = await TransaccionService.iniciarTransaccionYCheckout(
-      "puja", // Nombre del modelo de negocio
-      pujaValidada.id, // ID de la entidad específica (Puja)
-      userId // ID del usuario
+      "puja",
+      pujaValidada.id,
+      userId,
     );
 
     return {
       transaccion: checkoutResult.transaccion,
-      checkoutUrl: checkoutResult.redirectUrl, // El controlador espera 'checkoutUrl'
+      checkoutUrl: checkoutResult.redirectUrl,
     };
   },
 
@@ -213,7 +217,6 @@ const pujaService = {
    */
   async getValidPaymentDetails(pujaId, userId, options = {}) {
     try {
-      // Buscar y Validar la Puja, incluyendo el Lote
       const puja = await Puja.findByPk(pujaId, {
         include: [{ model: Lote, as: "lote" }],
         ...options,
@@ -223,23 +226,20 @@ const pujaService = {
         throw new Error(`Puja ID ${pujaId} no encontrada.`);
       }
 
-      // Validar la propiedad
       if (puja.id_usuario !== userId) {
         throw new Error(
-          "Acceso denegado. No eres el propietario de esta puja."
+          "Acceso denegado. No eres el propietario de esta puja.",
         );
       }
 
       const estadoActual = puja.estado_puja;
 
-      // La puja debe estar en estado pendiente de pago
       if (estadoActual !== "ganadora_pendiente") {
         throw new Error(
-          `La puja ID ${pujaId} no está en estado 'ganadora_pendiente'. Estado actual: ${estadoActual}.`
+          `La puja ID ${pujaId} no está en estado 'ganadora_pendiente'. Estado actual: ${estadoActual}.`,
         );
       }
 
-      // VALIDACIÓN ADICIONAL: Verificar que no haya expirado
       if (
         puja.fecha_vencimiento_pago &&
         puja.fecha_vencimiento_pago < new Date()
@@ -273,7 +273,6 @@ const pujaService = {
     const shouldCommit = !externalTransaction;
 
     try {
-      // 1. Encuentra la puja ganadora, su suscripción y el lote (con lock para atomicidad)
       const puja = await Puja.findByPk(pujaId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -286,7 +285,7 @@ const pujaService = {
               {
                 association: "proyectoAsociado",
                 required: true,
-                attributes: ["id", "monto_inversion"], // Monto_inversion se usa como cuotaMensual
+                attributes: ["id", "monto_inversion"],
               },
             ],
           },
@@ -300,11 +299,10 @@ const pujaService = {
 
       if (!puja || !puja.suscripcion || !puja.lote) {
         throw new Error(
-          "Puja, suscripción o lote no encontrados o incompletos."
+          "Puja, suscripción o lote no encontrados o incompletos.",
         );
       }
 
-      // Idempotencia: Si ya está pagada, retornar
       if (puja.estado_puja === "ganadora_pagada") {
         if (shouldCommit) await t.commit();
         return puja;
@@ -312,7 +310,7 @@ const pujaService = {
 
       if (puja.estado_puja !== "ganadora_pendiente") {
         throw new Error(
-          `La puja ${pujaId} tiene un estado inválido para el procesamiento de pago: ${puja.estado_puja}`
+          `La puja ${pujaId} tiene un estado inválido para el procesamiento de pago: ${puja.estado_puja}`,
         );
       }
 
@@ -321,20 +319,17 @@ const pujaService = {
 
       if (!suscripcion.proyectoAsociado) {
         throw new Error(
-          "El proyecto asociado a la suscripción no fue encontrado."
+          "El proyecto asociado a la suscripción no fue encontrado.",
         );
       }
 
-      // El monto_inversion del proyecto se usa como la cuota mensual.
       const cuotaMensual = toFloat(
-        suscripcion.proyectoAsociado.monto_inversion
+        suscripcion.proyectoAsociado.monto_inversion,
       );
 
-      // Calcular el excedente: Monto Pujado - Precio Base
       let excedente = toFloat(puja.monto_puja) - toFloat(lote.precio_base);
       excedente = calculateFloat(excedente);
 
-      // 3. Prioridad 1: Cubrir pagos de suscripción pendientes
       const pagosPendientes = await Pago.findAll({
         where: { id_suscripcion: suscripcion.id, estado_pago: "pendiente" },
         order: [["fecha_vencimiento", "ASC"]],
@@ -344,105 +339,89 @@ const pujaService = {
       for (const pago of pagosPendientes) {
         const montoPago = toFloat(pago.monto);
         if (excedente >= montoPago) {
-          // El excedente cubre el pago por completo
           await pago.update(
             {
               estado_pago: "cubierto_por_puja",
               fecha_pago: new Date(),
             },
-            { transaction: t }
+            { transaction: t },
           );
           excedente = calculateFloat(excedente - montoPago);
         } else {
-          // El excedente es insuficiente para cubrir el pago, se aplica como saldo a favor
           const nuevoSaldo = calculateFloat(
-            toFloat(suscripcion.saldo_a_favor) + excedente
+            toFloat(suscripcion.saldo_a_favor) + excedente,
           );
           await suscripcion.update(
             { saldo_a_favor: nuevoSaldo },
-            { transaction: t }
+            { transaction: t },
           );
-          excedente = 0; // Se consume todo el excedente restante
+          excedente = 0;
           break;
         }
       }
 
-      // 4. Prioridad 2: Pre-pagar meses futuros
       if (excedente > 0 && cuotaMensual > 0 && suscripcion.meses_a_pagar > 0) {
         const mesesAdicionales = Math.min(
           Math.floor(excedente / cuotaMensual),
-          suscripcion.meses_a_pagar
+          suscripcion.meses_a_pagar,
         );
         if (mesesAdicionales > 0) {
-          // Decrementa los meses que le quedan por pagar de la suscripción
           await suscripcion.decrement("meses_a_pagar", {
             by: mesesAdicionales,
             transaction: t,
           });
           excedente = calculateFloat(
-            excedente - mesesAdicionales * cuotaMensual
+            excedente - mesesAdicionales * cuotaMensual,
           );
         }
       }
 
-      // 5. Prioridad 3: Saldo a favor (el resto del excedente se guarda como saldo a favor en la suscripción)
       if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
         const nuevoSaldo = calculateFloat(
-          toFloat(suscripcion.saldo_a_favor) + excedente
+          toFloat(suscripcion.saldo_a_favor) + excedente,
         );
         await suscripcion.update(
           { saldo_a_favor: nuevoSaldo },
-          { transaction: t }
+          { transaction: t },
         );
         excedente = 0;
       }
 
-      // 6. Prioridad 4: Excedente para visualización (si la suscripción ya fue pagada en su totalidad)
       if (suscripcion.meses_a_pagar <= 0 && excedente > 0) {
         await lote.update(
           { excedente_visualizacion: calculateFloat(excedente) },
-          { transaction: t }
+          { transaction: t },
         );
         excedente = 0;
       }
 
-      // 7. Actualizar estado final de la puja
       await puja.update({ estado_puja: "ganadora_pagada" }, { transaction: t });
 
-      // 🟢 CORRECCIÓN 2: LÍNEA DE INTEGRACIÓN
-      // Se llama al nuevo servicio para actualizar los resúmenes de cuenta después del pago de puja.
       await ResumenCuentaService.updateAccountSummaryOnPayment(suscripcion.id, {
         transaction: t,
       });
-      // 🟢 FIN DE LA CORRECCIÓN
 
-      // 8. 🚨 LÓGICA DE LIMPIEZA DEL PERDEDOR FINAL DENTRO DEL TOP 3 🚨
-      // Se libera el token de CUALQUIER otro postor activo o pendiente (e.g., P3)
-      const usuariosGanadoresActuales = [puja.id_usuario]; // El pagador
+      const usuariosGanadoresActuales = [puja.id_usuario];
 
-      // 8.1. Encontrar a las suscripciones a liberar
       const pujasActivasPendientes = await Puja.findAll({
         where: {
           id_lote: lote.id,
-          // Buscamos pujas que fueron parte de la "zona caliente"
           estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
-          id_usuario: { [Op.notIn]: usuariosGanadoresActuales }, // Excluir al pagador
+          id_usuario: { [Op.notIn]: usuariosGanadoresActuales },
         },
         attributes: ["id_suscripcion"],
         transaction: t,
       });
 
       const suscripcionesALiberar = pujasActivasPendientes.map(
-        (p) => p.id_suscripcion
+        (p) => p.id_suscripcion,
       );
 
-      // 8.2. Devolver el token a esas suscripciones
       if (suscripcionesALiberar.length > 0) {
         await SuscripcionProyecto.increment("tokens_disponibles", {
           by: 1,
           where: {
             id: { [Op.in]: suscripcionesALiberar },
-            // Protección: Solo si su token fue consumido (está en 0)
             tokens_disponibles: { [Op.lt]: 1 },
           },
           transaction: t,
@@ -450,13 +429,13 @@ const pujaService = {
       }
 
       if (shouldCommit) {
-        await t.commit(); // Confirma si la transacción se inició aquí.
+        await t.commit();
       }
 
       return { message: "Puja procesada y pagos actualizados exitosamente." };
     } catch (error) {
       if (shouldCommit && t) {
-        await t.rollback(); // Revierte si la transacción se inició aquí.
+        await t.rollback();
       }
       throw error;
     }
@@ -476,7 +455,7 @@ const pujaService = {
     const t = externalTransaction;
     if (!t)
       throw new Error(
-        "Se requiere una transacción de BD activa para revertirPagoPujaGanadora."
+        "Se requiere una transacción de BD activa para revertirPagoPujaGanadora.",
       );
 
     try {
@@ -485,16 +464,12 @@ const pujaService = {
         lock: t.LOCK.UPDATE,
       });
       if (!puja) throw new Error("Puja no encontrada.");
-      if (puja.estado_puja !== "ganadora_pagada") return puja; // Idempotencia
+      if (puja.estado_puja !== "ganadora_pagada") return puja;
 
-      // Revertir estado de la puja
       await puja.update(
         { estado_puja: "ganadora_pendiente" },
-        { transaction: t }
+        { transaction: t },
       );
-
-      // Aquí iría la lógica inversa de los puntos 3, 4, 5 y 6 de procesarPujaGanadora.
-      // Ej: Liberar meses pagados, reducir saldo_a_favor, etc. (PENDIENTE DE IMPLEMENTACIÓN INVERSA)
 
       return { message: "Puja revertida a pendiente de pago exitosamente." };
     } catch (error) {
@@ -520,27 +495,25 @@ const pujaService = {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
-      // 1. Encontrar a los usuarios del Top 3 (zona caliente)
       const pujasNoLiberar = await Puja.findAll({
         where: {
           id_lote: id_lote,
           estado_puja: "activa",
         },
         order: [["monto_puja", "DESC"]],
-        limit: 3, // Excluimos el Top 3
+        limit: 3,
         attributes: ["id_usuario"],
         transaction: t,
       });
 
       const usuariosNoLiberar = pujasNoLiberar.map((p) => p.id_usuario);
 
-      // 2. Liberar tokens a todos los demás perdedores masivos (P4 en adelante)
       await SuscripcionProyecto.increment("tokens_disponibles", {
         by: 1,
         where: {
           id_proyecto: lote.id_proyecto,
-          id_usuario: { [Op.notIn]: usuariosNoLiberar }, // Condición para excluir al Top 3
-          tokens_disponibles: { [Op.lt]: 1 }, // Protección: Solo si el token fue consumido (está en 0)
+          id_usuario: { [Op.notIn]: usuariosNoLiberar },
+          tokens_disponibles: { [Op.lt]: 1 },
         },
         transaction: t,
       });
@@ -564,19 +537,16 @@ const pujaService = {
    * @throws {Error} Si ocurre un error de base de datos.
    */
   async devolverTokenPorImpago(userId, loteId, externalTransaction = null) {
-    // Usa la transacción externa o inicia una nueva si no se proporciona
     const t = externalTransaction || (await sequelize.transaction());
     const shouldCommit = !externalTransaction;
 
     try {
-      // 1. Encontrar el lote para obtener el ID del proyecto
       const lote = await Lote.findByPk(loteId, {
         attributes: ["id_proyecto"],
         transaction: t,
       });
       if (!lote) throw new Error(`Lote ID ${loteId} no encontrado.`);
 
-      // 2. Encontrar la suscripción (token) que el usuario utilizó
       const suscripcion = await SuscripcionProyecto.findOne({
         where: {
           id_usuario: userId,
@@ -588,14 +558,12 @@ const pujaService = {
 
       if (!suscripcion) {
         console.warn(
-          `Advertencia: Suscripción para usuario ${userId} en proyecto ${lote.id_proyecto} no encontrada. No se pudo devolver el token.`
+          `Advertencia: Suscripción para usuario ${userId} en proyecto ${lote.id_proyecto} no encontrada. No se pudo devolver el token.`,
         );
         if (shouldCommit) await t.commit();
         return { message: "Token no devuelto (suscripción no encontrada)." };
       }
 
-      // 3. Devolver 1 token al usuario (incrementar tokens_disponibles)
-      // 🛡️ PROTECCIÓN CRÍTICA: Solo devolvemos si el token está en 0 (evitando tokens: 2)
       if (suscripcion.tokens_disponibles < 1) {
         await suscripcion.increment("tokens_disponibles", {
           by: 1,
@@ -603,7 +571,7 @@ const pujaService = {
         });
       } else {
         console.warn(
-          `Advertencia: Usuario ${userId} ya tenía el token. No se incrementó para evitar duplicación.`
+          `Advertencia: Usuario ${userId} ya tenía el token. No se incrementó para evitar duplicación.`,
         );
       }
 
@@ -638,6 +606,24 @@ const pujaService = {
         id_lote: loteId,
         estado_puja: "ganadora_pendiente",
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+      ],
       transaction,
     });
   },
@@ -653,10 +639,35 @@ const pujaService = {
       where: {
         estado_puja: "ganadora_pendiente",
         fecha_vencimiento_pago: {
-          [Op.lt]: new Date(), // Menor que la fecha y hora actual (expirada)
+          [Op.lt]: new Date(),
         },
       },
-      attributes: ["id", "id_lote", "id_usuario"],
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+      ],
+      attributes: [
+        "id",
+        "id_lote",
+        "id_usuario",
+        "monto_puja",
+        "estado_puja",
+        "fecha_vencimiento_pago",
+      ],
     });
   },
 
@@ -677,6 +688,24 @@ const pujaService = {
           [Op.lt]: new Date(),
         },
       },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+      ],
       transaction,
     });
   },
@@ -690,7 +719,6 @@ const pujaService = {
    * @returns {Promise<Puja|null>} La siguiente mejor puja.
    */
   async findNextHighestBid(loteId, transaction) {
-    // Excluir pujas que ya han sido procesadas
     const estadosExcluidos = [
       "ganadora_pendiente",
       "ganadora_pagada",
@@ -701,10 +729,28 @@ const pujaService = {
       where: {
         id_lote: loteId,
         estado_puja: {
-          [Op.notIn]: estadosExcluidos, // No re-seleccionar pujas que ya fallaron o ganaron
+          [Op.notIn]: estadosExcluidos,
         },
       },
-      order: [["monto_puja", "DESC"]], // La más alta
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+      ],
+      order: [["monto_puja", "DESC"]],
       transaction,
     });
   },
@@ -723,6 +769,7 @@ const pujaService = {
       transaction,
     });
   },
+
   /**
    * @async
    * @function hasWonAndPaidBid
@@ -738,8 +785,8 @@ const pujaService = {
       where: {
         id_usuario: userId,
         id_proyecto: projectId,
-        estado_puja: "ganadora_pagada", // 👈 ESTADO CRÍTICO
-      }, // Evita traer todos los datos, solo necesitamos saber si existe
+        estado_puja: "ganadora_pagada",
+      },
       attributes: ["id"],
       ...options,
     });
@@ -753,12 +800,73 @@ const pujaService = {
 
   /** @async @function findByIdAndUserId @description Busca una puja activa por ID y ID de usuario. */
   async findByIdAndUserId(id, userId) {
-    return Puja.findOne({ where: { id, id_usuario: userId, activo: true } });
+    return Puja.findOne({
+      where: { id, id_usuario: userId, activo: true },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+        },
+      ],
+    });
   },
 
   /** @async @function findByUserId @description Busca todas las pujas activas de un usuario. */
   async findByUserId(userId) {
-    return Puja.findAll({ where: { id_usuario: userId, activo: true } });
+    return Puja.findAll({
+      where: { id_usuario: userId, activo: true },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
   },
 
   /** @async @function updateByIdAndUserId @description Actualiza una puja por ID y ID de usuario. */
@@ -777,17 +885,122 @@ const pujaService = {
 
   /** @async @function findAll @description Obtiene todas las pujas (admin). */
   async findAll() {
-    return Puja.findAll();
+    return Puja.findAll({
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
   },
 
   /** @async @function findAllActivo @description Obtiene todas las pujas activas (admin). */
   async findAllActivo() {
-    return Puja.findAll({ where: { activo: true } });
+    return Puja.findAll({
+      where: { activo: true },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
   },
 
   /** @async @function findById @description Busca una puja por ID (admin). */
   async findById(id) {
-    return Puja.findByPk(id);
+    return Puja.findByPk(id, {
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+          ],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          attributes: [
+            "id",
+            "nombre_proyecto",
+            "tipo_inversion",
+            "estado_proyecto",
+          ],
+        },
+      ],
+    });
   },
 
   /** @async @function update @description Actualiza una puja por ID (admin). */
@@ -803,6 +1016,7 @@ const pujaService = {
     if (!puja) return null;
     return puja.update({ activo: false });
   },
+
   /**
    * @async
    * @function cancelarPujaGanadoraAnticipada
@@ -824,17 +1038,16 @@ const pujaService = {
    */
   async cancelarPujaGanadoraAnticipada(
     pujaId,
-    motivoCancelacion = "Cancelación administrativa"
+    motivoCancelacion = "Cancelación administrativa",
   ) {
     const SERVICE_NAME = "PujaService.cancelarPujaGanadoraAnticipada";
     const t = await sequelize.transaction();
 
     try {
       console.log(
-        `[${SERVICE_NAME}] Iniciando cancelación de puja ID: ${pujaId}`
+        `[${SERVICE_NAME}] Iniciando cancelación de puja ID: ${pujaId}`,
       );
 
-      // === 1. VALIDAR PUJA EXISTE Y ESTÁ EN ESTADO CORRECTO ===
       const pujaGanadora = await Puja.findByPk(pujaId, {
         include: [
           { model: Usuario, as: "usuario" },
@@ -862,30 +1075,27 @@ const pujaService = {
       const usuarioIncumplidor = pujaGanadora.usuario;
 
       console.log(
-        `[${SERVICE_NAME}] ✅ Puja válida. Lote: ${loteId}, Usuario: ${usuarioIncumplidor.id}`
+        `[${SERVICE_NAME}] ✅ Puja válida. Lote: ${loteId}, Usuario: ${usuarioIncumplidor.id}`,
       );
 
-      // === 2. MARCAR PUJA COMO INCUMPLIMIENTO (cancelación administrativa) ===
       await pujaGanadora.update(
         {
           estado_puja: "ganadora_incumplimiento",
           fecha_vencimiento_pago: null,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       console.log(
-        `[${SERVICE_NAME}] ✅ Puja ${pujaId} marcada como 'ganadora_incumplimiento'.`
+        `[${SERVICE_NAME}] ✅ Puja ${pujaId} marcada como 'ganadora_incumplimiento'.`,
       );
 
-      // === 3. DEVOLVER TOKEN AL USUARIO ===
       await this.devolverTokenPorImpago(pujaGanadora.id_usuario, loteId, t);
 
       console.log(
-        `[${SERVICE_NAME}] ✅ Token devuelto a suscripción ID: ${pujaGanadora.id_suscripcion}`
+        `[${SERVICE_NAME}] ✅ Token devuelto a suscripción ID: ${pujaGanadora.id_suscripcion}`,
       );
 
-      // === 4. NOTIFICAR AL USUARIO ===
       const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
 
       await emailService.notificarImpago(usuarioIncumplidor, loteId);
@@ -899,15 +1109,13 @@ const pujaService = {
       });
 
       console.log(
-        `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`
+        `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`,
       );
 
-      // === 5. PROCESAR REASIGNACIÓN O LIMPIEZA DEL LOTE ===
-      // Usamos el mismo servicio que el cron de impagos
       await LoteService.procesarImpagoLote(loteId, t);
 
       console.log(
-        `[${SERVICE_NAME}] ✅ Lote ${loteId} procesado para reasignación/limpieza.`
+        `[${SERVICE_NAME}] ✅ Lote ${loteId} procesado para reasignación/limpieza.`,
       );
 
       await t.commit();
