@@ -1,6 +1,6 @@
 const ContratoFirmado = require("../models/ContratoFirmado");
-const Usuario = require("../models/Usuario");
-const Proyecto = require("../models/Proyecto");
+const Usuario = require("../models/usuario");
+const Proyecto = require("../models/proyecto");
 const { Op } = require("sequelize");
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Firmados.
