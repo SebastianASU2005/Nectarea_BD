@@ -175,7 +175,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -244,7 +244,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyecto",
+                as: "proyectoLote", // ✅ Alias correcto según associations.js
                 attributes: [
                   "id",
                   "nombre_proyecto",
@@ -340,7 +340,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyecto",
+                as: "proyectoLote", // ✅ Alias correcto según associations.js
                 attributes: [
                   "id",
                   "nombre_proyecto",
@@ -686,7 +686,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -738,7 +738,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -800,7 +800,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -860,7 +860,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -946,7 +946,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -995,7 +995,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1070,7 +1070,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1130,7 +1130,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1189,7 +1189,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote", // ✅ Alias correcto según associations.js
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1282,7 +1282,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyecto",
+                as: "proyectoLote", // ✅ Alias correcto según associations.js
                 attributes: [
                   "id",
                   "nombre_proyecto",
