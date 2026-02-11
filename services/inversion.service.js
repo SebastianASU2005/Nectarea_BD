@@ -3,7 +3,6 @@
 const Inversion = require("../models/inversion");
 const Proyecto = require("../models/proyecto");
 const Usuario = require("../models/usuario");
-const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { sequelize } = require("../config/database");
 const { Op } = require("sequelize");
 
@@ -167,11 +166,6 @@ const inversionService = {
             "monto_inversion",
           ],
         },
-        {
-          model: SuscripcionProyecto,
-          as: "suscripcion",
-          attributes: ["id", "id_usuario", "id_proyecto", "monto_total_pagado"],
-        },
       ],
     });
   },
@@ -200,11 +194,6 @@ const inversionService = {
             "estado_proyecto",
             "monto_inversion",
           ],
-        },
-        {
-          model: SuscripcionProyecto,
-          as: "suscripcion",
-          attributes: ["id", "id_usuario", "id_proyecto", "monto_total_pagado"],
         },
       ],
       order: [["id", "DESC"]],
@@ -240,11 +229,6 @@ const inversionService = {
             "monto_inversion",
           ],
         },
-        {
-          model: SuscripcionProyecto,
-          as: "suscripcion",
-          attributes: ["id", "id_usuario", "id_proyecto", "monto_total_pagado"],
-        },
       ],
       order: [["id", "DESC"]],
     });
@@ -277,11 +261,6 @@ const inversionService = {
             "estado_proyecto",
             "monto_inversion",
           ],
-        },
-        {
-          model: SuscripcionProyecto,
-          as: "suscripcion",
-          attributes: ["id", "id_usuario", "id_proyecto", "monto_total_pagado"],
         },
       ],
       order: [["id", "DESC"]],
