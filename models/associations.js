@@ -28,7 +28,7 @@ const configureAssociations = () => {
 
   // Un Usuario puede tener múltiples Inversiones (como inversor).
   Usuario.hasMany(Inversion, {
-    foreignKey: "id_inversor",
+    foreignKey: "id_usuario",
     as: "inversiones",
     onDelete: "RESTRICT",
   });
@@ -117,27 +117,23 @@ const configureAssociations = () => {
   // --- Relaciones de Inversion (Una Inversión pertenece a...) ---
   // -------------------------------------------------------------------
 
-  // -------------------------------------------------------------------
-// --- Relaciones de Inversion (Una Inversión pertenece a...) ---
-// -------------------------------------------------------------------
+  // Una Inversión pertenece a un Usuario (el inversor).
+  Inversion.belongsTo(Usuario, {
+    foreignKey: "id_usuario", // ✅ CORREGIDO: era "id_inversor"
+    as: "inversor",
+  });
 
-// Una Inversión pertenece a un Usuario (el inversor).
-Inversion.belongsTo(Usuario, { 
-  foreignKey: "id_usuario",  // ✅ CORREGIDO: era "id_inversor"
-  as: "inversor" 
-});
+  // Una Inversión pertenece a un Proyecto específico.
+  Inversion.belongsTo(Proyecto, {
+    foreignKey: "id_proyecto", // ✅ Ya estaba correcto
+    as: "proyectoInvertido",
+  });
 
-// Una Inversión pertenece a un Proyecto específico.
-Inversion.belongsTo(Proyecto, {
-  foreignKey: "id_proyecto",  // ✅ Ya estaba correcto
-  as: "proyectoInvertido",
-});
-
-// Una Inversión puede tener una Transacción asociada (uno a uno).
-Inversion.hasOne(Transaccion, {
-  foreignKey: "id_inversion",  // ✅ Esta está bien (está en el modelo Transaccion)
-  as: "transaccion",
-});
+  // Una Inversión puede tener una Transacción asociada (uno a uno).
+  Inversion.hasOne(Transaccion, {
+    foreignKey: "id_inversion", // ✅ Esta está bien (está en el modelo Transaccion)
+    as: "transaccion",
+  });
 
   // Una Inversión está ligada a una SuscripcionProyecto.
   Inversion.belongsTo(SuscripcionProyecto, {
