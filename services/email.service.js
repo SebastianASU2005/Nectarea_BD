@@ -1,16 +1,17 @@
 // services/emailService.js
 const nodemailer = require("nodemailer");
-const { Resend } = require('resend');
+const { Resend } = require("resend");
 const dotenv = require("dotenv");
 dotenv.config();
-const esProduccion = process.env.NODE_ENV === 'production' || process.env.RESEND_API_KEY;
+const esProduccion =
+  process.env.NODE_ENV === "production" || process.env.RESEND_API_KEY;
 let transporter;
 let resend;
 
 if (esProduccion && process.env.RESEND_API_KEY) {
   // 🌐 PRODUCCIÓN: Usar Resend
   resend = new Resend(process.env.RESEND_API_KEY);
-  console.log('✅ Configurado email con Resend (Producción)');
+  console.log("✅ Configurado email con Resend (Producción)");
 } else {
   // 💻 LOCAL: Usar Gmail
   transporter = nodemailer.createTransport({
@@ -20,7 +21,7 @@ if (esProduccion && process.env.RESEND_API_KEY) {
       pass: process.env.EMAIL_PASS,
     },
   });
-  console.log('✅ Configurado email con Gmail (Desarrollo)');
+  console.log("✅ Configurado email con Gmail (Desarrollo)");
 }
 
 // Configura el transportador de correo utilizando las credenciales de entorno.
@@ -33,7 +34,6 @@ if (esProduccion && process.env.RESEND_API_KEY) {
   },
 });
 */
-
 
 /**
  * Genera la plantilla base HTML que envuelve el contenido específico del correo.
@@ -96,7 +96,7 @@ const emailService = {
       if (resend) {
         // 🌐 USAR RESEND (Producción)
         const { data, error } = await resend.emails.send({
-          from: 'Loteplan <onboarding@resend.dev>',
+          from: "Loteplan <onboarding@resend.dev>",
           to: [to],
           subject: subject,
           html: html,
@@ -126,7 +126,7 @@ const emailService = {
       throw error;
     }
   },
-  
+
   /**
    * Función base para enviar un correo electrónico.
    * Incluye manejo de errores para el envío.
@@ -153,10 +153,10 @@ const emailService = {
       // Opcional: Podría lanzarse un error aquí si la falla de envío es crítica.
     }
   },*/
-/**
- * Función base para enviar un correo electrónico.
- * Detecta automáticamente si usar Resend (producción) o Gmail (local).
- */
+  /**
+   * Función base para enviar un correo electrónico.
+   * Detecta automáticamente si usar Resend (producción) o Gmail (local).
+   */
 
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
@@ -217,27 +217,31 @@ const emailService = {
    * @param {string} token - Token de confirmación.
    */
   async sendConfirmationEmail(user, token) {
+    // ✅ El botón principal apunta al frontend (correcto)
     const confirmationLink = `${process.env.FRONTEND_URL}/api/auth/confirmar_email/${token}`;
+
+    // ✅ El enlace de fallback debe apuntar al BACKEND (nuevo)
+    const backendConfirmationLink = `${process.env.HOST_URL}/api/auth/confirmar_email/${token}`;
+
     const subject = "¡Bienvenido! Confirma tu Cuenta de Usuario";
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
-        <h2 style="color: #0b1b36; margin-top: 0;">Hola ${user.nombre},</h2>
-        <p>Gracias por registrarte en Loteplan. Por favor, haz clic para confirmar tu correo y activar tu cuenta:</p>
-        <a href="${confirmationLink}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-            Confirmar mi Correo Electrónico
-        </a>
-        <p style="margin-top: 30px;">Si no puedes hacer clic en el botón, copia y pega esta URL en tu navegador:</p>
-        <small style="word-break: break-all; color: #808080;">${confirmationLink}</small>
-    `;
+    <h2 style="color: #0b1b36; margin-top: 0;">Hola ${user.nombre},</h2>
+    <p>Gracias por registrarte en Loteplan. Por favor, haz clic para confirmar tu correo y activar tu cuenta:</p>
+    <a href="${confirmationLink}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+        Confirmar mi Correo Electrónico
+    </a>
+    <p style="margin-top: 30px;">Si no puedes hacer clic en el botón, copia y pega esta URL en tu navegador:</p>
+    <small style="word-break: break-all; color: #808080;">${backendConfirmationLink}</small>
+  `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
 
     await this.sendEmail(
       user.email,
       subject,
-      `Confirma tu cuenta en ${confirmationLink}`,
-      html
+      `Confirma tu cuenta en ${backendConfirmationLink}`,
+      html,
     );
   },
 
@@ -253,7 +257,7 @@ const emailService = {
     user,
     loteId,
     fechaLimite,
-    esReasignacion = false
+    esReasignacion = false,
   ) {
     const subject = `¡Felicidades! Ganaste el Lote #${loteId}`;
 
@@ -286,7 +290,7 @@ const emailService = {
       user.email,
       subject,
       `Ganaste el Lote #${loteId}. Fecha límite de pago: ${fechaLimite}`,
-      html
+      html,
     );
   },
 
@@ -316,7 +320,7 @@ const emailService = {
       user.email,
       subject,
       `Lote #${loteId} perdido por impago. Token devuelto.`,
-      html
+      html,
     );
   },
 
@@ -382,7 +386,7 @@ const emailService = {
       adminEmail,
       subject,
       `El proyecto ${proyecto.nombre_proyecto} ha comenzado su proceso de inversión.`,
-      html
+      html,
     );
   },
 
@@ -436,7 +440,7 @@ const emailService = {
       adminEmail,
       subject,
       `El proyecto ${proyecto.nombre_proyecto} ha sido revertido a 'En Espera'.`,
-      html
+      html,
     );
   },
 
@@ -473,7 +477,7 @@ const emailService = {
       adminEmail,
       subject,
       `El proyecto ${proyecto.nombre_proyecto} ha finalizado. Revisar cierre.`,
-      html
+      html,
     );
   },
 
@@ -493,12 +497,12 @@ const emailService = {
         <h2 style="color: #0b1b36; margin-top: 0;">¡Tu Pago Mensual ha sido Generado!</h2>
         <p>Hola **${user.nombre}**:</p>
         <p>Tu cuota **#${cuota}** para el proyecto **"${
-      proyecto.nombre_proyecto
-    }"** ha sido generada.</p>
+          proyecto.nombre_proyecto
+        }"** ha sido generada.</p>
         <h3 style="color: #333;">Detalles del Pago</h3>
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
             <li><strong style="color: #555;">Monto a pagar:</strong> <strong style="color: #4CAF50;">$${monto.toFixed(
-              2
+              2,
             )}</strong></li>
             <li><strong style="color: #555;">Cuota Nro:</strong> ${cuota}</li>
             <li><strong style="color: #FF5733;">Fecha Límite de Pago:</strong> **${fechaVencimiento}**</li>
@@ -518,7 +522,7 @@ const emailService = {
       `Se ha generado tu pago de $${monto.toFixed(2)} para el proyecto ${
         proyecto.nombre_proyecto
       }. Vence el ${fechaVencimiento}.`,
-      html
+      html,
     );
   },
 
@@ -550,7 +554,7 @@ const emailService = {
       user.email,
       subject,
       `Restablece tu contraseña aquí: ${resetLink}`,
-      html
+      html,
     );
   },
 
@@ -570,7 +574,7 @@ const emailService = {
     proyecto,
     pago,
     montoBase,
-    recargoTotal
+    recargoTotal,
   ) {
     const subject = `⚠️ PAGO VENCIDO: Acción Requerida - Usuario ${user.nombre}`;
 
@@ -578,18 +582,18 @@ const emailService = {
     const contenidoInterno = `
         <h2 style="color: #d9534f; margin-top: 0;">¡ALERTA DE PAGO VENCIDO!</h2>
         <p>El usuario **${user.nombre}** (Email: ${
-      user.email
-    }) ha incumplido el pago de la cuota **#${pago.mes}** para el proyecto **"${
-      proyecto.nombre_proyecto
-    }"**.</p>
+          user.email
+        }) ha incumplido el pago de la cuota **#${pago.mes}** para el proyecto **"${
+          proyecto.nombre_proyecto
+        }"**.</p>
         <h3 style="color: #333;">Detalles</h3>
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
             <li><strong style="color: #555;">ID Pago:</strong> ${pago.id}</li>
             <li><strong style="color: #555;">Monto Base:</strong> $${montoBase.toFixed(
-              2
+              2,
             )}</li>
             <li><strong style="color: #d9534f;">Monto con Recargo:</strong> $${pago.monto.toFixed(
-              2
+              2,
             )} (Recargo: $${recargoTotal.toFixed(2)})</li>
             <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${
               pago.fecha_vencimiento
@@ -604,7 +608,7 @@ const emailService = {
       adminEmail,
       subject,
       `Pago vencido del usuario ${user.nombre} para el proyecto ${proyecto.nombre_proyecto}.`,
-      html
+      html,
     );
   },
 
@@ -638,7 +642,7 @@ const emailService = {
     user,
     transaccion,
     motivoFallo,
-    reembolsoExitoso
+    reembolsoExitoso,
   ) {
     if (!user || !user.email) return;
 
@@ -711,7 +715,7 @@ const emailService = {
       user.email,
       userSubject,
       `Notificación sobre Transacción #${transaccion.id} fallida.`,
-      userHtml
+      userHtml,
     );
   },
 
@@ -730,7 +734,7 @@ const emailService = {
     proyecto,
     pago,
     montoBase,
-    recargoTotal
+    recargoTotal,
   ) {
     if (!usuario || !usuario.email) return;
 
@@ -762,7 +766,7 @@ const emailService = {
       usuario.email,
       subject,
       `Tu pago de $${montoActualTexto} para el proyecto ${proyecto.nombre_proyecto} ha vencido.`,
-      html
+      html,
     );
   }, // <-- COMA
 
@@ -781,7 +785,7 @@ const emailService = {
     const subject = `🔔 Recordatorio: Tu pago para "${proyecto.nombre_proyecto}" está por vencer`;
     const montoCuota = pago.monto.toFixed(2);
     const fechaVencimiento = new Date(
-      pago.fecha_vencimiento
+      pago.fecha_vencimiento,
     ).toLocaleDateString("es-ES", {
       year: "numeric",
       month: "long",
@@ -807,7 +811,7 @@ const emailService = {
       usuario.email,
       subject,
       `Recordatorio: Paga $${montoCuota} para el proyecto ${proyecto.nombre_proyecto}. Vence el ${fechaVencimiento}.`,
-      html
+      html,
     );
   },
 
@@ -826,7 +830,7 @@ const emailService = {
     user,
     transaccion,
     motivoFallo,
-    detallesReembolso = {}
+    detallesReembolso = {},
   ) {
     const {
       reembolsoExitoso = false,
@@ -865,13 +869,13 @@ const emailService = {
     // --- Contenido para el Administrador (dentro de la plantilla) ---
     const contenidoInterno = `
             <h2 style="color: ${colorTitulo}; margin-top: 0;">${
-      reembolsoExitoso ? "✅ Reembolso Procesado" : "🚨 ALERTA CRÍTICA"
-    }</h2>
+              reembolsoExitoso ? "✅ Reembolso Procesado" : "🚨 ALERTA CRÍTICA"
+            }</h2>
             <p>El pago de <strong>$${monto}</strong> del usuario <strong>${
-      user.nombre
-    }</strong> (ID: ${user.id}, Email: ${
-      user.email
-    }) fue aprobado por MP, pero el sistema no pudo procesar la lógica de negocio (${tipoTransaccion}).</p>
+              user.nombre
+            }</strong> (ID: ${user.id}, Email: ${
+              user.email
+            }) fue aprobado por MP, pero el sistema no pudo procesar la lógica de negocio (${tipoTransaccion}).</p>
 
             <h3 style="color: #0b1b36;">📋 Detalles del Fallo y Transacción</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.95em;">
@@ -900,8 +904,8 @@ const emailService = {
                   motivoFallo.includes("cupos")
                     ? "El proyecto alcanzó su capacidad mientras el usuario pagaba."
                     : motivoFallo.includes("expiró")
-                    ? "La transacción tardó más de 30 minutos en confirmarse."
-                    : "Estado del proyecto cambió durante el proceso de pago."
+                      ? "La transacción tardó más de 30 minutos en confirmarse."
+                      : "Estado del proyecto cambió durante el proceso de pago."
                 }
             </p>
         `;
@@ -916,7 +920,7 @@ const emailService = {
       } para Transacción #${transaccion.id} del usuario ${
         user.email
       }. Motivo: ${motivoFallo}`,
-      adminHtml
+      adminHtml,
     );
   },
   /**
@@ -965,7 +969,7 @@ const emailService = {
       userEmail,
       subject,
       `Confirmación de Suscripción al proyecto ${proyecto.nombre_proyecto}.`,
-      html
+      html,
     );
   }, // <-- COMA
 
@@ -1016,7 +1020,7 @@ const emailService = {
         usuario.email,
         subject,
         `El proyecto ${proyecto.nombre_proyecto} ha iniciado.`,
-        html
+        html,
       );
     }
   }, // <-- COMA
@@ -1045,7 +1049,7 @@ const emailService = {
         <ul style="list-style-type: square; padding-left: 20px; line-height: 1.8;">
             <li>El estado del proyecto fue actualizado a **"En proceso"**.</li>
             <li>Se estableció la fecha de inicio del proceso: **${new Date().toLocaleDateString(
-              "es-ES"
+              "es-ES",
             )}**.</li>
             <li>Se envió notificación masiva por email a todos los usuarios.</li>
             <li>El contador de meses restantes ha sido inicializado.</li>
@@ -1065,7 +1069,7 @@ const emailService = {
       adminEmail,
       adminSubject,
       `Proyecto #${proyecto.id} (${proyecto.nombre_proyecto}) ha iniciado.`,
-      html
+      html,
     );
   },
   /**
@@ -1113,7 +1117,7 @@ const emailService = {
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Fecha:</strong></td>
         <td style="padding: 10px; border: 1px solid #dee2e6;">${new Date().toLocaleDateString(
-          "es-ES"
+          "es-ES",
         )}</td>
       </tr>
     </table>
@@ -1131,7 +1135,7 @@ const emailService = {
       usuario.email,
       subject,
       `Tu pago de $${montoTexto} para la cuota #${mesPago} del proyecto ${proyecto.nombre_proyecto} ha sido procesado exitosamente.`,
-      html
+      html,
     );
   },
   /**
