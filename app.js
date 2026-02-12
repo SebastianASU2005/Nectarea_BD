@@ -31,6 +31,13 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "=========================================================================",
   );
 }
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1); // Confiar en el primer proxy (Render)
+  console.log("✅ Trust proxy habilitado para producción");
+} else {
+  app.set("trust proxy", false); // No confiar en proxies en desarrollo
+  console.log("⚠️ Trust proxy deshabilitado (desarrollo local)");
+}
 
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
 function captureRawBody(req, res, buf, encoding) {
@@ -43,10 +50,12 @@ function captureRawBody(req, res, buf, encoding) {
 // 2. MIDDLEWARES GLOBALES BÁSICOS (SIN BODY PARSING AÚN)
 // ====================================================================
 const corsOptions = {
-  // Solo permite peticiones desde tu frontend de desarrollo
-  origin: "http://localhost:5173",
+  origin:
+    process.env.NODE_ENV === "production"
+      ? process.env.FRONTEND_URL // En producción usa la variable de entorno
+      : "http://localhost:5173", // En desarrollo usa localhost
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true, // Esto es crucial si usas cookies o sesiones
+  credentials: true,
   optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
