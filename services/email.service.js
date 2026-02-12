@@ -1,17 +1,39 @@
 // services/emailService.js
 const nodemailer = require("nodemailer");
+const { Resend } = require('resend');
 const dotenv = require("dotenv");
 dotenv.config();
+const esProduccion = process.env.NODE_ENV === 'production' || process.env.RESEND_API_KEY;
+let transporter;
+let resend;
+
+if (esProduccion && process.env.RESEND_API_KEY) {
+  // 🌐 PRODUCCIÓN: Usar Resend
+  resend = new Resend(process.env.RESEND_API_KEY);
+  console.log('✅ Configurado email con Resend (Producción)');
+} else {
+  // 💻 LOCAL: Usar Gmail
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+  console.log('✅ Configurado email con Gmail (Desarrollo)');
+}
 
 // Configura el transportador de correo utilizando las credenciales de entorno.
 // CRÍTICO: Las credenciales deben cargarse correctamente desde .env (EMAIL_USER, EMAIL_PASS)
-const transporter = nodemailer.createTransport({
+/*const transporter = nodemailer.createTransport({
   service: "gmail", // Usar un servicio conocido simplifica la configuración
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
+*/
+
 
 /**
  * Genera la plantilla base HTML que envuelve el contenido específico del correo.
@@ -67,13 +89,53 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
 const emailService = {
   /**
    * Función base para enviar un correo electrónico.
+   * Detecta automáticamente si usar Resend (producción) o Gmail (local).
+   */
+  async sendEmail(to, subject, text, html) {
+    try {
+      if (resend) {
+        // 🌐 USAR RESEND (Producción)
+        const { data, error } = await resend.emails.send({
+          from: 'Loteplan <onboarding@resend.dev>',
+          to: [to],
+          subject: subject,
+          html: html,
+        });
+
+        if (error) {
+          console.error(`❌ Error Resend al enviar a ${to}:`, error);
+          throw error;
+        }
+
+        console.log(`✅ Email enviado via Resend a ${to} (ID: ${data.id})`);
+      } else {
+        // 💻 USAR GMAIL (Local/Railway)
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to,
+          subject,
+          text,
+          html,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ Email enviado via Gmail a ${to}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error al enviar correo a ${to}:`, error);
+      throw error;
+    }
+  },
+  
+  /**
+   * Función base para enviar un correo electrónico.
    * Incluye manejo de errores para el envío.
    * @param {string} to - Destinatario.
    * @param {string} subject - Asunto.
    * @param {string} text - Cuerpo en texto plano (fallback).
    * @param {string} html - Cuerpo en formato HTML (principal).
    */
-  async sendEmail(to, subject, text, html) {
+  /*async sendEmail(to, subject, text, html) {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to,
@@ -90,7 +152,11 @@ const emailService = {
       console.error(`Error al enviar correo a ${to}:`, error);
       // Opcional: Podría lanzarse un error aquí si la falla de envío es crítica.
     }
-  },
+  },*/
+/**
+ * Función base para enviar un correo electrónico.
+ * Detecta automáticamente si usar Resend (producción) o Gmail (local).
+ */
 
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
