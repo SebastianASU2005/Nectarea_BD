@@ -2,7 +2,7 @@
 
 const express = require("express");
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -21,14 +21,14 @@ const HOST_URL = process.env.HOST_URL;
 
 if (!MP_ACCESS_TOKEN || !HOST_URL) {
   console.error(
-    "========================================================================="
+    "=========================================================================",
   );
   console.error(
-    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas."
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas.",
   );
   console.error("       El servicio de pagos NO funcionará.");
   console.error(
-    "========================================================================="
+    "=========================================================================",
   );
 }
 
@@ -79,7 +79,7 @@ const storage = multer.diskStorage({
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(
       null,
-      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
+      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname),
     );
   },
 });
@@ -161,7 +161,7 @@ const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler")
 const webhookRouter = express.Router();
 webhookRouter.use(
   express.json({ verify: captureRawBody }),
-  express.urlencoded({ extended: true, verify: captureRawBody })
+  express.urlencoded({ extended: true, verify: captureRawBody }),
 );
 webhookRouter.post("/:metodo", paymentController.handleWebhook);
 app.use("/api/payment/webhook", webhookRouter);
@@ -189,8 +189,8 @@ app.use("/api/kyc", (req, res, next) => {
 // AHORA KYC está después de express.json()
 // - Si es Reject (JSON): express.json() llena req.body ✅
 // - Si es Submit (Multipart): express.json() lo ignora y Multer lo procesa ✅
-app.use("/api/kyc", kycRoutes); 
-app.use("/api/contratos", contratoRoutes); 
+app.use("/api/kyc", kycRoutes);
+app.use("/api/contratos", contratoRoutes);
 app.use("/api/imagenes", imagenRoutes);
 // 🚨 Nota: El orden de estas rutas es importante si tienen prefijos genéricos.
 // Dado que la ruta "/api/pagos" no tiene parámetros dinámicos, el orden actual es adecuado.
@@ -300,8 +300,8 @@ async function synchronizeDatabase() {
     subscriptionCheckScheduler.scheduleJobs();
 
     // Inicia el servidor de Express
-    app.listen(PORT, () => {
-      console.log(`Servidor escuchando en http://localhost:${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Servidor escuchando en puerto ${PORT}`);
       console.log("=".repeat(70));
       console.log("📋 ORDEN DE MIDDLEWARES CONFIGURADO:");
       console.log("   1. CORS");
