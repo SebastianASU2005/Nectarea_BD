@@ -1,6 +1,6 @@
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
-const Pago = require("../models/Pago");
+const Pago = require("../models/pago");
 const SuscripcionCancelada = require("../models/suscripcion_cancelada");
 const { sequelize } = require("../config/database");
 

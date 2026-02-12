@@ -1,7 +1,7 @@
 // Archivo: services/pago.service.js
 
 const { Op } = require("sequelize");
-const Pago = require("../models/Pago");
+const Pago = require("../models/pago");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
