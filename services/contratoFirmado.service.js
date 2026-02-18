@@ -417,6 +417,14 @@ const contratoFirmadoService = {
       order: [["id", "DESC"]],
     });
   },
+  /**
+   * Obtiene una plantilla de contrato por su ID.
+   * @param {number} id - ID de la plantilla.
+   * @returns {Promise<ContratoPlantilla|null>} La plantilla encontrada.
+   */
+  async getPlantillaById(id) {
+    return ContratoPlantilla.findByPk(id);
+  },
 
   /**
    * Obtiene un contrato firmado por su ID (primary key).

@@ -52,7 +52,7 @@ const contratoFirmaController = {
 
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
-        codigo_2fa
+        codigo_2fa,
       );
 
       if (!isVerified) {
@@ -71,7 +71,7 @@ const contratoFirmaController = {
 
       if (hashVerificadoBackend !== hash_archivo_firmado) {
         console.warn(
-          `🚨 ALERTA DE HASH: Hash del front-end (${hash_archivo_firmado}) no coincide con el hash del back-end (${hashVerificadoBackend}).`
+          `🚨 ALERTA DE HASH: Hash del front-end (${hash_archivo_firmado}) no coincide con el hash del back-end (${hashVerificadoBackend}).`,
         );
         return res.status(400).json({
           message:
@@ -82,28 +82,36 @@ const contratoFirmaController = {
       // ============================================================
       // FASE 4: PRE-VALIDACIÓN DE NEGOCIO (SIN GUARDAR NADA)
       // ============================================================
-      // ✅ SOLUCIÓN SIMPLE: Validamos ANTES de guardar el PDF
 
-      // Llamamos a una función de validación que NO crea el registro
       await contratoFirmadoService.validateContractEligibility({
         id_usuario_firmante,
         id_proyecto,
         id_contrato_plantilla,
       });
 
-      // ✅ Si llegamos aquí, todas las validaciones pasaron
-      // Ahora SÍ guardamos el PDF
-
       // ============================================================
       // FASE 5: GUARDAR PDF (SOLO SI VALIDACIONES PASARON)
       // ============================================================
 
-      const fileName = `contrato-${id_usuario_firmante}-${Date.now()}.pdf`;
+      const sanitize = (str) =>
+        str.replace(/[^a-zA-Z0-9_\-]/g, "_").substring(0, 40);
+
+      const plantilla = await contratoFirmadoService.getPlantillaById(
+        id_contrato_plantilla,
+      );
+
+      const nombrePlantilla = sanitize(
+        plantilla.nombre_archivo.replace(/\.pdf$/i, ""),
+      );
+      const nombreUsuario = sanitize(`${user.nombre}_${user.apellido}`);
+      const fecha = new Date().toISOString().substring(0, 10); // "2025-02-18"
+
+      const fileName = `${nombrePlantilla}__${nombreUsuario}__${fecha}.pdf`;
       const relativeFilePath = `contratos/${id_proyecto}/${fileName}`;
 
       const url_archivo_final = await localFileStorageService.uploadBuffer(
         pdfFile.buffer,
-        relativeFilePath
+        relativeFilePath,
       );
 
       // ============================================================
@@ -147,7 +155,6 @@ const contratoFirmaController = {
     } catch (error) {
       console.error("Error al registrar la firma del contrato:", error);
 
-      // Manejo específico de errores de validación de negocio
       const statusCode = error.message.startsWith("❌") ? 400 : 500;
 
       return res.status(statusCode).json(formatErrorResponse(error.message));
