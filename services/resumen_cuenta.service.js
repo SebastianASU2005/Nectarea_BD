@@ -7,6 +7,7 @@ const ResumenCuenta = require("../models/resumen_cuenta");
 const moment = require("moment"); // Librería para manejo de fechas
 const Pago = require("../models/pago");
 const { Op } = require("sequelize"); // Operadores de Sequelize
+const Usuario = require("../models/usuario");
 
 /**
  * Servicio de lógica de negocio para la gestión de Resúmenes de Cuenta de las Suscripciones.
@@ -47,7 +48,7 @@ const resumenCuentaService = {
         valor_mensual: parseFloat(cuotaMensual.valor_mensual),
         carga_administrativa: parseFloat(cuotaMensual.carga_administrativa),
         iva_carga_administrativa: parseFloat(
-          cuotaMensual.iva_carga_administrativa
+          cuotaMensual.iva_carga_administrativa,
         ),
         valor_mensual_final: parseFloat(cuotaMensual.valor_mensual_final),
       };
@@ -63,7 +64,7 @@ const resumenCuentaService = {
           porcentaje_pagado: 0.0,
           detalle_cuota: detalleCuota,
         },
-        options // Pasando la transacción a la creación
+        options, // Pasando la transacción a la creación
       );
 
       return resumen;
@@ -73,12 +74,6 @@ const resumenCuentaService = {
     }
   },
 
-  /**
-   * @async
-   * @function findAll
-   * @description Obtiene todos los resúmenes de cuenta, incluyendo la suscripción asociada. (Función de Administrador).
-   * @returns {Promise<ResumenCuenta[]>} Un arreglo con todos los resúmenes de cuenta.
-   */
   async findAll() {
     return ResumenCuenta.findAll({
       include: [
@@ -86,11 +81,27 @@ const resumenCuentaService = {
           model: SuscripcionProyecto,
           as: "suscripcion",
           attributes: ["id", "id_usuario"],
+          include: [
+            {
+              model: Usuario,
+              as: "usuario",
+              attributes: ["id", "nombre", "apellido", "email"],
+            },
+            {
+              model: Proyecto,
+              as: "proyectoAsociado",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+              ],
+            },
+          ],
         },
       ],
     });
   },
-
   /**
    * @async
    * @function getAccountSummariesByUserId
@@ -171,14 +182,14 @@ const resumenCuentaService = {
         !suscripcion.proyectoAsociado
       ) {
         console.warn(
-          `No se encontró suscripción, resumen o proyecto para ID: ${suscripcionId}`
+          `No se encontró suscripción, resumen o proyecto para ID: ${suscripcionId}`,
         );
         return;
       }
 
       const resumen = suscripcion.resumen_cuenta;
       const cuotaMensualBase = parseFloat(
-        suscripcion.proyectoAsociado.monto_inversion
+        suscripcion.proyectoAsociado.monto_inversion,
       );
       const saldoAFavor = parseFloat(suscripcion.saldo_a_favor || 0);
 
@@ -190,7 +201,7 @@ const resumenCuentaService = {
       const pagosEfectivos = suscripcion.pagos.length;
 
       // Cuotas adicionales cubiertas por el saldo a favor
-     const cuotasPagadasTotal = pagosEfectivos;
+      const cuotasPagadasTotal = pagosEfectivos;
 
       const totalCuotasProyecto = resumen.meses_proyecto;
       const porcentajePagado = (cuotasPagadasTotal / totalCuotasProyecto) * 100;
@@ -219,11 +230,11 @@ const resumenCuentaService = {
           porcentaje_pagado: parseFloat(porcentajePagado.toFixed(2)),
           cuotas_vencidas: cuotasVencidas, // 👈 USAMOS EL CONTEO EXPLÍCITO DE VENCIDOS
         },
-        options
+        options,
       );
 
       console.log(
-        `Resumen de cuenta actualizado para suscripción ID: ${suscripcionId}. Pagadas (Efectivo+Saldo): ${cuotasPagadasTotal}. Vencidas: ${cuotasVencidas}.`
+        `Resumen de cuenta actualizado para suscripción ID: ${suscripcionId}. Pagadas (Efectivo+Saldo): ${cuotasPagadasTotal}. Vencidas: ${cuotasVencidas}.`,
       );
     } catch (error) {
       console.error("Error al actualizar el resumen de cuenta:", error);
@@ -243,7 +254,7 @@ const resumenCuentaService = {
    */
   async actualizarSaldoGeneral(userId, monto, t) {
     console.log(
-      `[SALDO_GENERAL] Usuario ${userId}: Movimiento de saldo general simulado por monto: ${monto}`
+      `[SALDO_GENERAL] Usuario ${userId}: Movimiento de saldo general simulado por monto: ${monto}`,
     );
     // Nota: La implementación real requeriría un modelo de 'Cuenta de Usuario' o similar.
     return {
@@ -253,13 +264,6 @@ const resumenCuentaService = {
     };
   },
 
-  /**
-   * @async
-   * @function getById
-   * @description Obtiene un resumen de cuenta por su ID, incluyendo la suscripción asociada. (Función de Administrador).
-   * @param {number} id - ID del resumen.
-   * @returns {Promise<ResumenCuenta|null>} El resumen con sus asociaciones.
-   */
   async getById(id) {
     return ResumenCuenta.findByPk(id, {
       include: [
@@ -267,6 +271,23 @@ const resumenCuentaService = {
           model: SuscripcionProyecto,
           as: "suscripcion",
           attributes: ["id", "id_usuario"],
+          include: [
+            {
+              model: Usuario,
+              as: "usuario",
+              attributes: ["id", "nombre", "apellido", "email"],
+            },
+            {
+              model: Proyecto,
+              as: "proyectoAsociado",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+              ],
+            },
+          ],
         },
       ],
     });
@@ -287,7 +308,7 @@ const resumenCuentaService = {
     console.log(
       `[RESUMEN_EVENTO] Usuario ${eventoData.id_usuario} - Evento registrado: ${
         eventoData.descripcion
-      } (Monto prepagado: $${eventoData.monto.toFixed(2)})`
+      } (Monto prepagado: $${eventoData.monto.toFixed(2)})`,
     );
     // Nota: Si quieres guardar esto en la BD, deberías tener un modelo 'EventoResumen' o similar.
     // Aquí solo simulamos el registro.
@@ -313,14 +334,30 @@ const resumenCuentaService = {
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
-          where: { id_usuario: userId }, // FILTRO DE SEGURIDAD
+          where: { id_usuario: userId },
           attributes: ["id", "id_usuario"],
-          required: true, // Requiere que la suscripción coincida con el usuario.
+          required: true,
+          include: [
+            {
+              model: Usuario,
+              as: "usuario",
+              attributes: ["id", "nombre", "apellido", "email"],
+            },
+            {
+              model: Proyecto,
+              as: "proyectoAsociado",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+              ],
+            },
+          ],
         },
       ],
     });
   },
-
   /**
    * @async
    * @function update
