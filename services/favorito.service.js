@@ -5,9 +5,6 @@ const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
 
 const favoritoService = {
-  /**
-   * Toggle favorito (sin cambios)
-   */
   async toggleFavorito(idUsuario, idLote) {
     const lote = await Lote.findOne({
       where: { id: idLote, activo: true },
@@ -32,7 +29,7 @@ const favoritoService = {
 
       if (!suscripcion) {
         throw new Error(
-          "Acceso denegado. Para agregar este lote a favoritos, debes tener una suscripción activa al proyecto asociado."
+          "Acceso denegado. Para agregar este lote a favoritos, debes tener una suscripción activa al proyecto asociado.",
         );
       }
     }
@@ -50,9 +47,6 @@ const favoritoService = {
     }
   },
 
-  /**
-   * Obtener favoritos del usuario (sin cambios)
-   */
   async findFavoritosByUsuario(idUsuario) {
     const favoritos = await Favorito.findAll({
       where: { id_usuario: idUsuario },
@@ -70,10 +64,6 @@ const favoritoService = {
     return favoritos.map((fav) => fav.lote);
   },
 
-  /**
-   * 🆕 SIMPLIFICADO: Estadísticas de UN PROYECTO específico
-   * Solo trae datos básicos del lote (id, nombre_lote, estado_subasta, precio_base)
-   */
   async getEstadisticasProyecto(idProyecto) {
     const estadisticas = await Favorito.findAll({
       attributes: [
@@ -91,6 +81,7 @@ const favoritoService = {
           where: {
             activo: true,
             id_proyecto: idProyecto,
+            excluir_estadisticas: false, // 👈 solo lotes no excluidos
           },
           required: true,
         },
@@ -102,7 +93,6 @@ const favoritoService = {
       subQuery: false,
     });
 
-    // Formatear resultados
     const lotesFavoritosFormateados = estadisticas.map((stat) => ({
       id_lote: stat.lote.id,
       nombre_lote: stat.lote.nombre_lote,
@@ -121,17 +111,12 @@ const favoritoService = {
     };
   },
 
-  /**
-   * 🆕 SIMPLIFICADO: Estadísticas agrupadas por TODOS los proyectos
-   */
   async getEstadisticasTodosProyectos() {
-    // 1. Obtener todos los proyectos activos
     const proyectos = await Proyecto.findAll({
       where: { activo: true },
       attributes: ["id", "nombre_proyecto", "tipo_inversion"],
     });
 
-    // 2. Para cada proyecto, obtener sus estadísticas
     const estadisticasPorProyecto = await Promise.all(
       proyectos.map(async (proyecto) => {
         const stats = await this.getEstadisticasProyecto(proyecto.id);
@@ -144,22 +129,17 @@ const favoritoService = {
           lote_mas_votado: stats.lote_mas_votado,
           total_favoritos_proyecto: stats.estadisticas_lotes.reduce(
             (sum, item) => sum + item.total_favoritos,
-            0
+            0,
           ),
         };
-      })
+      }),
     );
 
-    // 3. Ordenar por total de favoritos del proyecto
     return estadisticasPorProyecto.sort(
-      (a, b) => b.total_favoritos_proyecto - a.total_favoritos_proyecto
+      (a, b) => b.total_favoritos_proyecto - a.total_favoritos_proyecto,
     );
   },
 
-  /**
-   * 🆕 SIMPLIFICADO: Ranking global de lotes más favoritos
-   * Solo trae datos básicos del lote y proyecto
-   */
   async getRankingGlobal(limit = 10) {
     const estadisticas = await Favorito.findAll({
       attributes: [
@@ -180,19 +160,22 @@ const favoritoService = {
             "precio_base",
             "id_proyecto",
           ],
-          where: { activo: true },
+          where: {
+            activo: true,
+            excluir_estadisticas: false, // 👈 solo lotes no excluidos
+          },
           required: true,
           include: [
             {
               model: Proyecto,
-              as: "proyecto",
+              as: "proyectoLote",
               attributes: ["id", "nombre_proyecto"],
               required: false,
             },
           ],
         },
       ],
-      group: ["Favorito.id_lote", "lote.id", "lote->proyecto.id"],
+      group: ["Favorito.id_lote", "lote.id", "lote->proyectoLote.id"],
       order: [
         [sequelize.fn("COUNT", sequelize.col("Favorito.id_lote")), "DESC"],
       ],
@@ -205,24 +188,42 @@ const favoritoService = {
       nombre_lote: stat.lote.nombre_lote,
       estado_subasta: stat.lote.estado_subasta,
       precio_base: parseFloat(stat.lote.precio_base),
-      proyecto: stat.lote.proyecto
+      proyecto: stat.lote.proyectoLote
         ? {
-            id: stat.lote.proyecto.id,
-            nombre: stat.lote.proyecto.nombre_proyecto,
+            id: stat.lote.proyectoLote.id,
+            nombre: stat.lote.proyectoLote.nombre_proyecto,
           }
         : null,
       total_favoritos: parseInt(stat.dataValues.total_favoritos),
     }));
   },
 
-  /**
-   * Verificar si es favorito (sin cambios)
-   */
   async isFavorito(idUsuario, idLote) {
     const favorito = await Favorito.findOne({
       where: { id_usuario: idUsuario, id_lote: idLote },
     });
     return !!favorito;
+  },
+
+  /**
+   * Activa o desactiva la exclusión de un lote de los rankings y estadísticas.
+   * @param {number} idLote - ID del lote.
+   * @returns {Promise<object>} Resultado del toggle.
+   */
+  async toggleExcluirEstadisticas(idLote) {
+    const lote = await Lote.findByPk(idLote);
+    if (!lote) throw new Error("Lote no encontrado.");
+
+    await lote.update({ excluir_estadisticas: !lote.excluir_estadisticas });
+
+    return {
+      id_lote: lote.id,
+      nombre_lote: lote.nombre_lote,
+      excluir_estadisticas: lote.excluir_estadisticas,
+      mensaje: lote.excluir_estadisticas
+        ? "Lote excluido de estadísticas y rankings."
+        : "Lote incluido nuevamente en estadísticas y rankings.",
+    };
   },
 };
 

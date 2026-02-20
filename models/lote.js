@@ -87,13 +87,20 @@ const Lote = sequelize.define(
         max: 180,
       },
     },
+    excluir_estadisticas: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
+      comment:
+        "Si es true, el lote no aparece en rankings ni estadísticas de favoritos.",
+    },
   },
   {
     tableName: "lote",
     timestamps: true,
     createdAt: "fecha_creacion",
     updatedAt: "fecha_actualizacion",
-  }
+  },
 );
 
 module.exports = Lote;

@@ -10,6 +10,7 @@ router.get('/mis-favoritos', authMiddleware.authenticate, favoritoController.get
 router.get('/check/:id', authMiddleware.authenticate, favoritoController.checkFavorito);
 
 // Rutas de administradores
-router.get('/estadisticas', authMiddleware.authenticate,authMiddleware.authorizeAdmin, favoritoController.getEstadisticas);
+router.get('/estadisticas', authMiddleware.authenticate, authMiddleware.authorizeAdmin, favoritoController.getEstadisticas);
+router.patch('/lote/:id/excluir-estadisticas', authMiddleware.authenticate, authMiddleware.authorizeAdmin, favoritoController.toggleExcluirEstadisticas);
 
 module.exports = router;
