@@ -49,7 +49,7 @@ const proyectoService = {
     // 🆕 VALIDACIÓN OPCIONAL: Si se proporciona una coordenada, la otra también debe estar presente
     if ((latitud && !longitud) || (!latitud && longitud)) {
       throw new Error(
-        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+        "Si proporciona latitud, debe proporcionar longitud y viceversa.",
       );
     }
 
@@ -69,7 +69,7 @@ const proyectoService = {
 
         if (!monto_inversion || Number(monto_inversion) <= 0) {
           throw new Error(
-            "El monto de inversión debe ser definido para proyectos 'directo'."
+            "El monto de inversión debe ser definido para proyectos 'directo'.",
           );
         }
         dataFinal.monto_inversion = Number(monto_inversion).toFixed(2);
@@ -82,28 +82,28 @@ const proyectoService = {
         const finalObjSuscripciones = Number(obj_suscripciones || 0);
         if (finalObjSuscripciones <= 0) {
           throw new Error(
-            "El objetivo de suscripciones debe ser mayor a cero para proyectos 'mensual'."
+            "El objetivo de suscripciones debe ser mayor a cero para proyectos 'mensual'.",
           );
         }
         dataFinal.obj_suscripciones = finalObjSuscripciones;
 
         if (!monto_inversion || Number(monto_inversion) <= 0) {
           throw new Error(
-            "El monto base mensual debe ser definido para proyectos 'mensual'."
+            "El monto base mensual debe ser definido para proyectos 'mensual'.",
           );
         }
         dataFinal.monto_inversion = Number(monto_inversion).toFixed(2);
 
         if (!dataFinal.plazo_inversion || dataFinal.plazo_inversion <= 0) {
           throw new Error(
-            "El plazo de inversión (meses de duración) es obligatorio para proyectos 'mensual'."
+            "El plazo de inversión (meses de duración) es obligatorio para proyectos 'mensual'.",
           );
         }
         break;
 
       default:
         throw new Error(
-          "Tipo de inversión no válido. Use 'directo' o 'mensual'."
+          "Tipo de inversión no válido. Use 'directo' o 'mensual'.",
         );
     }
 
@@ -125,7 +125,7 @@ const proyectoService = {
           .map((lote) => lote.id)
           .join(", ");
         throw new Error(
-          `❌ Los lotes con ID(s) ${idsConflictivos} ya están asociados a otro proyecto y no pueden ser reutilizados.`
+          `❌ Los lotes con ID(s) ${idsConflictivos} ya están asociados a otro proyecto y no pueden ser reutilizados.`,
         );
       }
     }
@@ -153,7 +153,11 @@ const proyectoService = {
    */ async findAll() {
     return await Proyecto.findAll({
       include: [
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }],
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -167,7 +171,11 @@ const proyectoService = {
     return await Proyecto.findAll({
       where: { activo: true },
       include: [
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }],
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -181,7 +189,11 @@ const proyectoService = {
    */ async findById(id) {
     return await Proyecto.findByPk(id, {
       include: [
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }], 
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -196,7 +208,11 @@ const proyectoService = {
     return await Proyecto.findOne({
       where: { id: id, activo: true },
       include: [
-        { model: Lote, as: "lotes" },
+       {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }], 
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -216,7 +232,11 @@ const proyectoService = {
           where: { id_usuario: userId, estado: "pagado" },
           required: true, // INNER JOIN: Solo proyectos con inversiones pagadas del usuario
         },
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }], 
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -283,7 +303,7 @@ const proyectoService = {
           .map((lote) => lote.id)
           .join(", ");
         throw new Error(
-          `❌ Los lotes ${idsConflictivos} ya están asociados a otro proyecto y no pueden ser reasignados.`
+          `❌ Los lotes ${idsConflictivos} ya están asociados a otro proyecto y no pueden ser reasignados.`,
         );
       } // 2. Ejecutar la Asociación (addLotes internamente hace el update en la tabla Lote)
 
@@ -323,7 +343,7 @@ const proyectoService = {
         fecha_inicio_proceso: null, // Resetea la fecha de inicio
         objetivo_notificado: false, // Permite notificar el inicio de nuevo
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     // 2. Notificación a los suscriptores (Mensaje interno Y Email)
@@ -346,7 +366,7 @@ const proyectoService = {
     for (const suscripcion of suscripcionesActivas) {
       if (!suscripcion.id_usuario) {
         console.warn(
-          `Suscripción ID ${suscripcion.id} no tiene id_usuario y fue ignorada para la notificación.`
+          `Suscripción ID ${suscripcion.id} no tiene id_usuario y fue ignorada para la notificación.`,
         );
         continue;
       } // A. Notificación por Mensaje Interno (Dentro de la transacción)
@@ -357,7 +377,7 @@ const proyectoService = {
           id_receptor: suscripcion.id_usuario,
           contenido: contenidoMensajeInterno,
         },
-        { transaction: t }
+        { transaction: t },
       ); // B. Notificación por Email (Fuera de la transacción de DB)
 
       try {
@@ -367,13 +387,13 @@ const proyectoService = {
           await emailService.notificarPausaProyecto(usuario, proyecto);
         } else {
           console.warn(
-            `No se pudo enviar email: Usuario ID ${suscripcion.id_usuario} no encontrado o sin email.`
+            `No se pudo enviar email: Usuario ID ${suscripcion.id_usuario} no encontrado o sin email.`,
           );
         }
       } catch (error) {
         console.error(
           `Error al enviar el email de pausa al usuario ${suscripcion.id_usuario}:`,
-          error.message
+          error.message,
         );
       }
     } // 🟢 3. Notificación a los ADMINISTRADORES (Mensaje interno Y Email) // 🛑 SELECCIÓN DE DESTINATARIO: Solo se notifica a los administradores
@@ -391,7 +411,7 @@ const proyectoService = {
           id_receptor: admin.id,
           contenido: contenidoAdmin,
         },
-        { transaction: t }
+        { transaction: t },
       ); // Email a Admins (Uso de la función específica)
 
       if (admin.email) {
@@ -399,7 +419,7 @@ const proyectoService = {
           await emailService.notificarReversionAdmin(admin.email, proyecto);
         } catch (e) {
           console.error(
-            `Error al enviar email de reversión al admin ${admin.id}: ${e.message}`
+            `Error al enviar email de reversión al admin ${admin.id}: ${e.message}`,
           );
         }
       }
@@ -422,7 +442,7 @@ const proyectoService = {
     }
     if (proyecto.tipo_inversion !== "mensual") {
       throw new Error(
-        "El proyecto no es de tipo 'mensual' y no requiere conteo."
+        "El proyecto no es de tipo 'mensual' y no requiere conteo.",
       );
     }
     if (proyecto.estado_proyecto !== "En Espera") {
@@ -430,7 +450,7 @@ const proyectoService = {
     }
     if (!proyecto.plazo_inversion || proyecto.plazo_inversion <= 0) {
       throw new Error(
-        "El proyecto mensual no tiene un 'plazo_inversion' definido."
+        "El proyecto mensual no tiene un 'plazo_inversion' definido.",
       );
     } // Actualiza el proyecto
 
@@ -454,7 +474,11 @@ const proyectoService = {
         tipo_inversion: "mensual", // Filtrar por Ahorristas
       },
       include: [
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }], 
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -472,7 +496,11 @@ const proyectoService = {
         tipo_inversion: "directo", // Filtrar por Inversionistas
       },
       include: [
-        { model: Lote, as: "lotes" },
+        {
+          model: Lote,
+          as: "lotes",
+          include: [{ model: Imagen, as: "imagenes" }], 
+        },
         { model: Imagen, as: "imagenes" },
       ],
     });
@@ -518,18 +546,18 @@ const proyectoService = {
                 id_receptor: admin.id,
                 contenido: contenidoAdmin,
               },
-              { transaction: t }
+              { transaction: t },
             ); // 🟢 ADICIÓN: Email a Admins (Fuera de la transacción de DB)
 
             if (admin.email) {
               try {
                 await emailService.notificarFinalizacionAdmin(
                   admin.email,
-                  proyecto
+                  proyecto,
                 );
               } catch (e) {
                 console.error(
-                  `Error al enviar email de finalización al admin ${admin.id}: ${e.message}`
+                  `Error al enviar email de finalización al admin ${admin.id}: ${e.message}`,
                 );
               }
             } // 🟢 FIN ADICIÓN
@@ -540,7 +568,7 @@ const proyectoService = {
         await t.rollback();
         console.error(
           `Error al finalizar el mes del proyecto ID ${proyecto.id}:`,
-          error
+          error,
         );
       }
     }
@@ -629,7 +657,7 @@ const proyectoService = {
         // Agregamos el campo calculado para el avance
         [
           sequelize.literal(
-            `(suscripciones_actuales * 100.0) / obj_suscripciones`
+            `(suscripciones_actuales * 100.0) / obj_suscripciones`,
           ),
           "porcentaje_avance", // KPI 5 - Progreso
         ],

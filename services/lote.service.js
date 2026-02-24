@@ -48,7 +48,7 @@ const loteService = {
     // 2. Validación de Coordenadas: Si se proporciona una, se requiere la otra.
     if ((latitud && !longitud) || (!latitud && longitud)) {
       throw new Error(
-        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+        "Si proporciona latitud, debe proporcionar longitud y viceversa.",
       );
     }
 
@@ -135,7 +135,7 @@ const loteService = {
     const { latitud, longitud } = data;
     if ((latitud && !longitud) || (!latitud && longitud)) {
       throw new Error(
-        "Si proporciona latitud, debe proporcionar longitud y viceversa."
+        "Si proporciona latitud, debe proporcionar longitud y viceversa.",
       );
     }
 
@@ -164,7 +164,7 @@ const loteService = {
         const suscripcionProyectoService = require("./suscripcion_proyecto.service");
         usuariosParaNotificar =
           await suscripcionProyectoService.findUsersByProjectId(
-            loteActualizado.id_proyecto
+            loteActualizado.id_proyecto,
           );
       } else {
         // Pública: Todos los usuarios activos.
@@ -197,11 +197,11 @@ const loteService = {
               await emailService.notificarInicioSubasta(
                 usuario.email,
                 loteActualizado,
-                esSubastaPrivada
+                esSubastaPrivada,
               );
             } catch (error) {
               console.error(
-                `Error al enviar email de inicio de subasta a ${usuario.email} (Lote ${loteActualizado.id}): ${error.message}`
+                `Error al enviar email de inicio de subasta a ${usuario.email} (Lote ${loteActualizado.id}): ${error.message}`,
               );
             }
           }
@@ -258,7 +258,7 @@ const loteService = {
           estado_subasta: "finalizada",
           fecha_fin: new Date(),
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       if (pujaGanadora) {
@@ -268,7 +268,7 @@ const loteService = {
             id_ganador: pujaGanadora.id_usuario,
             intentos_fallidos_pago: 1, // Primer intento asignado al ganador
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         // 4. Calcular y establecer la fecha de vencimiento (90 días).
@@ -281,7 +281,7 @@ const loteService = {
             estado_puja: "ganadora_pendiente",
             fecha_vencimiento_pago: fechaVencimiento,
           },
-          { transaction: t }
+          { transaction: t },
         );
       }
 
@@ -306,7 +306,7 @@ const loteService = {
             ganador,
             id,
             fechaLimiteStr,
-            false // Indica que no es reasignación.
+            false, // Indica que no es reasignación.
           );
 
           // Mensaje Interno al ganador.
@@ -321,7 +321,7 @@ const loteService = {
         // Se registra el error de notificación/token, pero se retorna el resultado de la DB ya confirmado.
         console.error(
           `Error en notificaciones/gestión de tokens tras finalización del Lote ${id}:`,
-          error.message
+          error.message,
         );
         return pujaGanadora;
       }
@@ -359,12 +359,20 @@ const loteService = {
     if (!idProyecto) {
       throw new Error("El ID del proyecto es requerido.");
     }
+    const Proyecto = require("../models/proyecto");
     return await Lote.findAll({
       where: {
         id_proyecto: idProyecto,
         activo: true,
       },
-      include: [{ model: Imagen, as: "imagenes" }],
+      include: [
+        { model: Imagen, as: "imagenes" },
+        {
+          model: Proyecto,
+          as: "proyectoLote",
+          include: [{ model: Imagen, as: "imagenes" }],
+        },
+      ],
     });
   },
 
@@ -383,7 +391,7 @@ const loteService = {
     // 1. Buscar la puja más alta que NO esté en estado 'ganadora_incumplimiento' o 'pagado'.
     const siguientePuja = await PujaService.findNextHighestBid(
       lote.id,
-      transaction
+      transaction,
     );
 
     if (siguientePuja) {
@@ -397,18 +405,18 @@ const loteService = {
           estado_puja: "ganadora_pendiente",
           fecha_vencimiento_pago: fechaVencimiento,
         },
-        { transaction }
+        { transaction },
       );
 
       // 4. Asignar el nuevo ganador al Lote.
       await lote.update(
         { id_ganador: siguientePuja.id_usuario },
-        { transaction }
+        { transaction },
       );
 
       // 5. Notificación al nuevo ganador (Lógica asíncrona fuera de la transacción si es posible).
       const nuevoGanador = await usuarioService.findById(
-        siguientePuja.id_usuario
+        siguientePuja.id_usuario,
       );
       const fechaLimiteStr = fechaVencimiento.toLocaleDateString("es-ES");
 
@@ -417,12 +425,12 @@ const loteService = {
           nuevoGanador,
           lote.id,
           fechaLimiteStr,
-          true // TRUE: Indica que es una reasignación.
+          true, // TRUE: Indica que es una reasignación.
         );
         const contenidoMsg = `¡Felicidades! El Lote #${lote.id} te ha sido reasignado (eras el siguiente postor) debido al impago del anterior usuario. Tienes 90 días, hasta el ${fechaLimiteStr}, para completar el pago.`;
         await mensajeService.enviarMensajeSistema(
           nuevoGanador.id,
-          contenidoMsg
+          contenidoMsg,
         );
       }
       return siguientePuja;
@@ -456,7 +464,7 @@ const loteService = {
       await PujaService.devolverTokenPorImpago(
         ultimaPujaActiva.id_usuario,
         lote.id,
-        transaction
+        transaction,
       );
     }
 
@@ -474,13 +482,13 @@ const loteService = {
         monto_ganador_lote: null,
         excedente_visualizacion: 0,
       },
-      { transaction }
+      { transaction },
     );
 
     // 4. Notificación al administrador sobre la acción realizada.
     await mensajeService.enviarMensajeSistema(
       1, // ID del administrador/sistema
-      `El lote ${lote.nombre_lote} (ID: ${lote.id}) ha agotado 3 intentos de pago o no tuvo más postores válidos y será reingresado en la próxima subasta anual.`
+      `El lote ${lote.nombre_lote} (ID: ${lote.id}) ha agotado 3 intentos de pago o no tuvo más postores válidos y será reingresado en la próxima subasta anual.`,
     );
   },
 
@@ -505,7 +513,7 @@ const loteService = {
 
     try {
       console.log(
-        `[${SERVICE_NAME}] 🔄 Procesando impago para Lote ID: ${loteId}`
+        `[${SERVICE_NAME}] 🔄 Procesando impago para Lote ID: ${loteId}`,
       );
 
       // === 1. OBTENER LOTE ===
@@ -520,7 +528,7 @@ const loteService = {
 
       if (intentoActual >= 3) {
         console.log(
-          `[${SERVICE_NAME}] ⚠️ Lote ${loteId} ya alcanzó 3 intentos. Limpiando para reingreso...`
+          `[${SERVICE_NAME}] ⚠️ Lote ${loteId} ya alcanzó 3 intentos. Limpiando para reingreso...`,
         );
         await this.prepararLoteParaReingreso(lote, t);
         if (shouldCommit) await t.commit();
@@ -534,11 +542,11 @@ const loteService = {
       // === 3. INCREMENTAR CONTADOR DE INTENTOS ===
       await lote.update(
         { intentos_fallidos_pago: intentoActual + 1 },
-        { transaction: t }
+        { transaction: t },
       );
 
       console.log(
-        `[${SERVICE_NAME}] ⚠️ Intento fallido #${intentoActual + 1} registrado.`
+        `[${SERVICE_NAME}] ⚠️ Intento fallido #${intentoActual + 1} registrado.`,
       );
 
       // === 4. BUSCAR SIGUIENTE POSTOR VÁLIDO (P2 o P3) ===
@@ -555,7 +563,7 @@ const loteService = {
       // === 5A. SI HAY SIGUIENTE POSTOR: REASIGNAR ===
       if (siguientePuja) {
         console.log(
-          `[${SERVICE_NAME}] ✅ Siguiente postor encontrado: Puja ID ${siguientePuja.id}`
+          `[${SERVICE_NAME}] ✅ Siguiente postor encontrado: Puja ID ${siguientePuja.id}`,
         );
 
         const nuevaFechaLimite = new Date();
@@ -566,7 +574,7 @@ const loteService = {
             estado_puja: "ganadora_pendiente",
             fecha_vencimiento_pago: nuevaFechaLimite,
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         await lote.update(
@@ -574,7 +582,7 @@ const loteService = {
             id_ganador: siguientePuja.id_usuario,
             id_puja_mas_alta: siguientePuja.id,
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         // Notificar al nuevo ganador
@@ -582,18 +590,18 @@ const loteService = {
           siguientePuja.usuario,
           loteId,
           nuevaFechaLimite.toLocaleDateString("es-ES"),
-          true
+          true,
         );
 
         await mensajeService.enviarMensajeSistema(
           siguientePuja.id_usuario,
           `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString(
-            "es-ES"
-          )}).`
+            "es-ES",
+          )}).`,
         );
 
         console.log(
-          `[${SERVICE_NAME}] ✅ Lote ${loteId} reasignado a usuario ${siguientePuja.id_usuario}.`
+          `[${SERVICE_NAME}] ✅ Lote ${loteId} reasignado a usuario ${siguientePuja.id_usuario}.`,
         );
 
         if (shouldCommit) await t.commit();
@@ -608,7 +616,7 @@ const loteService = {
 
       // === 5B. SI NO HAY MÁS POSTORES: LIMPIAR LOTE ===
       console.log(
-        `[${SERVICE_NAME}] ⚠️ No hay más postores válidos. Limpiando lote ${loteId}...`
+        `[${SERVICE_NAME}] ⚠️ No hay más postores válidos. Limpiando lote ${loteId}...`,
       );
 
       await this.prepararLoteParaReingreso(lote, t);
@@ -680,7 +688,7 @@ const loteService = {
       {
         where: { id: { [Op.in]: lotesIds } },
         transaction,
-      }
+      },
     );
   },
 };
