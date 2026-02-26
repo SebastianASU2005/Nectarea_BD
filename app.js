@@ -7,6 +7,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
+
 // Importa el controlador de pagos directamente para la ruta del webhook
 const paymentController = require("./controllers/pagoMercado.controller");
 
@@ -131,6 +132,8 @@ const inversionRoutes = require("./routes/inversion.routes");
 const loteRoutes = require("./routes/lote.routes");
 const proyectoRoutes = require("./routes/proyecto.routes");
 const pujaRoutes = require("./routes/puja.routes");
+console.log("pujaRoutes tipo:", typeof pujaRoutes);
+console.log("pujaRoutes valor:", pujaRoutes);
 const imagenRoutes = require("./routes/imagen.routes");
 const transaccionRoutes = require("./routes/transaccion.routes");
 const contratoRoutes = require("./routes/contrato.routes");
@@ -207,13 +210,15 @@ app.use("/api/imagenes", imagenRoutes);
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
+console.log("Montando proyectos...");
 app.use("/api/proyectos", proyectoRoutes);
+console.log("Montando pujas...");
 app.use("/api/pujas", pujaRoutes);
 app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/suscripciones", suscripcionProyectoRoutes);
 app.use("/api/developer", developerRoutes);
 app.use("/api/suscripcionesCanceladas", suscripcionRoutes);
-app.use("/api/pagos", pagoRoutes); // ✅ Aquí se monta el router de pagos
+app.use("/api/pagos", pagoRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);

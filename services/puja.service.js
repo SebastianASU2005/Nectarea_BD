@@ -4,15 +4,12 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Pago = require("../models/pago");
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
-const ProyectoService = require("./proyecto.service");
-const PagoService = require("./pago.service");
-const ResumenCuentaService = require("./resumen_cuenta.service");
-const emailService = require("./email.service");
-const MensajeService = require("./mensaje.service");
-const SuscripcionService = require("./suscripcion_proyecto.service");
-const LoteService = require("./lote.service");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
+
+// ✅ NOTA: ProyectoService, PagoService, ResumenCuentaService, emailService,
+// MensajeService, SuscripcionService y LoteService se cargan dinámicamente
+// dentro de las funciones que los necesitan para evitar dependencias circulares.
 
 // Helper para garantizar que un valor es un número flotante (decimal)
 const toFloat = (value) => parseFloat(value);
@@ -175,7 +172,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -205,7 +202,7 @@ const pujaService = {
    * @description Orquesta la solicitud de pago (checkout) para una puja ganadora pendiente.
    * @param {number} pujaId - El ID de la puja ganadora.
    * @param {number} userId - El ID del usuario que intenta pagar.
-   * @returns {Promise<{ transaccion: object, checkoutUrl: string }>} Información de la transacción y la URL de redirección.
+   * @returns {Promise<{ transaccion: object, checkoutUrl: string }>}
    */
   async requestCheckoutForPuja(pujaId, userId) {
     const pujaValidada = await this.getValidPaymentDetails(pujaId, userId);
@@ -244,7 +241,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyectoLote", // ✅ Alias correcto según associations.js
+                as: "proyectoLote",
                 attributes: [
                   "id",
                   "nombre_proyecto",
@@ -299,14 +296,15 @@ const pujaService = {
    * @async
    * @function procesarPujaGanadora
    * @description Función CLAVE: Se ejecuta tras un pago exitoso. Marca la puja como pagada, actualiza el lote
-   * y distribuye el excedente del monto de la puja ganadora (monto_puja - precio_base) para cubrir pagos pendientes,
-   * pre-pagar meses futuros o aumentar el saldo a favor. Finalmente, libera el token de los perdedores restantes.
+   * y distribuye el excedente. Finalmente, libera el token de los perdedores restantes.
    * @param {number} pujaId - ID de la puja ganadora.
    * @param {object} [externalTransaction] - Transacción de Sequelize si ya existe.
    * @returns {Promise<{message: string}>}
-   * @throws {Error} Si la puja no es válida para el procesamiento.
    */
   async procesarPujaGanadora(pujaId, externalTransaction = null) {
+    // ✅ Require dinámico para evitar ciclo circular
+    const ResumenCuentaService = require("./resumen_cuenta.service");
+
     const t = externalTransaction || (await sequelize.transaction());
     const shouldCommit = !externalTransaction;
 
@@ -340,7 +338,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyectoLote", // ✅ Alias correcto según associations.js
+                as: "proyectoLote",
                 attributes: [
                   "id",
                   "nombre_proyecto",
@@ -503,12 +501,10 @@ const pujaService = {
   /**
    * @async
    * @function revertirPagoPujaGanadora
-   * @description Revierte el estado de una puja de 'ganadora_pagada' a 'ganadora_pendiente' (parte de la lógica de reversión de transacciones).
-   * NOTA: La lógica de reversión de los efectos de pago (puntos 3, 4, 5 y 6 de `procesarPujaGanadora`) está pendiente/omitida en este bloque de código.
+   * @description Revierte el estado de una puja de 'ganadora_pagada' a 'ganadora_pendiente'.
    * @param {number} pujaId - ID de la puja a revertir.
    * @param {object} externalTransaction - Transacción de Sequelize activa.
    * @returns {Promise<object>} El objeto Puja actualizado o un mensaje.
-   * @throws {Error} Si no se encuentra la transacción.
    */
   async revertirPagoPujaGanadora(pujaId, externalTransaction) {
     const t = externalTransaction;
@@ -543,10 +539,9 @@ const pujaService = {
   /**
    * @async
    * @function gestionarTokensAlFinalizar
-   * @description Función que se llama al finalizar la subasta: Libera el token de los perdedores masivos (P4 en adelante),
-   * dejando el Top 3 (P1, P2, P3) bloqueado para la secuencia de pago/impago.
+   * @description Libera el token de los perdedores masivos (P4 en adelante),
+   * dejando el Top 3 bloqueado para la secuencia de pago/impago.
    * @param {number} id_lote - ID del lote que finaliza.
-   * @throws {Error} Si ocurre un fallo en la transacción.
    */
   async gestionarTokensAlFinalizar(id_lote) {
     const t = await sequelize.transaction();
@@ -587,13 +582,11 @@ const pujaService = {
   /**
    * @async
    * @function devolverTokenPorImpago
-   * @description Devuelve el token comprometido a un usuario después de que su puja ganadora
-   * haya sido marcada como 'ganadora_incumplimiento' (impago) o haya expirado.
+   * @description Devuelve el token comprometido a un usuario después de un impago.
    * @param {number} userId - ID del usuario que incumplió el pago.
    * @param {number} loteId - ID del lote (para determinar el proyecto).
    * @param {object} [externalTransaction] - Transacción de Sequelize opcional.
    * @returns {Promise<object>} Mensaje de resultado.
-   * @throws {Error} Si ocurre un error de base de datos.
    */
   async devolverTokenPorImpago(userId, loteId, externalTransaction = null) {
     const t = externalTransaction || (await sequelize.transaction());
@@ -654,10 +647,7 @@ const pujaService = {
   /**
    * @async
    * @function findGanadoraPendienteByLote
-   * @description Encuentra la puja que está en estado 'ganadora_pendiente' y no ha expirado para un lote.
-   * @param {number} loteId - ID del lote.
-   * @param {object} transaction - Transacción de Sequelize.
-   * @returns {Promise<Puja|null>} La puja activa ganadora pendiente.
+   * @description Encuentra la puja en estado 'ganadora_pendiente' para un lote.
    */
   async findGanadoraPendienteByLote(loteId, transaction) {
     return Puja.findOne({
@@ -686,7 +676,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -707,7 +697,6 @@ const pujaService = {
    * @async
    * @function findExpiredGanadoraPendiente
    * @description Busca todas las pujas ganadoras pendientes cuyo plazo de pago ha expirado. (Para CRON JOB).
-   * @returns {Promise<Puja[]>} Lista de pujas vencidas.
    */
   async findExpiredGanadoraPendiente() {
     return Puja.findAll({
@@ -738,7 +727,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -765,10 +754,7 @@ const pujaService = {
   /**
    * @async
    * @function findExpiredGanadoraPendienteByLote
-   * @description Encuentra la puja específica vencida para un lote dado. (Para CRON JOB).
-   * @param {number} loteId - ID del lote.
-   * @param {object} transaction - Transacción de Sequelize.
-   * @returns {Promise<Puja|null>} La puja vencida.
+   * @description Encuentra la puja vencida para un lote dado. (Para CRON JOB).
    */
   async findExpiredGanadoraPendienteByLote(loteId, transaction) {
     return Puja.findOne({
@@ -800,7 +786,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -820,10 +806,7 @@ const pujaService = {
   /**
    * @async
    * @function findNextHighestBid
-   * @description Encuentra la siguiente puja más alta que aún está en estado 'activa' y no ha sido procesada como ganadora o fallida.
-   * @param {number} loteId - ID del lote.
-   * @param {object} transaction - Transacción de Sequelize.
-   * @returns {Promise<Puja|null>} La siguiente mejor puja.
+   * @description Encuentra la siguiente puja más alta en estado 'activa'.
    */
   async findNextHighestBid(loteId, transaction) {
     const estadosExcluidos = [
@@ -860,7 +843,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -881,10 +864,7 @@ const pujaService = {
   /**
    * @async
    * @function clearBidsByLoteId
-   * @description Elimina todas las pujas de un lote. Se utiliza para preparar el lote para reingreso anual. (Hard delete).
-   * @param {number} loteId - ID del lote.
-   * @param {object} transaction - Transacción de Sequelize.
-   * @returns {Promise<number>} Número de filas eliminadas.
+   * @description Elimina todas las pujas de un lote (Hard delete).
    */
   async clearBidsByLoteId(loteId, transaction) {
     return Puja.destroy({
@@ -897,11 +877,6 @@ const pujaService = {
    * @async
    * @function hasWonAndPaidBid
    * @description Verifica si un usuario tiene una puja ganadora y pagada en un proyecto específico.
-   * Esta función es clave para evitar que el usuario cancele su suscripción.
-   * @param {number} userId - ID del usuario.
-   * @param {number} projectId - ID del proyecto.
-   * @param {object} [options={}] - Opciones de Sequelize (ej. { transaction: t }).
-   * @returns {Promise<boolean>} Retorna true si existe al menos una puja pagada, false en caso contrario.
    */
   async hasWonAndPaidBid(userId, projectId, options = {}) {
     const pujaPagada = await Puja.findOne({
@@ -946,7 +921,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -995,7 +970,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1070,7 +1045,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1130,7 +1105,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1189,7 +1164,7 @@ const pujaService = {
           include: [
             {
               model: Proyecto,
-              as: "proyectoLote", // ✅ Alias correcto según associations.js
+              as: "proyectoLote",
               attributes: [
                 "id",
                 "nombre_proyecto",
@@ -1243,25 +1218,19 @@ const pujaService = {
    * @async
    * @function cancelarPujaGanadoraAnticipada
    * @description CANCELACIÓN MANUAL por administrador de una puja ganadora_pendiente.
-   * Ejecuta la misma lógica que el impago automático pero sin esperar los 90 días.
-   *
-   * FLUJO:
-   * 1. Valida que la puja exista y esté en estado 'ganadora_pendiente'
-   * 2. Marca la puja como 'ganadora_incumplimiento' (cancelación administrativa)
-   * 3. Devuelve el token al usuario incumplidor
-   * 4. Notifica al usuario por email y mensaje interno
-   * 5. Intenta reasignar al siguiente postor (P2 → P3)
-   * 6. Si no hay más postores O se alcanzaron 3 intentos: limpia el lote para reingreso
-   *
    * @param {number} pujaId - ID de la puja ganadora a cancelar
    * @param {string} motivoCancelacion - Razón administrativa (opcional)
    * @returns {Promise<object>} Resultado de la operación
-   * @throws {Error} Si la puja no existe o no está en estado válido
    */
   async cancelarPujaGanadoraAnticipada(
     pujaId,
     motivoCancelacion = "Cancelación administrativa",
   ) {
+    // ✅ Requires dinámicos para evitar ciclos circulares
+    const emailService = require("./email.service");
+    const MensajeService = require("./mensaje.service");
+    const LoteService = require("./lote.service");
+
     const SERVICE_NAME = "PujaService.cancelarPujaGanadoraAnticipada";
     const t = await sequelize.transaction();
 
@@ -1282,7 +1251,7 @@ const pujaService = {
             include: [
               {
                 model: Proyecto,
-                as: "proyectoLote", // ✅ Alias correcto según associations.js
+                as: "proyectoLote",
                 attributes: [
                   "id",
                   "nombre_proyecto",
@@ -1376,6 +1345,137 @@ const pujaService = {
     } catch (error) {
       await t.rollback();
       console.error(`[${SERVICE_NAME}] ❌ ERROR:`, error.message);
+      throw error;
+    }
+  },
+
+  /**
+   * @async
+   * @function retirarPuja
+   * @description Permite cancelar una puja en estado 'activa' y devolver el token al usuario.
+   *
+   * REGLAS DE NEGOCIO:
+   * - La puja DEBE estar en estado 'activa'
+   * - La subasta del lote DEBE estar en estado 'activa'
+   * - Puede ser llamada por el propio usuario O por un administrador
+   * - Si era la puja más alta, se recalcula cuál es la nueva más alta
+   *
+   * @param {number} pujaId       - ID de la puja a retirar
+   * @param {number} requesterId  - ID del usuario que hace la solicitud
+   * @param {boolean} esAdmin     - true si quien ejecuta la acción es administrador
+   * @returns {Promise<{ message: string, tokenDevuelto: boolean }>}
+   */
+  async retirarPuja(pujaId, requesterId, esAdmin = false) {
+    const t = await sequelize.transaction();
+
+    try {
+      // ── 1. Obtener la puja con su lote y suscripción ──────────────────────
+      const puja = await Puja.findByPk(pujaId, {
+        include: [
+          {
+            model: Lote,
+            as: "lote",
+            attributes: [
+              "id",
+              "nombre_lote",
+              "estado_subasta",
+              "id_proyecto",
+              "id_puja_mas_alta",
+            ],
+          },
+          {
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+          },
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "nombre", "apellido", "email"],
+          },
+        ],
+        transaction: t,
+      });
+
+      if (!puja) {
+        throw new Error(`Puja ID ${pujaId} no encontrada.`);
+      }
+
+      // ── 2. Verificar permisos ─────────────────────────────────────────────
+      if (!esAdmin && puja.id_usuario !== requesterId) {
+        throw {
+          statusCode: 403,
+          message: "Acceso denegado. Esta puja no te pertenece.",
+        };
+      }
+
+      // ── 3. Validar estado de la puja ──────────────────────────────────────
+      if (puja.estado_puja !== "activa") {
+        throw {
+          statusCode: 409,
+          message: `No se puede retirar la puja. Estado actual: '${puja.estado_puja}'. Solo se permiten retiros en estado 'activa'.`,
+        };
+      }
+
+      // ── 4. Validar estado de la subasta del lote ──────────────────────────
+      if (!puja.lote) {
+        throw new Error("Lote asociado a la puja no encontrado.");
+      }
+
+      if (puja.lote.estado_subasta !== "activa") {
+        throw {
+          statusCode: 409,
+          message: `No se puede retirar la puja. La subasta del lote '${puja.lote.nombre_lote}' ya ha ${puja.lote.estado_subasta === "finalizada" ? "finalizado" : "no está activa"}. Tu token permanece retenido según las reglas de la subasta.`,
+        };
+      }
+
+      // ── 5. Marcar la puja como cancelada ──────────────────────────────────
+      await puja.update({ estado_puja: "cancelada" }, { transaction: t });
+
+      // ── 6. Devolver el token a la suscripción ─────────────────────────────
+      let tokenDevuelto = false;
+
+      if (puja.suscripcion) {
+        if (puja.suscripcion.tokens_disponibles < 1) {
+          await puja.suscripcion.increment("tokens_disponibles", {
+            by: 1,
+            transaction: t,
+          });
+          tokenDevuelto = true;
+        } else {
+          tokenDevuelto = true;
+        }
+      }
+
+      // ── 7. Si era la puja más alta del lote, recalcular la nueva más alta ─
+      const lote = puja.lote;
+      if (lote.id_puja_mas_alta === puja.id) {
+        const nuevaPujaMasAlta = await Puja.findOne({
+          where: {
+            id_lote: lote.id,
+            estado_puja: "activa",
+            id: { [Op.ne]: puja.id },
+          },
+          order: [["monto_puja", "DESC"]],
+          transaction: t,
+        });
+
+        await Lote.update(
+          { id_puja_mas_alta: nuevaPujaMasAlta ? nuevaPujaMasAlta.id : null },
+          { where: { id: lote.id }, transaction: t },
+        );
+      }
+
+      await t.commit();
+
+      return {
+        message: `Puja ID ${pujaId} retirada exitosamente. Token devuelto al usuario.`,
+        tokenDevuelto,
+        pujaId,
+        usuarioAfectado: puja.id_usuario,
+        loteId: lote.id,
+      };
+    } catch (error) {
+      await t.rollback();
       throw error;
     }
   },

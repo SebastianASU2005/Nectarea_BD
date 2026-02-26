@@ -14,7 +14,7 @@ require("dotenv").config();
 // Dependencias de modelos/servicios
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
-const transaccionService = require("../services/transaccion.service");
+
 
 // MODIFICACIÓN 1: Usar MP_LIVE_ACCESS_TOKEN y añadir MP_TEST_ACCESS_TOKEN
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN; // Usamos la variable existente para el token LIVE
@@ -469,6 +469,7 @@ const paymentService = {
    * @returns {Promise<void>}
    * @throws {Error} Si falla la obtención de la MO, la referencia externa es inválida, o falla la transacción local.
    */ async procesarPagosDeMerchantOrder(merchantOrderId) {
+     const transaccionService = require("../services/transaccion.service");
     if (!merchantOrderService) {
       throw new Error(
         "El servicio de MerchantOrder no está inicializado. Revise MP_ACCESS_TOKEN."
@@ -613,6 +614,7 @@ const paymentService = {
    * @param {string} mpTransactionId - ID del pago de Mercado Pago.
    * @returns {Promise<{transaccion: Transaccion|null, pagoMercado: PagoMercado|null}|null>} Los registros actualizados.
    */ async refreshPaymentStatus(transaccionId, mpTransactionId) {
+    const transaccionService = require("../services/transaccion.service");
     if (!paymentAPI) return null;
 
     console.log(

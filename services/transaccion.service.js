@@ -13,7 +13,6 @@ const inversionService = require("./inversion.service");
 const pagoService = require("../services/pago.service");
 const suscripcionService = require("./suscripcion_proyecto.service");
 const resumenCuentaService = require("./resumen_cuenta.service");
-const pujaService = require("./puja.service");
 
 // Helper para asegurar el tipo de dato numérico
 const toFloat = (value) => parseFloat(value);
@@ -31,12 +30,12 @@ const transaccionService = {
   async generarCheckoutParaTransaccionExistente(
     transaccion,
     metodo = "mercadopago",
-    options = {}
+    options = {},
   ) {
     const t = options.transaction;
     if (!t) {
       throw new Error(
-        "Se requiere una transacción de BD activa (options.transaction)"
+        "Se requiere una transacción de BD activa (options.transaction)",
       );
     }
 
@@ -46,14 +45,14 @@ const transaccionService = {
       transaccion.estado_transaccion !== "fallido"
     ) {
       throw new Error(
-        `La Transacción #${transaccion.id} ya fue procesada o está en estado: ${transaccion.estado_transaccion}.`
+        `La Transacción #${transaccion.id} ya fue procesada o está en estado: ${transaccion.estado_transaccion}.`,
       );
     }
 
     // 1. Generar preferencia de pago en la pasarela.
     const { preferenceId, redirectUrl } = await this._generarPreferenciaPago(
       transaccion,
-      metodo
+      metodo,
     );
 
     // 2. Crear o actualizar el registro de PagoMercado.
@@ -76,14 +75,14 @@ const transaccionService = {
           id_transaccion_pasarela: preferenceId,
           estado: "pendiente",
         },
-        { transaction: t }
+        { transaction: t },
       );
     }
 
     // 3. Vincular el PagoMercado a la Transacción y asegurar el estado 'pendiente'.
     await transaccion.update(
       { id_pago_pasarela: pagoMercado.id, estado_transaccion: "pendiente" },
-      { transaction: t }
+      { transaction: t },
     );
 
     return {
@@ -99,12 +98,12 @@ const transaccionService = {
   async crearTransaccionConCheckout(
     data,
     metodo = "mercadopago",
-    options = {}
+    options = {},
   ) {
     const t = options.transaction;
     if (!t) {
       throw new Error(
-        "Se requiere una transacción de BD activa (options.transaction)"
+        "Se requiere una transacción de BD activa (options.transaction)",
       );
     }
 
@@ -123,7 +122,7 @@ const transaccionService = {
         id_pago_mensual: data.id_pago_mensual || null,
         estado_transaccion: "pendiente",
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     // 2. Llama al flujo para generar la preferencia y PagoMercado,
@@ -131,7 +130,7 @@ const transaccionService = {
     return this.generarCheckoutParaTransaccionExistente(
       transaccion,
       "mercadopago",
-      options
+      options,
     );
   },
 
@@ -143,7 +142,7 @@ const transaccionService = {
     transaccionId,
     targetStatus = "fallido",
     errorDetail = "Transacción fallida por pasarela de pago.",
-    options = {}
+    options = {},
   ) {
     const t = options.transaction || (await sequelize.transaction());
     const isNewTransaction = !options.transaction;
@@ -189,18 +188,18 @@ const transaccionService = {
           fecha_transaccion: new Date(),
           error_detalle: errorDetail,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       console.log(
-        `✅ Transacción ${transaccionId} marcada como '${targetStatus}'.`
+        `✅ Transacción ${transaccionId} marcada como '${targetStatus}'.`,
       );
 
       if (isNewTransaction) await t.commit();
       return transaccion;
     } catch (error) {
       console.error(
-        `Error al procesar la falla de la transacción ${transaccionId}: ${error.message}`
+        `Error al procesar la falla de la transacción ${transaccionId}: ${error.message}`,
       );
       if (isNewTransaction) await t.rollback();
       throw new Error(`Error en el procesamiento de fallo: ${error.message}`);
@@ -227,10 +226,10 @@ const transaccionService = {
             error_detalle:
               "Operación cancelada por el usuario en la pasarela de pago.",
           },
-          { transaction: t }
+          { transaction: t },
         );
         console.log(
-          `❌ Transacción ${transaccionId} marcada como 'fallido' por cancelación de usuario.`
+          `❌ Transacción ${transaccionId} marcada como 'fallido' por cancelación de usuario.`,
         );
         await t.commit();
         return true;
@@ -242,7 +241,7 @@ const transaccionService = {
       await t.rollback();
       console.error(
         `Error al cancelar transacción ${transaccionId}:`,
-        error.message
+        error.message,
       );
       throw error;
     }
@@ -267,7 +266,7 @@ const transaccionService = {
           });
           if (!entidadBase) {
             throw new Error(
-              `Inversión ${modeloId} no encontrada, no te pertenece o ya está pagada.`
+              `Inversión ${modeloId} no encontrada, no te pertenece o ya está pagada.`,
             );
           }
           datosTransaccion = {
@@ -280,10 +279,11 @@ const transaccionService = {
           break;
 
         case "puja":
-          entidadBase = await pujaService.getValidPaymentDetails(
+          const pujaServiceLocal = require("./puja.service");
+          entidadBase = await pujaServiceLocal.getValidPaymentDetails(
             modeloId,
             userId,
-            { transaction: t }
+            { transaction: t },
           );
           const montoPujaPagar = toFloat(entidadBase.monto_puja);
 
@@ -315,7 +315,7 @@ const transaccionService = {
 
           if (!entidadBase) {
             throw new Error(
-              `Pago ${modeloId} no encontrado, no te pertenece o ya está pagado.`
+              `Pago ${modeloId} no encontrado, no te pertenece o ya está pagado.`,
             );
           }
 
@@ -326,16 +326,16 @@ const transaccionService = {
 
             await entidadBase.update(
               { id_proyecto: idProyecto },
-              { transaction: t }
+              { transaction: t },
             );
             console.log(
-              `✅ Pago ${modeloId} actualizado con id_proyecto: ${idProyecto}`
+              `✅ Pago ${modeloId} actualizado con id_proyecto: ${idProyecto}`,
             );
           }
 
           if (!idProyecto) {
             throw new Error(
-              `Pago ${modeloId} no tiene id_proyecto asociado. Datos inconsistentes.`
+              `Pago ${modeloId} no tiene id_proyecto asociado. Datos inconsistentes.`,
             );
           }
 
@@ -373,13 +373,13 @@ const transaccionService = {
               estado_transaccion: { [Op.in]: ["pendiente", "fallido"] },
             },
             transaction: t,
-          }
+          },
         );
 
         resultadoCheckout = await this.crearTransaccionConCheckout(
           datosTransaccion,
           "mercadopago",
-          { transaction: t }
+          { transaction: t },
         );
       } else {
         const whereClause = {
@@ -402,7 +402,7 @@ const transaccionService = {
 
         if (existingTransaccion) {
           console.log(
-            `Transacción pendiente/fallida #${existingTransaccion.id} encontrada. Regenerando checkout...`
+            `Transacción pendiente/fallida #${existingTransaccion.id} encontrada. Regenerando checkout...`,
           );
 
           if (
@@ -414,7 +414,7 @@ const transaccionService = {
                 monto: datosTransaccion.monto,
                 estado_transaccion: "pendiente",
               },
-              { transaction: t }
+              { transaction: t },
             );
           }
 
@@ -422,13 +422,13 @@ const transaccionService = {
             await this.generarCheckoutParaTransaccionExistente(
               existingTransaccion,
               "mercadopago",
-              { transaction: t }
+              { transaction: t },
             );
         } else {
           resultadoCheckout = await this.crearTransaccionConCheckout(
             datosTransaccion,
             "mercadopago",
-            { transaction: t }
+            { transaction: t },
           );
         }
       }
@@ -465,7 +465,7 @@ const transaccionService = {
           id_proyecto: transaccion.id_proyecto,
           monto_suscripcion: montoTransaccion,
         },
-        t
+        t,
       );
 
     if (!nuevaSuscripcion || !proyecto) {
@@ -474,12 +474,12 @@ const transaccionService = {
 
     await pagoToUpdate.update(
       { id_suscripcion: nuevaSuscripcion.id },
-      { transaction: t }
+      { transaction: t },
     );
 
     await transaccion.update(
       { id_suscripcion: nuevaSuscripcion.id },
-      { transaction: t }
+      { transaction: t },
     );
 
     if (nuevaSuscripcion.meses_a_pagar > 0) {
@@ -494,16 +494,16 @@ const transaccionService = {
     await resumenCuentaService.createAccountSummary(
       nuevaSuscripcion,
       proyecto,
-      { transaction: t }
+      { transaction: t },
     );
     await resumenCuentaService.updateAccountSummaryOnPayment(
       nuevaSuscripcion.id,
-      { transaction: t }
+      { transaction: t },
     );
     await resumenCuentaService.actualizarSaldoGeneral(
       transaccion.id_usuario,
       -montoTransaccion,
-      t
+      t,
     );
   },
 
@@ -518,7 +518,7 @@ const transaccionService = {
     const pago = await Pago.findByPk(idPMensual, { transaction: t });
     if (!pago || !pago.id_suscripcion) {
       throw new Error(
-        "Pago o ID de suscripción no encontrada en el modelo Pago."
+        "Pago o ID de suscripción no encontrada en el modelo Pago.",
       );
     }
 
@@ -532,7 +532,7 @@ const transaccionService = {
     await resumenCuentaService.actualizarSaldoGeneral(
       transaccion.id_usuario,
       -montoTransaccion,
-      t
+      t,
     );
   },
 
@@ -557,7 +557,7 @@ const transaccionService = {
 
     return await paymentService.createPaymentSession(
       datosPreferencia,
-      transaccion.id
+      transaccion.id,
     );
   },
 
@@ -592,7 +592,7 @@ const transaccionService = {
 
     if (isNaN(montoNumerico) || montoNumerico <= 0) {
       throw new Error(
-        `Monto inválido en transacción ${id}: ${transaccion.monto}`
+        `Monto inválido en transacción ${id}: ${transaccion.monto}`,
       );
     }
 
@@ -604,7 +604,7 @@ const transaccionService = {
 
     if (!usuario) {
       console.warn(
-        `⚠️ Usuario ${transaccion.id_usuario} no encontrado, continuando sin datos personales`
+        `⚠️ Usuario ${transaccion.id_usuario} no encontrado, continuando sin datos personales`,
       );
     }
 
@@ -649,20 +649,20 @@ const transaccionService = {
       case "mensual":
         if (!id_suscripcion && !data.id_pago_mensual) {
           throw new Error(
-            "Transacción 'mensual' requiere id_suscripcion o id_pago_mensual"
+            "Transacción 'mensual' requiere id_suscripcion o id_pago_mensual",
           );
         }
         break;
       case "pago_suscripcion_inicial":
         if (!data.id_proyecto || !data.id_pago_mensual) {
           throw new Error(
-            "Transacción 'pago_suscripcion_inicial' requiere id_proyecto y id_pago_mensual"
+            "Transacción 'pago_suscripcion_inicial' requiere id_proyecto y id_pago_mensual",
           );
         }
         break;
       default:
         throw new Error(
-          `Tipo de transacción no reconocido: ${tipo_transaccion}`
+          `Tipo de transacción no reconocido: ${tipo_transaccion}`,
         );
     }
   },
@@ -682,7 +682,7 @@ const transaccionService = {
     });
   },
 
-   async findAll() {
+  async findAll() {
     try {
       const Usuario = require("../models/usuario");
       const Proyecto = require("../models/proyecto");
@@ -693,7 +693,7 @@ const transaccionService = {
       const PagoMercado = require("../models/pagoMercado");
 
       return await Transaccion.findAll({
-       attributes: [
+        attributes: [
           "id",
           "tipo_transaccion",
           "monto",
@@ -806,7 +806,7 @@ const transaccionService = {
         where: {
           id_usuario: userId,
         },
-       attributes: [
+        attributes: [
           "id",
           "tipo_transaccion",
           "monto",
@@ -1028,7 +1028,6 @@ const transaccionService = {
     }
   },
 
-
   async softDelete(id) {
     try {
       const transaccion = await Transaccion.findByPk(id);
@@ -1058,7 +1057,7 @@ const transaccionService = {
       console.warn(
         `⏰ Transacción ${
           transaccion.id
-        } ha expirado (${minutosTranscurridos.toFixed(1)} min)`
+        } ha expirado (${minutosTranscurridos.toFixed(1)} min)`,
       );
 
       await transaccion.update(
@@ -1066,7 +1065,7 @@ const transaccionService = {
           estado_transaccion: "expirado",
           error_detalle: `Transacción expirada tras ${TRANSACTION_TIMEOUT_MINUTES} minutos sin confirmación`,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       return true; // Transacción expirada
@@ -1085,7 +1084,7 @@ const transaccionService = {
 
     if (!t) {
       throw new Error(
-        "Se requiere una transacción (t) activa para confirmarTransaccion."
+        "Se requiere una transacción (t) activa para confirmarTransaccion.",
       );
     }
 
@@ -1118,11 +1117,11 @@ const transaccionService = {
               estado_transaccion: "rechazado_proyecto_cerrado",
               error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
             },
-            { transaction: t }
+            { transaction: t },
           );
 
           throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión (${proyecto.estado_proyecto}). Pago rechazado.`
+            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión (${proyecto.estado_proyecto}). Pago rechazado.`,
           );
         }
       }
@@ -1133,7 +1132,7 @@ const transaccionService = {
       // ✅ IDEMPOTENCIA: Si ya está pagada, retornar
       if (transaccion.estado_transaccion === "pagado") {
         console.log(
-          `✅ Transacción ${transaccionId} ya está pagada. Retornando.`
+          `✅ Transacción ${transaccionId} ya está pagada. Retornando.`,
         );
         return transaccion;
       }
@@ -1141,19 +1140,19 @@ const transaccionService = {
       // 🚫 BLOQUEAR transacciones revertidas
       if (transaccion.estado_transaccion === "revertido") {
         throw new Error(
-          `Transacción ${transaccionId} ya fue revertida. No se puede confirmar.`
+          `Transacción ${transaccionId} ya fue revertida. No se puede confirmar.`,
         );
       }
 
       // ⏰ VALIDACIÓN CRÍTICA: Verificar si la transacción expiró
       const haExpirado = await this.verificarYExpirarTransaccionAntigua(
         transaccion,
-        t
+        t,
       );
 
       if (haExpirado) {
         throw new Error(
-          `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`
+          `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
         );
       }
 
@@ -1178,11 +1177,11 @@ const transaccionService = {
               estado_transaccion: "rechazado_por_capacidad",
               error_detalle: `El proyecto "${proyecto.nombre_proyecto}" ya alcanzó su capacidad máxima (${proyecto.obj_suscripciones}/${proyecto.obj_suscripciones})`,
             },
-            { transaction: t }
+            { transaction: t },
           );
 
           throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no tiene cupos disponibles. Pago rechazado.`
+            `El proyecto "${proyecto.nombre_proyecto}" ya no tiene cupos disponibles. Pago rechazado.`,
           );
         }
 
@@ -1196,11 +1195,11 @@ const transaccionService = {
               estado_transaccion: "rechazado_proyecto_cerrado",
               error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
             },
-            { transaction: t }
+            { transaction: t },
           );
 
           throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible (${proyecto.estado_proyecto}). Pago rechazado.`
+            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible (${proyecto.estado_proyecto}). Pago rechazado.`,
           );
         }
       }
@@ -1208,7 +1207,7 @@ const transaccionService = {
       // Log si estamos recuperando una transacción fallida
       if (transaccion.estado_transaccion === "fallido") {
         console.log(
-          `⚠️ Recuperando transacción ${transaccionId} desde estado 'fallido' debido a aprobación de MP.`
+          `⚠️ Recuperando transacción ${transaccionId} desde estado 'fallido' debido a aprobación de MP.`,
         );
       }
 
@@ -1220,7 +1219,7 @@ const transaccionService = {
           await this.manejarPagoSuscripcionInicial(
             transaccion,
             montoTransaccion,
-            t
+            t,
           );
           break;
 
@@ -1234,12 +1233,12 @@ const transaccionService = {
           }
           await inversionService.confirmarInversion(
             transaccion.id_inversion,
-            t
+            t,
           );
           await resumenCuentaService.actualizarSaldoGeneral(
             transaccion.id_usuario,
             -montoTransaccion,
-            t
+            t,
           );
           break;
 
@@ -1247,17 +1246,18 @@ const transaccionService = {
           if (!transaccion.id_puja) {
             throw new Error("Transacción 'Puja' sin ID de puja.");
           }
+          const pujaService = require("./puja.service");
           await pujaService.procesarPujaGanadora(transaccion.id_puja, t);
           await resumenCuentaService.actualizarSaldoGeneral(
             transaccion.id_usuario,
             -montoTransaccion,
-            t
+            t,
           );
           break;
 
         default:
           throw new Error(
-            `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`
+            `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`,
           );
       }
 
@@ -1267,18 +1267,18 @@ const transaccionService = {
           estado_transaccion: "pagado",
           fecha_transaccion: new Date(),
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       console.log(`✅ Transacción ${transaccionId} confirmada exitosamente.`);
       return transaccion;
     } catch (error) {
       console.error(
-        `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`
+        `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`,
       );
 
       throw new Error(
-        `Error en el procesamiento de confirmación: ${error.message}`
+        `Error en el procesamiento de confirmación: ${error.message}`,
       );
     }
   },

@@ -11,7 +11,6 @@ const MensajeService = require("./mensaje.service");
 const UsuarioService = require("./usuario.service");
 const Transaccion = require("../models/transaccion");
 const { sequelize, Op } = require("../config/database");
-const pujaService = require("./puja.service");
 const resumenCuentaService = require("./resumen_cuenta.service");
 const emailService = require("./email.service");
 
@@ -549,6 +548,7 @@ const suscripcionProyectoService = {
   async softDelete(suscripcionId, usuarioAutenticado) {
     const t = await sequelize.transaction();
     try {
+      const pujaService = require("./puja.service");
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
       });

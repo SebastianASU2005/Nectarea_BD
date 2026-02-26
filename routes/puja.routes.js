@@ -1,114 +1,99 @@
-// Archivo: routes/puja.routes.js
-
 const express = require("express");
 const router = express.Router();
 const pujaController = require("../controllers/puja.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO: Importación
+const { blockAdminTransactions } = require("../middleware/roleValidation");
 
-// =======================================================
-// RUTAS PARA USUARIOS (Estáticas primero, dinámicas después)
-// =======================================================
-
-// POST /
-// 🔒 OPERACIÓN CRÍTICA: Crear puja (Añadir blockAdminTransactions)
+// RUTAS PARA USUARIOS
 router.post(
   "/",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ Bloquea admins
-  pujaController.create
+  blockAdminTransactions,
+  pujaController.create,
 );
-
 router.get(
   "/activas",
   authMiddleware.authenticate,
-  pujaController.findAllActivo
+  pujaController.findAllActivo,
 );
-// ✅ RUTA CORREGIDA: Va antes que /:id para evitar el conflicto
 router.get(
   "/mis_pujas",
   authMiddleware.authenticate,
-  pujaController.findMyPujas
+  pujaController.findMyPujas,
+);
+router.delete(
+  "/mis_pujas/:id/retirar",
+  authMiddleware.authenticate,
+  blockAdminTransactions,
+  pujaController.retirarMiPuja,
 );
 router.get(
   "/mis_pujas/:id",
   authMiddleware.authenticate,
-  pujaController.findMyPujaById
+  pujaController.findMyPujaById,
 );
-
-// DELETE /mis_pujas/:id
-// Nota: Aunque el soft-delete es una "transacción" del cliente sobre su data,
-// usualmente solo las operaciones de **dinero/riesgo** llevan el bloqueo.
-// Lo dejaré sin bloquear, similar a la lógica de contratos/inversiones GET/DELETE.
 router.delete(
   "/mis_pujas/:id",
   authMiddleware.authenticate,
-  pujaController.softDeleteMyPuja
+  pujaController.softDeleteMyPuja,
 );
-
-// RUTA DE PAGO INICIAL: Inicia el proceso de checkout (bifurcación 2FA).
-// 🔒 OPERACIÓN CRÍTICA: Iniciar pago (Añadir blockAdminTransactions)
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ Bloquea admins
-  pujaController.requestCheckout
+  blockAdminTransactions,
+  pujaController.requestCheckout,
 );
-
-// NUEVA RUTA: Verifica el 2FA y genera el checkout para la puja ganadora.
-// 🔒 OPERACIÓN CRÍTICA: Confirmar 2FA (Añadir blockAdminTransactions)
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ Bloquea admins
-  pujaController.confirmarPujaCon2FA
+  blockAdminTransactions,
+  pujaController.confirmarPujaCon2FA,
 );
 
-// =======================================================
-// RUTAS PARA ADMINISTRADORES (Estáticas/Generales primero)
-// =======================================================
-
-// Obtener todas las pujas
+// RUTAS PARA ADMINISTRADORES
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.findAll
+  pujaController.findAll,
 );
-
-// NUEVA RUTA para la gestión de tokens al finalizar la subasta (Estática)
-// Esta es una acción de admin, NO debe llevar blockAdminTransactions.
 router.post(
   "/gestionar_finalizacion",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.manageAuctionEnd
+  pujaController.manageAuctionEnd,
+);
+router.delete(
+  "/admin/:id/retirar",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.retirarPujaAdmin,
 );
 
-// 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final para no colisionar con rutas estáticas superiores)
+// Dinámicas al final
 router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.findById
+  pujaController.findById,
 );
 router.post(
   "/cancelar_puja_ganadora/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.cancelarPujaGanadoraAnticipada
+  pujaController.cancelarPujaGanadoraAnticipada,
 );
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.update
+  pujaController.update,
 );
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pujaController.softDelete
+  pujaController.softDelete,
 );
 
 module.exports = router;

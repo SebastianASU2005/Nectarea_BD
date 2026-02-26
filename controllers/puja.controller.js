@@ -45,7 +45,7 @@ const pujaController = {
       // 1. Validar el estado de la puja (debe ser 'ganadora_pendiente' y pertenecer al usuario)
       const pujaValidada = await pujaService.getValidPaymentDetails(
         pujaId,
-        userId
+        userId,
       );
 
       // 2. Obtener información del usuario para el 2FA
@@ -66,7 +66,7 @@ const pujaController = {
       // Llama al servicio para crear la Transacción y obtener la URL de pago.
       const checkoutResult = await pujaService.requestCheckoutForPuja(
         pujaId,
-        userId
+        userId,
       );
 
       // 5. Retornar el URL de la pasarela de pago al cliente
@@ -123,7 +123,7 @@ const pujaController = {
 
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
-        codigo_2fa
+        codigo_2fa,
       );
 
       if (!isVerified) {
@@ -135,7 +135,7 @@ const pujaController = {
       // 3. 🚀 EJECUTAR LA LÓGICA DE PASARELA (Solo si el 2FA es correcto)
       const checkoutResult = await pujaService.requestCheckoutForPuja(
         pujaId,
-        userId
+        userId,
       );
 
       // 4. Respuesta de Éxito: Devolver la URL de redirección
@@ -298,7 +298,7 @@ const pujaController = {
       const pujaActualizada = await pujaService.updateByIdAndUserId(
         id,
         userId,
-        req.body
+        req.body,
       );
       if (!pujaActualizada) {
         return res
@@ -339,7 +339,7 @@ const pujaController = {
       const userId = req.user.id;
       const pujaEliminada = await pujaService.softDeleteByIdAndUserId(
         id,
-        userId
+        userId,
       );
       if (!pujaEliminada) {
         return res
@@ -368,7 +368,7 @@ const pujaController = {
       const { motivo_cancelacion } = req.body; // Opcional: razón administrativa
 
       console.log(
-        `[${CONTROLLER_NAME}] Solicitando cancelación anticipada de puja ID: ${id}`
+        `[${CONTROLLER_NAME}] Solicitando cancelación anticipada de puja ID: ${id}`,
       );
 
       // Validar que el ID sea válido
@@ -383,7 +383,7 @@ const pujaController = {
       const resultado = await pujaService.cancelarPujaGanadoraAnticipada(
         parseInt(id),
         motivo_cancelacion ||
-          "Cancelación administrativa - Usuario notificó incapacidad de pago"
+          "Cancelación administrativa - Usuario notificó incapacidad de pago",
       );
 
       return res.status(200).json({
@@ -399,6 +399,92 @@ const pujaController = {
         success: false,
         message: error.message || "Error al cancelar la puja ganadora.",
         error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
+    }
+  },
+  /**
+   * @async
+   * @function retirarMiPuja
+   * @description Permite al usuario autenticado retirar su propia puja activa,
+   * recuperando el token, siempre que la subasta del lote no haya finalizado.
+   *
+   * RUTA SUGERIDA: DELETE /api/pujas/:id/retirar
+   *
+   * @param {object} req - req.params.id = ID de la puja, req.user.id = usuario autenticado
+   * @param {object} res
+   */
+  async retirarMiPuja(req, res) {
+    const CONTROLLER_NAME = "PujaController.retirarMiPuja";
+    try {
+      const pujaId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      if (!pujaId || isNaN(pujaId)) {
+        return res.status(400).json({ error: "ID de puja inválido." });
+      }
+
+      const resultado = await pujaService.retirarPuja(pujaId, userId, false);
+
+      return res.status(200).json({
+        success: true,
+        message: resultado.message,
+        data: {
+          pujaId: resultado.pujaId,
+          loteId: resultado.loteId,
+          tokenDevuelto: resultado.tokenDevuelto,
+        },
+      });
+    } catch (error) {
+      console.error(`[${CONTROLLER_NAME}] ERROR:`, error.message);
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || "Error al retirar la puja.",
+      });
+    }
+  },
+
+  /**
+   * @async
+   * @function retirarPujaAdmin
+   * @description Permite a un administrador retirar la puja activa de cualquier usuario,
+   * devolviendo el token. Útil cuando el usuario no puede acceder a su cuenta.
+   *
+   * RUTA SUGERIDA: DELETE /api/admin/pujas/:id/retirar
+   *
+   * @param {object} req - req.params.id = ID de la puja
+   * @param {object} res
+   */
+  async retirarPujaAdmin(req, res) {
+    const CONTROLLER_NAME = "PujaController.retirarPujaAdmin";
+    try {
+      const pujaId = parseInt(req.params.id);
+      const adminId = req.user.id;
+
+      if (!pujaId || isNaN(pujaId)) {
+        return res.status(400).json({ error: "ID de puja inválido." });
+      }
+
+      console.log(
+        `[${CONTROLLER_NAME}] Admin ID ${adminId} retirando puja ID ${pujaId}`,
+      );
+
+      const resultado = await pujaService.retirarPuja(pujaId, adminId, true);
+
+      return res.status(200).json({
+        success: true,
+        message: resultado.message,
+        data: {
+          pujaId: resultado.pujaId,
+          loteId: resultado.loteId,
+          usuarioAfectado: resultado.usuarioAfectado,
+          tokenDevuelto: resultado.tokenDevuelto,
+        },
+      });
+    } catch (error) {
+      console.error(`[${CONTROLLER_NAME}] ERROR:`, error.message);
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || "Error al retirar la puja.",
       });
     }
   },
