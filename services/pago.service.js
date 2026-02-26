@@ -66,6 +66,10 @@ const pagoService = {
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
+           where: {
+            id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
+          },
+          required: true, // INNER JOIN
           include: [
             { model: Proyecto, as: "proyectoAsociado" },
             { model: Usuario, as: "usuario" },
