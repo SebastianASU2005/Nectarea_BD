@@ -32,11 +32,12 @@ router.get(
   authMiddleware.authenticate,
   pujaController.findMyPujaById,
 );
+/*
 router.delete(
   "/mis_pujas/:id",
   authMiddleware.authenticate,
   pujaController.softDeleteMyPuja,
-);
+);*/
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,

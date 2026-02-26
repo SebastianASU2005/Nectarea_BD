@@ -1442,7 +1442,10 @@ const pujaService = {
           });
           tokenDevuelto = true;
         } else {
-          tokenDevuelto = true;
+          console.warn(
+            `⚠️ Suscripción ${puja.suscripcion.id} ya tenía token disponible al retirar puja ${pujaId}`,
+          );
+          tokenDevuelto = false;
         }
       }
 
