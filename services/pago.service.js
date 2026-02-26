@@ -66,10 +66,10 @@ const pagoService = {
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
-          where: {
-            id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
-          },
-          required: true, // INNER JOIN
+          include: [
+            { model: Proyecto, as: "proyectoAsociado" },
+            { model: Usuario, as: "usuario" },
+          ],
         },
       ],
     });
@@ -102,7 +102,7 @@ const pagoService = {
 
       if (!suscripcion) {
         throw new Error(
-          `Pago ID ${pagoId} encontrado, pero la suscripción asociada no está activa o no te pertenece.`
+          `Pago ID ${pagoId} encontrado, pero la suscripción asociada no está activa o no te pertenece.`,
         );
       } // 3. Validar estado del pago
 
@@ -112,12 +112,12 @@ const pagoService = {
 
       if (estadosFinales.includes(estadoActual)) {
         throw new Error(
-          `El pago ID ${pagoId} ya se encuentra en estado: ${estadoActual}.`
+          `El pago ID ${pagoId} ya se encuentra en estado: ${estadoActual}.`,
         );
       }
       if (!estadosPermitidos.includes(estadoActual)) {
         throw new Error(
-          `Estado de pago inválido (${estadoActual}). Solo se pueden pagar estados PENDIENTE o VENCIDO.`
+          `Estado de pago inválido (${estadoActual}). Solo se pueden pagar estados PENDIENTE o VENCIDO.`,
         );
       } // Adjuntar Suscripción al Pago para uso posterior (ej. en markAsPaid)
 
@@ -168,7 +168,7 @@ const pagoService = {
       const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1; // 4. Aplicar saldo a favor
 
       const cuotaMensual = parseFloat(
-        suscripcion.proyectoAsociado.monto_inversion
+        suscripcion.proyectoAsociado.monto_inversion,
       );
       let saldoAFavor = parseFloat(suscripcion.saldo_a_favor);
       let montoAPagar = cuotaMensual;
@@ -181,7 +181,7 @@ const pagoService = {
 
         await suscripcion.update(
           { saldo_a_favor: saldoAFavor.toFixed(2) },
-          { transaction: t }
+          { transaction: t },
         );
 
         if (montoAPagar === 0) {
@@ -203,7 +203,7 @@ const pagoService = {
           estado_pago: estado_pago,
           mes: proximoMes,
         },
-        { transaction: t }
+        { transaction: t },
       ); // 7. Decrementar meses restantes a pagar
 
       await suscripcion.decrement("meses_a_pagar", { by: 1, transaction: t });
@@ -234,16 +234,16 @@ const pagoService = {
     if (pago.mes === 1 && pago.estado_pago === "pendiente") {
       await pago.update(
         { estado_pago: "cancelado", fecha_pago: null },
-        { transaction: t }
+        { transaction: t },
       );
       console.log(
-        `Pago ID ${pagoId} (Mes 1) cancelado debido a la falla de la transacción.`
+        `Pago ID ${pagoId} (Mes 1) cancelado debido a la falla de la transacción.`,
       );
       return pago;
     } // Para Mes > 1, el estado se mantiene pendiente/vencido.
 
     console.log(
-      `Pago ID ${pagoId} (Mes ${pago.mes}) mantiene su estado pendiente/vencido tras la falla de la transacción.`
+      `Pago ID ${pagoId} (Mes ${pago.mes}) mantiene su estado pendiente/vencido tras la falla de la transacción.`,
     );
     return pago;
   },
@@ -279,30 +279,30 @@ const pagoService = {
 
       if (!usuario || !proyecto) {
         throw new Error(
-          "No se pudo determinar el Usuario o Proyecto asociado al pago para enviar notificaciones."
+          "No se pudo determinar el Usuario o Proyecto asociado al pago para enviar notificaciones.",
         );
       } // 1. Actualizar el estado del Pago
 
       await pago.update(
         { estado_pago: "pagado", fecha_pago: new Date() },
-        { transaction: t }
+        { transaction: t },
       ); // 2. 🚨 CRÍTICO: Actualizar el resumen de cuenta (disminuir cuotas vencidas, actualizar saldo)
 
       await resumenCuentaService.updateAccountSummaryOnPayment(
         pago.id_suscripcion,
-        { transaction: t }
+        { transaction: t },
       ); // 3. Notificaciones
 
       await emailService.notificarPagoRecibido(
         usuario,
         proyecto,
         pago.monto,
-        pago.mes
+        pago.mes,
       );
       const contenido = `Tu pago de $${pago.monto} para la cuota #${pago.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
       await mensajeService.crear(
         { id_remitente: 1, id_receptor: usuario.id, contenido: contenido },
-        { transaction: t }
+        { transaction: t },
       );
 
       return pago;
@@ -343,7 +343,7 @@ const pagoService = {
         await pago.update({ estado_pago: "vencido" }, { transaction: t }); // b) 🚨 Llamada al servicio: Registrar la cuota vencida en el resumen de cuenta
         await resumenCuentaService.updateAccountSummaryOnOverdue(
           pago.id_suscripcion,
-          { transaction: t }
+          { transaction: t },
         ); // c) (Opcional) Notificación de pago vencido
       }
 
@@ -433,7 +433,7 @@ const pagoService = {
     try {
       await Pago.update(
         { fecha_ultima_notificacion: new Date() },
-        { where: { id: id_pago } }
+        { where: { id: id_pago } },
       );
     } catch (error) {
       throw error;
@@ -458,20 +458,20 @@ const pagoService = {
         // KPI 2: Recaudo total
         [
           sequelize.literal(
-            `SUM(CASE WHEN estado_pago = 'pagado' THEN monto ELSE 0 END)`
+            `SUM(CASE WHEN estado_pago = 'pagado' THEN monto ELSE 0 END)`,
           ),
           "total_recaudado",
         ], // Denominador y Total Pagados
         [sequelize.literal(`COUNT(*)`), "total_pagos_generados"], // Numerador Morosidad
         [
           sequelize.literal(
-            `SUM(CASE WHEN estado_pago = 'vencido' THEN 1 ELSE 0 END)`
+            `SUM(CASE WHEN estado_pago = 'vencido' THEN 1 ELSE 0 END)`,
           ),
           "total_pagos_vencidos",
         ], // Conteo Pagados
         [
           sequelize.literal(
-            `SUM(CASE WHEN estado_pago = 'pagado' THEN 1 ELSE 0 END)`
+            `SUM(CASE WHEN estado_pago = 'pagado' THEN 1 ELSE 0 END)`,
           ),
           "total_pagos_pagados",
         ],
@@ -564,7 +564,7 @@ const pagoService = {
     // Solo se pueden modificar pagos pendientes o vencidos
     if (!["pendiente", "vencido"].includes(pago.estado_pago)) {
       throw new Error(
-        `No se puede modificar el monto de un pago en estado '${pago.estado_pago}'. Solo se permiten estados: pendiente, vencido.`
+        `No se puede modificar el monto de un pago en estado '${pago.estado_pago}'. Solo se permiten estados: pendiente, vencido.`,
       );
     }
 
@@ -602,7 +602,7 @@ const pagoService = {
     suscripcionId,
     cantidadMeses,
     montoPorMes = null,
-    options = {}
+    options = {},
   ) {
     const t = options.transaction || (await sequelize.transaction());
 
@@ -616,7 +616,7 @@ const pagoService = {
       if (!suscripcion || !suscripcion.proyectoAsociado) {
         if (!options.transaction) await t.rollback();
         throw new Error(
-          `Suscripción ID ${suscripcionId} no encontrada o sin proyecto asociado.`
+          `Suscripción ID ${suscripcionId} no encontrada o sin proyecto asociado.`,
         );
       }
 
@@ -641,7 +641,7 @@ const pagoService = {
 
       if (mesesAGenerar < cantidadMeses) {
         console.warn(
-          `⚠️ Solo se generarán ${mesesAGenerar} pagos (meses restantes en la suscripción).`
+          `⚠️ Solo se generarán ${mesesAGenerar} pagos (meses restantes en la suscripción).`,
         );
       }
 
@@ -690,7 +690,7 @@ const pagoService = {
         const fechaVencimiento = new Date(
           now.getFullYear(),
           now.getMonth() + i,
-          10
+          10,
         );
         fechaVencimiento.setHours(0, 0, 0, 0);
 
@@ -705,7 +705,7 @@ const pagoService = {
             estado_pago: estadoPago,
             mes: numeroMes,
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         pagosGenerados.push(nuevoPago);
@@ -718,14 +718,14 @@ const pagoService = {
       if (saldoRestante !== parseFloat(suscripcion.saldo_a_favor)) {
         await suscripcion.update(
           { saldo_a_favor: saldoRestante.toFixed(2) },
-          { transaction: t }
+          { transaction: t },
         );
       }
 
       if (!options.transaction) await t.commit();
 
       console.log(
-        `✅ Generados ${pagosGenerados.length} pagos adelantados para la Suscripción ID ${suscripcionId}`
+        `✅ Generados ${pagosGenerados.length} pagos adelantados para la Suscripción ID ${suscripcionId}`,
       );
 
       return pagosGenerados;
