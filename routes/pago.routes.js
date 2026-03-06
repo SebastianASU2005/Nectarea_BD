@@ -15,7 +15,7 @@ const { blockAdminTransactions } = require("../middleware/roleValidation");
 router.get(
   "/mis_pagos",
   authMiddleware.authenticate,
-  pagoController.findMyPayments
+  pagoController.findMyPayments,
 );
 
 // POST /confirmar-pago-2fa
@@ -25,7 +25,7 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions,
   checkKYCandTwoFA,
-  pagoController.confirmarPagoYContinuar
+  pagoController.confirmarPagoYContinuar,
 );
 
 // 🆕 POST /generar-adelantados (SOLO ADMIN)
@@ -34,7 +34,7 @@ router.post(
   "/generar-adelantados",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.generateAdvancePayments
+  pagoController.generateAdvancePayments,
 );
 
 // 🆕 GET /pendientes/suscripcion/:id_suscripcion (SOLO ADMIN)
@@ -43,7 +43,7 @@ router.get(
   "/pendientes/suscripcion/:id_suscripcion",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.getPendingPaymentsBySubscription
+  pagoController.getPendingPaymentsBySubscription,
 );
 
 // GET /metricas/mensuales (Admin)
@@ -51,7 +51,7 @@ router.get(
   "/metricas/mensuales",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.getMonthlyMetrics
+  pagoController.getMonthlyMetrics,
 );
 
 // GET /metricas/a-tiempo (Admin)
@@ -59,7 +59,7 @@ router.get(
   "/metricas/a-tiempo",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.getOnTimeRate
+  pagoController.getOnTimeRate,
 );
 
 // GET /
@@ -67,7 +67,7 @@ router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.findAll
+  pagoController.findAll,
 );
 
 // POST /trigger-manual-payment (Admin, prueba)
@@ -75,7 +75,7 @@ router.post(
   "/trigger-manual-payment",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.triggerManualPayment
+  pagoController.triggerManualPayment,
 );
 
 // =================================================================
@@ -89,7 +89,7 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions,
   checkKYCandTwoFA,
-  pagoController.requestCheckout
+  pagoController.requestCheckout,
 );
 
 // 🆕 PATCH /:id/monto (Admin)
@@ -98,7 +98,13 @@ router.patch(
   "/:id/monto",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.updatePaymentAmount
+  pagoController.updatePaymentAmount,
+);
+router.patch(
+  "/:id/estado",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.updatePaymentStatus,
 );
 
 // =================================================================
@@ -110,7 +116,7 @@ router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.findById
+  pagoController.findById,
 );
 
 // PUT /:id
@@ -118,7 +124,7 @@ router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.update
+  pagoController.update,
 );
 
 // DELETE /:id
@@ -126,7 +132,7 @@ router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  pagoController.softDelete
+  pagoController.softDelete,
 );
 
 module.exports = router;

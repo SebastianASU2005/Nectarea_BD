@@ -48,6 +48,34 @@ const pagoController = {
       res.status(500).json({ error: error.message });
     }
   },
+  async updatePaymentStatus(req, res) {
+    try {
+      const pagoId = parseInt(req.params.id);
+      const { estado_pago, motivo } = req.body;
+      if (!estado_pago) {
+        return res
+          .status(400)
+          .json({ error: "El campo 'estado_pago' es requerido." });
+      }
+
+      const pagoActualizado = await pagoService.updatePaymentStatus(
+        pagoId,
+        estado_pago,
+        motivo,
+      );
+
+      return res.status(200).json({
+        message: `Estado del Pago ID ${pagoId} actualizado a '${pagoActualizado.estado_pago}'.`,
+        pago: {
+          id: pagoActualizado.id,
+          estado_pago: pagoActualizado.estado_pago,
+          motivo: motivo || "N/A",
+        },
+      });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
 
   // ===================================================================
   // 🚀 FUNCIÓN MODIFICADA: INICIAR CHECKOUT (Bifurcación 2FA) 🚦
@@ -72,7 +100,7 @@ const pagoController = {
       const pagoId = req.params.id;
       const userId = req.user.id; // 👈 VERIFICA ESTE VALOR
       console.log(
-        `[DEBUG] Pago ID: ${pagoId}, Usuario Autenticado ID: ${userId}`
+        `[DEBUG] Pago ID: ${pagoId}, Usuario Autenticado ID: ${userId}`,
       );
 
       // 1. Validar el pago (existencia, estado y propiedad) y obtener el usuario
@@ -96,7 +124,7 @@ const pagoController = {
         await transaccionService.iniciarTransaccionYCheckout(
           "pago",
           pagoValidado.id,
-          userId
+          userId,
         );
 
       // 4. DEVOLVER DIRECTAMENTE LA URL DE REDIRECCIÓN
@@ -157,7 +185,7 @@ const pagoController = {
       // 2. VERIFICACIÓN CRÍTICA DEL 2FA
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
-        codigo_2fa
+        codigo_2fa,
       );
 
       if (!isVerified) {
@@ -171,7 +199,7 @@ const pagoController = {
         await transaccionService.iniciarTransaccionYCheckout(
           "pago",
           pagoValidado.id,
-          userId
+          userId,
         );
 
       // 4. Respuesta de Éxito: Devolver la URL de redirección
@@ -279,7 +307,7 @@ const pagoController = {
       // ✅ Pasar la transacción al servicio
       const nuevoPago = await pagoService.generarPagoMensualConDescuento(
         id_suscripcion,
-        { transaction: t } // ✅ CRÍTICO: Pasar la transacción
+        { transaction: t }, // ✅ CRÍTICO: Pasar la transacción
       );
 
       if (nuevoPago.message) {
@@ -333,7 +361,7 @@ const pagoController = {
 
       const metrics = await pagoService.getMonthlyPaymentMetrics(
         parseInt(mes),
-        parseInt(anio)
+        parseInt(anio),
       );
 
       // Devolvemos las métricas con un mensaje claro
@@ -369,7 +397,7 @@ const pagoController = {
 
       const metrics = await pagoService.getOnTimePaymentRate(
         parseInt(mes),
-        parseInt(anio)
+        parseInt(anio),
       );
 
       res.status(200).json({
@@ -379,7 +407,7 @@ const pagoController = {
     } catch (error) {
       console.error(
         "Error al obtener la tasa de pagos a tiempo:",
-        error.message
+        error.message,
       );
       res.status(500).json({
         error: "Error interno al procesar la tasa de pagos a tiempo.",
@@ -396,32 +424,33 @@ const pagoController = {
     const t = await sequelize.transaction();
     try {
       const { id_suscripcion, cantidad_meses, monto_por_mes } = req.body;
-      
+
       // La validación de parámetros (números, rangos) debe ir en el middleware de rutas (express-validator)
 
       const pagosGenerados = await pagoService.generarPagosAdelantados(
         id_suscripcion,
         cantidad_meses,
         monto_por_mes,
-        { transaction: t }
+        { transaction: t },
       );
 
       await t.commit();
-      
+
       return res.status(201).json({
         message: `Generados ${pagosGenerados.length} pagos adelantados para la suscripción ID ${id_suscripcion}.`,
-        pagos: pagosGenerados.map(p => ({
+        pagos: pagosGenerados.map((p) => ({
           id: p.id,
           monto: p.monto,
           mes: p.mes,
-          estado_pago: p.estado_pago
-        }))
+          estado_pago: p.estado_pago,
+        })),
       });
-
     } catch (error) {
       await t.rollback();
       console.error("Error en generateAdvancePayments:", error.message);
-      return res.status(400).json({ error: error.message || "Error al generar pagos adelantados." });
+      return res.status(400).json({
+        error: error.message || "Error al generar pagos adelantados.",
+      });
     }
   },
   /**
@@ -438,16 +467,21 @@ const pagoController = {
         return res.status(400).json({ error: "ID de suscripción inválido." });
       }
 
-      const pagos = await pagoService.findPendingPaymentsBySubscription(id_suscripcion);
-      
+      const pagos =
+        await pagoService.findPendingPaymentsBySubscription(id_suscripcion);
+
       return res.status(200).json({
         message: `Pagos pendientes/vencidos para la suscripción ID ${id_suscripcion}.`,
-        data: pagos
+        data: pagos,
       });
-      
     } catch (error) {
-      console.error("Error en getPendingPaymentsBySubscription:", error.message);
-      res.status(500).json({ error: "Error al obtener pagos pendientes por suscripción." });
+      console.error(
+        "Error en getPendingPaymentsBySubscription:",
+        error.message,
+      );
+      res
+        .status(500)
+        .json({ error: "Error al obtener pagos pendientes por suscripción." });
     }
   },
   /**
@@ -460,12 +494,12 @@ const pagoController = {
     try {
       const pagoId = parseInt(req.params.id);
       // Usamos 'monto' en el body, en lugar de 'nuevo_monto' para simplificar el DTO
-      const { monto, motivo_cambio } = req.body; 
+      const { monto, motivo_cambio } = req.body;
 
       const pagoActualizado = await pagoService.actualizarMontoPago(
         pagoId,
         monto,
-        motivo_cambio
+        motivo_cambio,
       );
 
       return res.status(200).json({
@@ -474,13 +508,14 @@ const pagoController = {
           id: pagoActualizado.id,
           monto: pagoActualizado.monto,
           estado_pago: pagoActualizado.estado_pago,
-          motivo_cambio: motivo_cambio || 'N/A'
+          motivo_cambio: motivo_cambio || "N/A",
         },
       });
-
     } catch (error) {
       console.error("Error en updatePaymentAmount:", error.message);
-      return res.status(400).json({ error: error.message || "Error al actualizar el monto del pago." });
+      return res.status(400).json({
+        error: error.message || "Error al actualizar el monto del pago.",
+      });
     }
   },
 };

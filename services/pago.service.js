@@ -66,7 +66,7 @@ const pagoService = {
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
-           where: {
+          where: {
             id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
           },
           required: true, // INNER JOIN
@@ -758,6 +758,69 @@ const pagoService = {
       order: [["mes", "ASC"]],
     });
   },
+  async updatePaymentStatus(pagoId, nuevoEstado, motivo = null) {
+  const t = await sequelize.transaction();
+  
+  try {
+    const estadosValidos = ["pendiente", "pagado", "vencido", "cancelado", "cubierto_por_puja"];
+
+    const pago = await Pago.findByPk(pagoId, { transaction: t });
+    if (!pago) throw new Error(`Pago ID ${pagoId} no encontrado.`);
+
+    if (!estadosValidos.includes(nuevoEstado)) {
+      throw new Error(`Estado '${nuevoEstado}' inválido.`);
+    }
+
+    const estadoAnterior = pago.estado_pago;
+
+    // Evitar cambio innecesario
+    if (estadoAnterior === nuevoEstado) {
+      await t.commit();
+      return pago;
+    }
+
+    console.log(`[AUDITORÍA] Cambio de estado en Pago ID ${pagoId}:
+      Estado anterior: ${estadoAnterior}
+      Estado nuevo: ${nuevoEstado}
+      Motivo: ${motivo || "No especificado"}
+      Fecha: ${new Date().toISOString()}`);
+
+    // 1. Actualizar el estado del pago
+    await pago.update(
+      {
+        estado_pago: nuevoEstado,
+        fecha_pago: nuevoEstado === "pagado" ? new Date() : pago.fecha_pago,
+      },
+      { transaction: t }
+    );
+
+    // 2. Sincronizar el ResumenCuenta según la transición de estado
+    const estadosPagados = ["pagado", "cubierto_por_puja"];
+    const anteriorEraPagado = estadosPagados.includes(estadoAnterior);
+    const nuevoEsPagado = estadosPagados.includes(nuevoEstado);
+    const anteriorEraVencido = estadoAnterior === "vencido";
+    const nuevoEsVencido = nuevoEstado === "vencido";
+
+    const huboCambioRelevante =
+      anteriorEraPagado !== nuevoEsPagado || anteriorEraVencido !== nuevoEsVencido;
+
+    if (huboCambioRelevante) {
+      // updateAccountSummaryOnPayment hace un recálculo completo desde la BD,
+      // por lo que sirve para cualquier transición (no solo "marcar como pagado")
+      await resumenCuentaService.updateAccountSummaryOnPayment(
+        pago.id_suscripcion,
+        { transaction: t }
+      );
+    }
+
+    await t.commit();
+    return pago;
+
+  } catch (error) {
+    await t.rollback();
+    throw error;
+  }
+},
 };
 
 module.exports = pagoService;
