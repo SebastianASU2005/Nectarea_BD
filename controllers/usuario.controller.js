@@ -154,7 +154,7 @@ const usuarioController = {
 
       const usuarioActualizado = await usuarioService.update(
         req.params.id,
-        filteredData // <-- Usamos los datos filtrados
+        filteredData, // <-- Usamos los datos filtrados
       );
       if (!usuarioActualizado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
@@ -176,7 +176,7 @@ const usuarioController = {
         "nombre",
         "apellido",
         "email",
-        "telefono",
+        "numero_telefono",
         "nombre_usuario", // Agregado el campo de nombre de usuario
       ];
 
@@ -198,7 +198,7 @@ const usuarioController = {
       // Usa req.user.id para asegurar que solo actualiza su propio perfil
       const usuarioActualizado = await usuarioService.update(
         req.user.id,
-        filteredData // <-- Usamos los datos filtrados
+        filteredData, // <-- Usamos los datos filtrados
       );
       if (!usuarioActualizado) {
         return res.status(404).json({ error: "Usuario no encontrado" });
@@ -206,6 +206,39 @@ const usuarioController = {
       res.status(200).json(usuarioActualizado);
     } catch (error) {
       res.status(400).json({ error: error.message });
+    }
+  },
+  async changePassword(req, res) {
+    try {
+      const { currentPassword, newPassword, twofaCode } = req.body || {};
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({
+          error: "Debes proporcionar la contraseña actual y la nueva.",
+        });
+      }
+
+      await usuarioService.changePassword(
+        req.user.id,
+        currentPassword,
+        newPassword,
+        twofaCode || null,
+      );
+
+      res
+        .status(200)
+        .json({ message: "✅ Contraseña actualizada exitosamente." });
+    } catch (error) {
+      if (error.requires2fa) {
+        return res.status(403).json({
+          error: error.message,
+          requires2fa: true,
+          codeInvalid: error.codeInvalid || false,
+        });
+      }
+
+      const statusCode = error.message.includes("incorrecta") ? 401 : 400;
+      res.status(statusCode).json({ error: error.message });
     }
   },
   /**
@@ -217,7 +250,7 @@ const usuarioController = {
   async validateDeactivation(req, res) {
     try {
       const validation = await usuarioService.validateUserDeactivation(
-        req.user.id
+        req.user.id,
       );
       res.status(200).json(validation);
     } catch (error) {
@@ -330,9 +363,8 @@ const usuarioController = {
       }
 
       // Llama a la nueva función del servicio
-      const usuariosEncontrados = await usuarioService.searchByUsername(
-        searchTerm
-      );
+      const usuariosEncontrados =
+        await usuarioService.searchByUsername(searchTerm);
 
       res.status(200).json(usuariosEncontrados);
     } catch (error) {
@@ -444,8 +476,8 @@ const usuarioController = {
       const statusCode = error.message.includes("no encontrado")
         ? 404
         : error.message.includes("ya está activa")
-        ? 409
-        : 400;
+          ? 409
+          : 400;
       res.status(statusCode).json({ error: error.message });
     }
   },

@@ -13,26 +13,26 @@ router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.findAll
+  usuarioController.findAll,
 );
 router.get(
   "/activos",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.findAllActivo
+  usuarioController.findAllActivo,
 );
 // 🆕 RUTA AÑADIDA: Obtener solo administradores activos
 router.get(
   "/admins",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.findAllAdmins
+  usuarioController.findAllAdmins,
 );
 router.get(
   "/search",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.search
+  usuarioController.search,
 );
 
 // ===========================================
@@ -50,15 +50,16 @@ router.put("/me", authMiddleware.authenticate, usuarioController.updateMe);
 router.get(
   "/me/validate-deactivation",
   authMiddleware.authenticate,
-  usuarioController.validateDeactivation
+  usuarioController.validateDeactivation,
 );
-
-// 🟢 Mantenemos DELETE /me, el controlador softDeleteMe espera twofaCode en req.body
-router.post(
-  "/me",
+// ✅ BIEN: hay que usar authMiddleware.authenticate
+router.patch(
+  "/me/change-password",
   authMiddleware.authenticate,
-  usuarioController.softDeleteMe
+  usuarioController.changePassword,
 );
+// 🟢 Mantenemos DELETE /me, el controlador softDeleteMe espera twofaCode en req.body
+router.post("/me", authMiddleware.authenticate, usuarioController.softDeleteMe);
 
 // ===========================================
 // Rutas de administración (DINÁMICAS /:id)
@@ -68,39 +69,39 @@ router.patch(
   "/:id/prepare-reactivation",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.prepareForReactivation
+  usuarioController.prepareForReactivation,
 );
 
 router.patch(
   "/:id/reactivate",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.reactivateAccount
+  usuarioController.reactivateAccount,
 );
 router.patch(
   "/:id/reset-2fa",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.adminReset2FA
+  usuarioController.adminReset2FA,
 );
 
 router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.findById
+  usuarioController.findById,
 );
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.update
+  usuarioController.update,
 );
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  usuarioController.softDelete
+  usuarioController.softDelete,
 );
 
 module.exports = router;

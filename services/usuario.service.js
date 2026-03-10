@@ -49,7 +49,7 @@ const usuarioService = {
       // Registra el error si falla el envío, pero el registro del usuario ya se completó.
       console.error(
         `ERROR: Fallo al enviar el email de confirmación a ${nuevoUsuario.email}.`,
-        e
+        e,
       );
     }
 
@@ -96,7 +96,7 @@ const usuarioService = {
 
     if (!usuario) {
       throw new Error(
-        "Si la cuenta existe, recibirá un correo electrónico pronto."
+        "Si la cuenta existe, recibirá un correo electrónico pronto.",
       );
     }
 
@@ -150,7 +150,7 @@ const usuarioService = {
       // Se registra el error, pero la operación de DB ya está completa
       console.error(
         `ERROR: Fallo al enviar el email de restablecimiento a ${user.email}.`,
-        e
+        e,
       );
     }
 
@@ -274,17 +274,19 @@ const usuarioService = {
         where: { nombre_usuario, activo: true, id: { [Op.ne]: id } },
       });
       if (existingUsernameUser) {
-        throw new Error("❌ El nombre de usuario ya está tomado por otra cuenta activa.");
+        throw new Error(
+          "❌ El nombre de usuario ya está tomado por otra cuenta activa.",
+        );
       }
     }
 
     // 3. 🔥 NUEVA VALIDACIÓN: Validar DNI
     if (dni && dni !== usuario.dni) {
       const existingDniUser = await Usuario.findOne({
-        where: { 
-          dni: dni, 
-          activo: true, 
-          id: { [Op.ne]: id } 
+        where: {
+          dni: dni,
+          activo: true,
+          id: { [Op.ne]: id },
         },
       });
       if (existingDniUser) {
@@ -457,15 +459,15 @@ const usuarioService = {
 
     if (suscripcionesActivas.length > 0) {
       const proyectos = suscripcionesActivas.map(
-        (s) => s.proyectoAsociado.nombre_proyecto
+        (s) => s.proyectoAsociado.nombre_proyecto,
       );
 
       throw new Error(
         `❌ No puedes desactivar tu cuenta. Tienes ${
           suscripcionesActivas.length
         } suscripción(es) activa(s) en: ${proyectos.join(
-          ", "
-        )}. Debes cancelar todas tus suscripciones primero.`
+          ", ",
+        )}. Debes cancelar todas tus suscripciones primero.`,
       );
     }
 
@@ -515,7 +517,7 @@ const usuarioService = {
       },
       message: this._buildDeactivationMessage(
         pujasGanadorasPendientes.length,
-        contratosFirmados.length
+        contratosFirmados.length,
       ),
     };
   },
@@ -528,13 +530,13 @@ const usuarioService = {
 
     if (pujasCount > 0) {
       messages.push(
-        `⚠️ Tienes ${pujasCount} puja(s) ganadora(s) pendiente(s) de pago. Si no pagas en 90 días, perderás el lote y pasará al siguiente postor.`
+        `⚠️ Tienes ${pujasCount} puja(s) ganadora(s) pendiente(s) de pago. Si no pagas en 90 días, perderás el lote y pasará al siguiente postor.`,
       );
     }
 
     if (contratosCount > 0) {
       messages.push(
-        `📄 Tienes ${contratosCount} contrato(s) firmado(s). Te recomendamos descargar todos tus contratos antes de desactivar tu cuenta, ya que no podrás acceder a ellos después.`
+        `📄 Tienes ${contratosCount} contrato(s) firmado(s). Te recomendamos descargar todos tus contratos antes de desactivar tu cuenta, ya que no podrás acceder a ellos después.`,
       );
     }
 
@@ -543,6 +545,69 @@ const usuarioService = {
     }
 
     return messages.join(" ");
+  },
+  async changePassword(userId, currentPassword, newPassword, twofaCode = null) {
+    const usuario = await Usuario.findByPk(userId, {
+      attributes: [
+        "id",
+        "contraseña_hash",
+        "activo",
+        "is_2fa_enabled",
+        "twofa_secret",
+      ],
+    });
+
+    if (!usuario || !usuario.activo) {
+      throw new Error("Usuario no encontrado.");
+    }
+
+    const authService = require("./auth.service");
+
+    // 1. Verificar contraseña actual
+    const isMatch = await authService.comparePassword(
+      currentPassword,
+      usuario.contraseña_hash,
+    );
+    if (!isMatch) {
+      throw new Error("❌ La contraseña actual es incorrecta.");
+    }
+
+    // 2. Validar nueva contraseña
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error(
+        "❌ La nueva contraseña debe tener al menos 8 caracteres.",
+      );
+    }
+    if (currentPassword === newPassword) {
+      throw new Error("❌ La nueva contraseña no puede ser igual a la actual.");
+    }
+
+    // 3. Verificar 2FA si está activo
+    if (usuario.is_2fa_enabled) {
+      if (!twofaCode) {
+        const error = new Error(
+          "Se requiere el código 2FA para cambiar la contraseña.",
+        );
+        error.requires2fa = true;
+        throw error;
+      }
+
+      const auth2faService = require("./auth2fa.service");
+      const isTokenValid = auth2faService.verifyToken(
+        usuario.twofa_secret,
+        twofaCode,
+      );
+      if (!isTokenValid) {
+        const error = new Error("❌ Código 2FA incorrecto.");
+        error.requires2fa = true;
+        error.codeInvalid = true;
+        throw error;
+      }
+    }
+
+    // 4. Hashear y guardar
+    const newHash = await authService.hashPassword(newPassword);
+    return usuario.update({ contraseña_hash: newHash });
   },
   /**
    * @async
@@ -573,7 +638,7 @@ const usuarioService = {
     } catch (error) {
       console.error(
         `Error al enviar email de desactivación al usuario ${id}:`,
-        error.message
+        error.message,
       );
       // No lanzamos el error para que la desactivación se complete igual
     }
@@ -599,7 +664,7 @@ const usuarioService = {
     }
     if (usuario.activo) {
       throw new Error(
-        `❌ La cuenta con ID ${userId} ya está activa. No requiere preparación.`
+        `❌ La cuenta con ID ${userId} ya está activa. No requiere preparación.`,
       );
     }
 
@@ -616,7 +681,7 @@ const usuarioService = {
 
       if (existingEmail) {
         throw new Error(
-          `❌ El Email "${email}" ya está en uso por otra cuenta ACTIVA (ID: ${existingEmail.id}).`
+          `❌ El Email "${email}" ya está en uso por otra cuenta ACTIVA (ID: ${existingEmail.id}).`,
         );
       }
     } // 3️⃣ Validar nuevo Nombre de Usuario (si se proporciona Y es diferente al actual)
@@ -632,7 +697,7 @@ const usuarioService = {
 
       if (existingUsername) {
         throw new Error(
-          `❌ El Nombre de Usuario "${nombre_usuario}" ya está en uso por otra cuenta ACTIVA (ID: ${existingUsername.id}).`
+          `❌ El Nombre de Usuario "${nombre_usuario}" ya está en uso por otra cuenta ACTIVA (ID: ${existingUsername.id}).`,
         );
       }
     } // 4️⃣ Validar nuevo DNI (si se proporciona Y es diferente al actual)
@@ -648,7 +713,7 @@ const usuarioService = {
 
       if (existingDNI) {
         throw new Error(
-          `❌ El DNI "${dni}" ya está en uso por otra cuenta ACTIVA (ID: ${existingDNI.id}).`
+          `❌ El DNI "${dni}" ya está en uso por otra cuenta ACTIVA (ID: ${existingDNI.id}).`,
         );
       }
     } // 5️⃣ Actualizar solo los campos permitidos y proporcionados
@@ -698,7 +763,7 @@ const usuarioService = {
 
     if (conflictoEmail) {
       throw new Error(
-        `❌ No se puede reactivar. El email "${usuario.email}" ya está en uso por una cuenta activa (ID: ${conflictoEmail.id}). Debes cambiar el email antes de reactivar.`
+        `❌ No se puede reactivar. El email "${usuario.email}" ya está en uso por una cuenta activa (ID: ${conflictoEmail.id}). Debes cambiar el email antes de reactivar.`,
       );
     }
 
@@ -712,7 +777,7 @@ const usuarioService = {
 
     if (conflictoUsername) {
       throw new Error(
-        `❌ No se puede reactivar. El nombre de usuario "${usuario.nombre_usuario}" ya está en uso por una cuenta activa (ID: ${conflictoUsername.id}). Debes cambiar el username antes de reactivar.`
+        `❌ No se puede reactivar. El nombre de usuario "${usuario.nombre_usuario}" ya está en uso por una cuenta activa (ID: ${conflictoUsername.id}). Debes cambiar el username antes de reactivar.`,
       );
     }
 
@@ -727,7 +792,7 @@ const usuarioService = {
     } catch (error) {
       console.error(
         `Error al enviar email de reactivación al usuario ${userId}:`,
-        error.message
+        error.message,
       );
       // No lanzamos el error para que la reactivación se complete igual
     }
