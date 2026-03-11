@@ -22,17 +22,15 @@ const CuotaMensual = sequelize.define(
       allowNull: false,
     },
     nombre_cemento_cemento: {
-      // Nuevo campo para el nombre del cemento
       type: DataTypes.STRING(255),
-      allowNull: true, // Lo hacemos opcional por si no se provee
+      allowNull: true,
     },
     valor_cemento_unidades: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
     valor_cemento: {
-      // Aumentado a DECIMAL(18, 2) para mayor capacidad en el valor por unidad
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8), // Alta precisión para cálculos
       allowNull: false,
     },
     total_cuotas_proyecto: {
@@ -40,44 +38,40 @@ const CuotaMensual = sequelize.define(
       allowNull: false,
     },
     porcentaje_plan: {
-      type: DataTypes.DECIMAL(5, 2),
+      type: DataTypes.DECIMAL(10, 8), // Alta precisión para porcentajes
       allowNull: false,
     },
     porcentaje_administrativo: {
-      type: DataTypes.DECIMAL(5, 2),
+      type: DataTypes.DECIMAL(10, 8),
       allowNull: false,
     },
     porcentaje_iva: {
-      type: DataTypes.DECIMAL(5, 2),
+      type: DataTypes.DECIMAL(10, 8),
       allowNull: false,
     },
+    // Valores intermedios: alta precisión para evitar acumulación de errores
     valor_movil: {
-      // Aumentado a DECIMAL(18, 2)
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8),
       allowNull: false,
     },
     total_del_plan: {
-      // Aumentado a DECIMAL(18, 2)
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8),
       allowNull: false,
     },
     valor_mensual: {
-      // Aumentado a DECIMAL(18, 2)
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8),
       allowNull: false,
     },
     carga_administrativa: {
-      // Aumentado a DECIMAL(18, 2)
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8),
       allowNull: false,
     },
     iva_carga_administrativa: {
-      // Aumentado a DECIMAL(18, 2)
-      type: DataTypes.DECIMAL(18, 2),
+      type: DataTypes.DECIMAL(18, 8),
       allowNull: false,
     },
+    // Único valor redondeado a 2 decimales: el resultado final
     valor_mensual_final: {
-      // Aumentado a DECIMAL(18, 2)
       type: DataTypes.DECIMAL(18, 2),
       allowNull: false,
     },

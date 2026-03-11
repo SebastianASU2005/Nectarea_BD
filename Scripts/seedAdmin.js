@@ -5,21 +5,6 @@ const { sequelize } = require("../config/database");
 const Usuario = require("../models/usuario");
 const authService = require("../services/auth.service");
 
-/**
- * Script para crear el primer usuario administrador del sistema.
- * Este script debe ejecutarse SOLO UNA VEZ durante la instalación inicial.
- *
- * Uso: node scripts/seedAdmin.js
- *
- * Puedes configurar los datos del admin en variables de entorno (.env):
- * - ADMIN_EMAIL
- * - ADMIN_USERNAME
- * - ADMIN_PASSWORD
- * - ADMIN_NOMBRE
- * - ADMIN_APELLIDO
- * - ADMIN_DNI
- * - ADMIN_TELEFONO
- */
 async function seedAdmin() {
   try {
     console.log("🔄 Conectando a la base de datos...");

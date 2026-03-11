@@ -1,78 +1,70 @@
-// services/cuotaMensualService.js - VERSIÓN CORREGIDA
+// services/cuotaMensualService.js
 const CuotaMensual = require("../models/CuotaMensual");
 const Proyecto = require("../models/proyecto");
 const ResumenCuenta = require("../models/resumen_cuenta");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { sequelize } = require("../config/database");
 
-
 const cuotaMensualService = {
   /**
-   * Función auxiliar para redondeo preciso a 2 decimales
+   * Redondeo preciso a 2 decimales — usado SOLO para el valor final
    */
   _roundTo2(num) {
     return Math.round(num * 100) / 100;
   },
 
   /**
-   * ✅ FUNCIÓN CORREGIDA - Cálculo de valores con porcentajes decimales
+   * Cálculo de valores sin redondeo en pasos intermedios.
    *
-   * IMPORTANTE: Los porcentajes vienen como decimales:
-   * - porcentaje_plan: 0.85 (85%)
-   * - porcentaje_administrativo: 0.19 (19%)
-   * - porcentaje_iva: 0.21 (21%)
+   * Los porcentajes ingresan como valores enteros o decimales desde el modelo:
+   * - porcentaje_plan: 70   → se convierte a 0.70
+   * - porcentaje_administrativo: 0.15 → se convierte a 0.0015
+   * - porcentaje_iva: 21   → se convierte a 0.21
+   *
+   * REGLA: No redondear valores intermedios. Redondear SOLO valor_mensual_final.
    */
   _calculateValues(data) {
-    // Convertir a números (ya son decimales, NO dividir entre 100)
-    const porcentaje_plan = Number(data.porcentaje_plan);
-    const porcentaje_administrativo = Number(data.porcentaje_administrativo);
-    const porcentaje_iva = Number(data.porcentaje_iva);
-    const valor_cemento = Number(data.valor_cemento);
-    const valor_cemento_unidades = Number(data.valor_cemento_unidades);
-    const total_cuotas_proyecto = Number(data.total_cuotas_proyecto);
+    const porcentaje_plan           = Number(data.porcentaje_plan) / 100;
+    const porcentaje_administrativo = Number(data.porcentaje_administrativo) / 100;
+    const porcentaje_iva            = Number(data.porcentaje_iva) / 100;
+    const valor_cemento             = Number(data.valor_cemento);
+    const valor_cemento_unidades    = Number(data.valor_cemento_unidades);
+    const total_cuotas_proyecto     = Number(data.total_cuotas_proyecto);
 
-    // 1. Valor Móvil Total (cemento × unidades)
-    const valor_movil = this._roundTo2(valor_cemento * valor_cemento_unidades);
+    // 1. Valor Móvil — sin redondeo
+    const valor_movil = valor_cemento * valor_cemento_unidades;
 
-    // 2. Valor Mensual "FULL" (Base para calcular administración)
-    // Este es el 100% del valor antes de aplicar el plan
-    const valor_mensual_full = valor_movil / total_cuotas_proyecto;
-
-    // 3. ✅ CORREGIDO: Total del Plan (85% del valor móvil)
-    // Ahora usa directamente el porcentaje decimal
+    // 2. Total del Plan — sin redondeo
     const total_del_plan = valor_movil * porcentaje_plan;
-    const valor_mensual_plan = total_del_plan / total_cuotas_proyecto;
 
-    // 4. ✅ CORREGIDO: Carga Administrativa (19% sobre valor FULL)
-    const carga_administrativa = valor_mensual_full * porcentaje_administrativo;
+    // 3. Cuota Pura (plan / meses) — sin redondeo
+    const valor_mensual = total_del_plan / total_cuotas_proyecto;
 
-    // 5. ✅ CORREGIDO: IVA (21% sobre la carga administrativa)
+    // 4. Carga Administrativa — sin redondeo
+    const carga_administrativa = valor_movil * porcentaje_administrativo;
+
+    // 5. IVA sobre la carga administrativa — sin redondeo
     const iva_carga_administrativa = carga_administrativa * porcentaje_iva;
 
-    // 6. Total Final
-    const valor_mensual_final =
-      valor_mensual_plan + carga_administrativa + iva_carga_administrativa;
+    // 6. Suma exacta de componentes antes de cualquier redondeo
+    const valor_mensual_final_exacto =
+      valor_mensual + carga_administrativa + iva_carga_administrativa;
 
-    // Preparar valores finales con redondeo
-    const valores_finales = {
-      valor_movil: valor_movil,
-      total_del_plan: this._roundTo2(total_del_plan),
-      valor_mensual: this._roundTo2(valor_mensual_plan),
-      carga_administrativa: this._roundTo2(carga_administrativa),
-      iva_carga_administrativa: this._roundTo2(iva_carga_administrativa),
-      valor_mensual_final: this._roundTo2(valor_mensual_final),
+    // 7. Redondeo ÚNICO al final
+    const valor_mensual_final = this._roundTo2(valor_mensual_final_exacto);
+
+    return {
+      valor_movil,
+      total_del_plan,
+      valor_mensual,
+      carga_administrativa,
+      iva_carga_administrativa,
+      valor_mensual_final,
     };
-
-    // Verificación en desarrollo
-    if (process.env.NODE_ENV !== "production") {
-      this._verificarSuma(valores_finales);
-    }
-
-    return valores_finales;
   },
 
   /**
-   * Función de verificación para debugging
+   * Verificación de integridad para debugging
    */
   _verificarSuma(calculatedValues) {
     const suma_componentes =
@@ -80,81 +72,63 @@ const cuotaMensualService = {
       calculatedValues.carga_administrativa +
       calculatedValues.iva_carga_administrativa;
 
+    // La diferencia debe ser <= 0.005 (medio centavo) ya que solo redondeamos al final
     const diferencia = Math.abs(
       suma_componentes - calculatedValues.valor_mensual_final
     );
 
-    if (diferencia > 0.01) {
-      console.warn(
-        `⚠️ ADVERTENCIA: Diferencia de redondeo detectada: ${diferencia.toFixed(
-          4
-        )}`
-      );
+    if (diferencia > 0.005) {
+      console.warn(`⚠️ ADVERTENCIA: Diferencia de redondeo inesperada: ${diferencia.toFixed(8)}`);
       console.log("Componentes:", {
-        plan: calculatedValues.valor_mensual,
+        plan:  calculatedValues.valor_mensual,
         admin: calculatedValues.carga_administrativa,
-        iva: calculatedValues.iva_carga_administrativa,
-        suma: suma_componentes.toFixed(2),
-        final: calculatedValues.valor_mensual_final,
-        diferencia: diferencia.toFixed(4),
+        iva:   calculatedValues.iva_carga_administrativa,
+        suma_exacta: suma_componentes,
+        final_redondeado: calculatedValues.valor_mensual_final,
+        diferencia: diferencia.toFixed(8),
       });
     }
 
-    return diferencia <= 0.01;
+    return diferencia <= 0.005;
   },
 
   /**
    * Actualiza todos los ResumenCuenta asociados a un proyecto
    */
-  async _syncResumenesCuenta(
-    id_proyecto,
-    calculatedValues,
-    cuotaData,
-    transaction
-  ) {
+  async _syncResumenesCuenta(id_proyecto, calculatedValues, cuotaData, transaction) {
     try {
-      // 1. Buscar todas las suscripciones activas del proyecto
       const suscripciones = await SuscripcionProyecto.findAll({
-        where: {
-          id_proyecto: id_proyecto,
-          activo: true,
-        },
+        where: { id_proyecto, activo: true },
         attributes: ["id"],
         transaction,
       });
 
       if (suscripciones.length === 0) {
-        console.log(
-          `⚠️ No hay suscripciones activas para el proyecto ${id_proyecto}`
-        );
+        console.log(`⚠️ No hay suscripciones activas para el proyecto ${id_proyecto}`);
         return 0;
       }
 
       const idsSuscripciones = suscripciones.map((s) => s.id);
 
-      // 2. Construir el nuevo detalle_cuota
       const nuevoDetalleCuota = {
-        nombre_cemento: cuotaData.nombre_cemento_cemento,
-        valor_cemento_unidades: cuotaData.valor_cemento_unidades,
-        valor_cemento: this._roundTo2(cuotaData.valor_cemento),
-        porcentaje_plan: this._roundTo2(cuotaData.porcentaje_plan),
-        valor_movil: calculatedValues.valor_movil,
-        valor_mensual: calculatedValues.valor_mensual,
-        carga_administrativa: calculatedValues.carga_administrativa,
+        nombre_cemento:          cuotaData.nombre_cemento_cemento,
+        valor_cemento_unidades:  cuotaData.valor_cemento_unidades,
+        valor_cemento:           Number(cuotaData.valor_cemento),
+        porcentaje_plan:         Number(cuotaData.porcentaje_plan),
+        valor_movil:             calculatedValues.valor_movil,
+        valor_mensual:           calculatedValues.valor_mensual,
+        carga_administrativa:    calculatedValues.carga_administrativa,
         iva_carga_administrativa: calculatedValues.iva_carga_administrativa,
-        valor_mensual_final: calculatedValues.valor_mensual_final,
+        valor_mensual_final:     calculatedValues.valor_mensual_final,
       };
 
-      // 3. Actualizar todos los ResumenCuenta asociados
       const [cantidadActualizada] = await ResumenCuenta.update(
         {
           detalle_cuota: nuevoDetalleCuota,
           meses_proyecto: cuotaData.total_cuotas_proyecto,
         },
         {
-          where: {
-            id_suscripcion: idsSuscripciones,
-          },
+          where: { id_suscripcion: idsSuscripciones },
           transaction,
         }
       );
@@ -176,10 +150,7 @@ const cuotaMensualService = {
   async createAndSetProjectAmount(data) {
     const t = await sequelize.transaction();
     try {
-      // 1. Obtener el Proyecto
-      const proyecto = await Proyecto.findByPk(data.id_proyecto, {
-        transaction: t,
-      });
+      const proyecto = await Proyecto.findByPk(data.id_proyecto, { transaction: t });
 
       if (!proyecto) {
         throw new Error("El proyecto especificado no fue encontrado.");
@@ -193,38 +164,32 @@ const cuotaMensualService = {
         );
       }
 
-      // 2. Preparar datos y calcular valores
-      const completeData = {
-        ...data,
-        total_cuotas_proyecto: totalCuotasProyecto,
-      };
+      const completeData = { ...data, total_cuotas_proyecto: totalCuotasProyecto };
 
       const calculatedValues = this._calculateValues(completeData);
+      this._verificarSuma(calculatedValues);
 
-      // 3. Crear la nueva cuota
       const nuevaCuota = await CuotaMensual.create(
         {
-          id_proyecto: completeData.id_proyecto,
-          nombre_proyecto: completeData.nombre_proyecto,
-          nombre_cemento_cemento: completeData.nombre_cemento_cemento,
-          valor_cemento_unidades: completeData.valor_cemento_unidades,
-          valor_cemento: completeData.valor_cemento,
-          total_cuotas_proyecto: completeData.total_cuotas_proyecto,
-          porcentaje_plan: completeData.porcentaje_plan,
+          id_proyecto:              completeData.id_proyecto,
+          nombre_proyecto:          completeData.nombre_proyecto,
+          nombre_cemento_cemento:   completeData.nombre_cemento_cemento,
+          valor_cemento_unidades:   completeData.valor_cemento_unidades,
+          valor_cemento:            completeData.valor_cemento,
+          total_cuotas_proyecto:    completeData.total_cuotas_proyecto,
+          porcentaje_plan:          completeData.porcentaje_plan,
           porcentaje_administrativo: completeData.porcentaje_administrativo,
-          porcentaje_iva: completeData.porcentaje_iva,
+          porcentaje_iva:           completeData.porcentaje_iva,
           ...calculatedValues,
         },
         { transaction: t }
       );
 
-      // 4. Actualizar el monto_inversion del proyecto
       await Proyecto.update(
         { monto_inversion: calculatedValues.valor_mensual_final },
         { where: { id: data.id_proyecto }, transaction: t }
       );
 
-      // 5. Sincronizar ResumenCuenta
       const resumenesActualizados = await this._syncResumenesCuenta(
         data.id_proyecto,
         calculatedValues,
@@ -234,18 +199,11 @@ const cuotaMensualService = {
 
       await t.commit();
 
-      return {
-        cuota: nuevaCuota,
-        resumenes_actualizados: resumenesActualizados,
-      };
+      return { cuota: nuevaCuota, resumenes_actualizados: resumenesActualizados };
     } catch (primaryError) {
       try {
-        if (t && t.finished !== "rollback") {
-          await t.rollback();
-        }
-      } catch (rollbackError) {
-        // Ignorar error de rollback
-      }
+        if (t && t.finished !== "rollback") await t.rollback();
+      } catch (_) {}
       throw primaryError;
     }
   },
@@ -262,40 +220,24 @@ const cuotaMensualService = {
         return null;
       }
 
-      // 1. Determinar el total_cuotas_proyecto
       if (!data.total_cuotas_proyecto) {
-        const proyecto = await Proyecto.findByPk(cuota.id_proyecto, {
-          transaction: t,
-        });
-        if (proyecto && proyecto.plazo_inversion) {
-          data.total_cuotas_proyecto = proyecto.plazo_inversion;
-        } else {
-          data.total_cuotas_proyecto = cuota.total_cuotas_proyecto;
-        }
+        const proyecto = await Proyecto.findByPk(cuota.id_proyecto, { transaction: t });
+        data.total_cuotas_proyecto =
+          proyecto?.plazo_inversion ?? cuota.total_cuotas_proyecto;
       }
 
-      // 2. Combinar datos
       const mergedData = { ...cuota.dataValues, ...data };
 
-      // 3. Recalcular valores
       const calculatedValues = this._calculateValues(mergedData);
+      this._verificarSuma(calculatedValues);
 
-      // 4. Actualizar la cuota
-      await cuota.update(
-        {
-          ...mergedData,
-          ...calculatedValues,
-        },
-        { transaction: t }
-      );
+      await cuota.update({ ...mergedData, ...calculatedValues }, { transaction: t });
 
-      // 5. Actualizar el proyecto
       await Proyecto.update(
         { monto_inversion: calculatedValues.valor_mensual_final },
         { where: { id: cuota.id_proyecto }, transaction: t }
       );
 
-      // 6. Sincronizar ResumenCuenta
       const resumenesActualizados = await this._syncResumenesCuenta(
         cuota.id_proyecto,
         calculatedValues,
@@ -305,18 +247,11 @@ const cuotaMensualService = {
 
       await t.commit();
 
-      return {
-        cuota: cuota,
-        resumenes_actualizados: resumenesActualizados,
-      };
+      return { cuota, resumenes_actualizados: resumenesActualizados };
     } catch (primaryError) {
       try {
-        if (t && t.finished !== "rollback") {
-          await t.rollback();
-        }
-      } catch (rollbackError) {
-        // Ignorar error de rollback
-      }
+        if (t && t.finished !== "rollback") await t.rollback();
+      } catch (_) {}
       throw primaryError;
     }
   },
@@ -326,7 +261,7 @@ const cuotaMensualService = {
    */
   async findByProjectId(id_proyecto) {
     return CuotaMensual.findAll({
-      where: { id_proyecto: id_proyecto },
+      where: { id_proyecto },
       order: [["createdAt", "DESC"]],
     });
   },
@@ -336,7 +271,7 @@ const cuotaMensualService = {
    */
   async findLastByProjectId(id_proyecto) {
     return CuotaMensual.findOne({
-      where: { id_proyecto: id_proyecto },
+      where: { id_proyecto },
       order: [["createdAt", "DESC"]],
       limit: 1,
     });
@@ -347,9 +282,7 @@ const cuotaMensualService = {
    */
   async softDelete(id) {
     const cuota = await CuotaMensual.findByPk(id);
-    if (!cuota) {
-      return null;
-    }
+    if (!cuota) return null;
     await cuota.update({ activo: false });
     return cuota;
   },
