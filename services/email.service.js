@@ -3,37 +3,29 @@ const nodemailer = require("nodemailer");
 const { Resend } = require("resend");
 const dotenv = require("dotenv");
 dotenv.config();
-const esProduccion =
-  process.env.NODE_ENV === "production" || process.env.RESEND_API_KEY;
+
+// ✅ CONTROL EXPLÍCITO: Cambia EMAIL_PROVIDER en .env para alternar entre proveedores
+// Valores válidos: 'gmail' | 'resend'
+const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || "gmail";
+
 let transporter;
 let resend;
 
-if (esProduccion && process.env.RESEND_API_KEY) {
+if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
   // 🌐 PRODUCCIÓN: Usar Resend
   resend = new Resend(process.env.RESEND_API_KEY);
   console.log("✅ Configurado email con Resend (Producción)");
 } else {
-  // 💻 LOCAL: Usar Gmail
+  // 💻 LOCAL / RAILWAY: Usar Gmail con Nodemailer
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      pass: process.env.EMAIL_PASS, // ⚠️ Usar App Password de Google, NO la contraseña normal
     },
   });
-  console.log("✅ Configurado email con Gmail (Desarrollo)");
+  console.log("✅ Configurado email con Gmail/Nodemailer");
 }
-
-// Configura el transportador de correo utilizando las credenciales de entorno.
-// CRÍTICO: Las credenciales deben cargarse correctamente desde .env (EMAIL_USER, EMAIL_PASS)
-/*const transporter = nodemailer.createTransport({
-  service: "gmail", // Usar un servicio conocido simplifica la configuración
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-*/
 
 /**
  * Genera la plantilla base HTML que envuelve el contenido específico del correo.
@@ -89,11 +81,15 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
 const emailService = {
   /**
    * Función base para enviar un correo electrónico.
-   * Detecta automáticamente si usar Resend (producción) o Gmail (local).
+   * Detecta automáticamente si usar Resend (producción) o Gmail/Nodemailer (local/Railway).
+   * @param {string} to - Destinatario.
+   * @param {string} subject - Asunto.
+   * @param {string} text - Cuerpo en texto plano (fallback).
+   * @param {string} html - Cuerpo en formato HTML (principal).
    */
   async sendEmail(to, subject, text, html) {
     try {
-      if (resend) {
+      if (EMAIL_PROVIDER === "resend" && resend) {
         // 🌐 USAR RESEND (Producción)
         const { data, error } = await resend.emails.send({
           from: "Loteplan <onboarding@resend.dev>",
@@ -109,7 +105,7 @@ const emailService = {
 
         console.log(`✅ Email enviado via Resend a ${to} (ID: ${data.id})`);
       } else {
-        // 💻 USAR GMAIL (Local/Railway)
+        // 💻 USAR GMAIL/NODEMAILER (Local/Railway)
         const mailOptions = {
           from: process.env.EMAIL_USER,
           to,
@@ -119,44 +115,13 @@ const emailService = {
         };
 
         await transporter.sendMail(mailOptions);
-        console.log(`✅ Email enviado via Gmail a ${to}`);
+        console.log(`✅ Email enviado via Gmail/Nodemailer a ${to}`);
       }
     } catch (error) {
       console.error(`❌ Error al enviar correo a ${to}:`, error);
       throw error;
     }
   },
-
-  /**
-   * Función base para enviar un correo electrónico.
-   * Incluye manejo de errores para el envío.
-   * @param {string} to - Destinatario.
-   * @param {string} subject - Asunto.
-   * @param {string} text - Cuerpo en texto plano (fallback).
-   * @param {string} html - Cuerpo en formato HTML (principal).
-   */
-  /*async sendEmail(to, subject, text, html) {
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to,
-      subject,
-      text,
-      html,
-    };
-
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log(`Correo enviado a ${to}`);
-    } catch (error) {
-      // Registrar el error sin detener la ejecución de la aplicación.
-      console.error(`Error al enviar correo a ${to}:`, error);
-      // Opcional: Podría lanzarse un error aquí si la falla de envío es crítica.
-    }
-  },*/
-  /**
-   * Función base para enviar un correo electrónico.
-   * Detecta automáticamente si usar Resend (producción) o Gmail (local).
-   */
 
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
@@ -169,60 +134,42 @@ const emailService = {
     const tipoSubasta = esSubastaPrivada ? "Privada" : "Pública";
     const subject = `¡NUEVO LOTE EN SUBASTA (${tipoSubasta})! Lote #${lote.id}`;
 
-    // El mensaje de exclusividad es crítico para la UX y las reglas de negocio.
     const mensajeExclusividad = esSubastaPrivada
       ? `**IMPORTANTE: Esta es una subasta privada y solo los suscriptores del proyecto asociado pueden participar.**`
       : `¡No te lo pierdas!`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
-        <h2 style="color: #0b1b36; margin-top: 0;">¡Subasta Activa! Lote: ${
-          lote.nombre_lote
-        }</h2>
-        <p>El lote **"${
-          lote.nombre_lote
-        }"** ya está disponible para pujar en nuestra plataforma.</p>
+        <h2 style="color: #0b1b36; margin-top: 0;">¡Subasta Activa! Lote: ${lote.nombre_lote}</h2>
+        <p>El lote **"${lote.nombre_lote}"** ya está disponible para pujar en nuestra plataforma.</p>
         <h3 style="color: #333;">Detalles de la Subasta</h3>
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
-            <li><strong style="color: #555;">Monto Base:</strong> $${
-              lote.monto_base_lote
-            }</li>
+            <li><strong style="color: #555;">Monto Base:</strong> $${lote.monto_base_lote}</li>
             <li><strong style="color: #FF5733;">Fecha de Cierre Estimada:</strong> ${
               lote.fecha_fin
                 ? lote.fecha_fin.toLocaleDateString("es-ES")
                 : "N/A"
             }</li>
         </ul>
-        <p style="font-weight: bold; color: ${
-          esSubastaPrivada ? "red" : "#333"
-        }">${mensajeExclusividad}</p>
+        <p style="font-weight: bold; color: ${esSubastaPrivada ? "red" : "#333"}">${mensajeExclusividad}</p>
         <a href="[URL_A_LA_SUBASTA]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
             Ver Lote Ahora
         </a>
     `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
-
-    const text = `Subasta activa: Lote ${lote.nombre_lote}. Monto Base: $${
-      lote.monto_base_lote
-    }. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
+    const text = `Subasta activa: Lote ${lote.nombre_lote}. Monto Base: $${lote.monto_base_lote}. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
 
     await this.sendEmail(email, subject, text, html);
   },
 
   /**
    * Envía el correo electrónico de confirmación de cuenta.
-   * CRÍTICO: Utiliza `FRONTEND_URL` para construir el enlace seguro.
    * @param {object} user - Objeto del usuario (nombre, email).
    * @param {string} token - Token de confirmación.
    */
   async sendConfirmationEmail(user, token) {
-    // ✅ El botón principal apunta al frontend (correcto)
     const confirmationLink = `${process.env.FRONTEND_URL}/api/auth/confirmar_email/${token}`;
-
-    // ✅ El enlace de fallback debe apuntar al BACKEND (nuevo)
     const backendConfirmationLink = `${process.env.HOST_URL}/api/auth/confirmar_email/${token}`;
-
     const subject = "¡Bienvenido! Confirma tu Cuenta de Usuario";
 
     const contenidoInterno = `
@@ -247,7 +194,6 @@ const emailService = {
 
   /**
    * Notifica al usuario que ha ganado un lote.
-   * LÓGICA DE NEGOCIO: Establece el plazo de pago de 90 días y gestiona la **reasignación**.
    * @param {object} user - Ganador.
    * @param {number} loteId - ID del lote ganado.
    * @param {string} fechaLimite - Fecha límite de pago.
@@ -265,17 +211,10 @@ const emailService = {
       ? `Tu puja ha sido la ganadora. El Lote **#${loteId}** te ha sido **reasignado**.`
       : `Tu puja ha sido la ganadora del Lote **#${loteId}**.`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
-        <h2 style="color: #4CAF50; margin-top: 0;">¡Felicidades, ${
-          user.nombre
-        }!</h2>
+        <h2 style="color: #4CAF50; margin-top: 0;">¡Felicidades, ${user.nombre}!</h2>
         <p>${titulo}</p>
-        ${
-          esReasignacion
-            ? '<p style="color: red; font-weight: bold;">Esto ocurre debido al incumplimiento de pago del postor anterior.</p>'
-            : ""
-        }
+        ${esReasignacion ? '<p style="color: red; font-weight: bold;">Esto ocurre debido al incumplimiento de pago del postor anterior.</p>' : ""}
         <h3 style="color: #333;">Detalles y Plazo de Pago</h3>
         <p>Tienes **90 días** para completar el pago.</p>
         <p style="font-size: 1.1em; font-weight: bold; color: #FF5733;">La fecha límite de pago es: **${fechaLimite}**.</p>
@@ -296,14 +235,12 @@ const emailService = {
 
   /**
    * Notifica al usuario que ha perdido un lote por no cumplir con el plazo de pago.
-   * LÓGICA DE NEGOCIO: Informa la **pérdida del lote** y la **devolución del token de subasta**.
    * @param {object} user - Usuario incumplidor.
    * @param {number} loteId - ID del lote perdido.
    */
   async notificarImpago(user, loteId) {
     const subject = `Importante: Lote #${loteId} Perdido por Impago`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #d9534f; margin-top: 0;">Estimado ${user.nombre},</h2>
         <p>Lamentamos informarte que has **perdido el Lote #${loteId}** debido a que el plazo de 90 días para realizar el pago ha expirado.</p>
@@ -324,23 +261,16 @@ const emailService = {
     );
   },
 
-  // -----------------------------------------------------------
-  // FUNCIONES DE NOTIFICACIÓN ESPECÍFICAS DE PROYECTO
-  // -----------------------------------------------------------
-
   /**
    * Notifica a **MÚLTIPLES USUARIOS** que el proyecto alcanzó su objetivo y ha comenzado.
-   * LÓGICA DE NEGOCIO: Proporciona la información crítica sobre el **inicio de la facturación**.
    * @param {object} proyecto - Proyecto de Sequelize.
    * @param {object[]} usuarios - Lista de usuarios a notificar.
    */
   async notificarInicioProyectoMasivo(proyecto, usuarios) {
     const subject = `🥳 ¡Objetivo Alcanzado! El proyecto ${proyecto.nombre_proyecto} ha comenzado.`;
 
-    // Lógica para enviar a múltiples destinatarios.
     for (const usuario of usuarios) {
       if (usuario.email) {
-        // Contenido interno específico para la plantilla
         const contenidoInterno = `
             <h2 style="color: #4CAF50; margin-top: 0;">¡Gran Noticia, ${usuario.nombre}!</h2>
             <p>El proyecto **"${proyecto.nombre_proyecto}"** ha alcanzado el **objetivo de ${proyecto.obj_suscripciones} suscripciones**.</p>
@@ -354,7 +284,6 @@ const emailService = {
         `;
 
         const html = obtenerPlantillaHtml(contenidoInterno);
-
         const text = `¡Felicidades, ${usuario.nombre}! El proyecto ${proyecto.nombre_proyecto} ha alcanzado el objetivo de suscripciones (${proyecto.obj_suscripciones}). La generación de pagos mensuales comenzará el día 1 del próximo mes.`;
 
         await this.sendEmail(usuario.email, subject, text, html);
@@ -364,14 +293,12 @@ const emailService = {
 
   /**
    * Notifica a un **ADMINISTRADOR** que un proyecto alcanzó su objetivo y ha comenzado.
-   * LÓGICA DE NEGOCIO: Aviso a personal clave sobre un evento de transición de estado.
    * @param {string} adminEmail - Correo del administrador.
    * @param {object} proyecto - Proyecto de Sequelize.
    */
   async notificarInicioProyectoAdmin(adminEmail, proyecto) {
     const subject = `🟢 INICIO DE PROYECTO: Objetivo Cumplido - ${proyecto.nombre_proyecto}`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #0b1b36; margin-top: 0;">¡El Proyecto ha Iniciado su Proceso!</h2>
         <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) ha alcanzado el número de suscripciones requerido (**${proyecto.obj_suscripciones}**).</p>
@@ -392,8 +319,6 @@ const emailService = {
 
   /**
    * Notifica a un **USUARIO/SUSCRIPTOR** la pausa de un proyecto.
-   * LÓGICA DE NEGOCIO: La pausa se debe a que las suscripciones cayeron por debajo del mínimo,
-   * y la consecuencia es la **detención de la facturación y el plazo**.
    * @param {object} user - Usuario/suscriptor.
    * @param {object} proyecto - Proyecto.
    */
@@ -401,13 +326,12 @@ const emailService = {
     const subject = `🚨 ¡Importante! Proyecto ${proyecto.nombre_proyecto} PAUSADO`;
     const text = `El proyecto ${proyecto.nombre_proyecto} ha sido PAUSADO temporalmente. Razón: Las suscripciones activas (${proyecto.suscripciones_actuales}) han caído por debajo del mínimo requerido (${proyecto.suscripciones_minimas}). Se reanudará cuando se alcance el objetivo de ${proyecto.obj_suscripciones}.`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #ffc107; margin-top: 0;">¡Tu Proyecto ha sido Pausado Temporalmente!</h2>
         <p>Hola **${user.nombre}**, lamentamos informarte que el proyecto **"${proyecto.nombre_proyecto}"** ha sido **PAUSADO** temporalmente.</p>
         <p>Razón: El número de **suscripciones activas** (${proyecto.suscripciones_actuales}) ha caído por debajo del mínimo requerido (${proyecto.suscripciones_minimas}).</p>
         <p style="font-weight: bold; color: #d9534f; font-size: 1.1em;">Consecuencia: Dejaremos de generar pagos mensuales y de descontar meses del plazo.</p>
-        <p>Te notificaremos tan pronto como se reanude. </p>
+        <p>Te notificaremos tan pronto como se reanude.</p>
     `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -417,15 +341,12 @@ const emailService = {
 
   /**
    * Notifica a un **ADMINISTRADOR** la reversión de un proyecto.
-   * LÓGICA DE NEGOCIO: Alerta crítica sobre la reversión de estado a 'En Espera' debido a bajo umbral,
-   * que requiere una revisión manual de las acciones tomadas por el sistema.
    * @param {string} adminEmail - Correo del admin.
    * @param {object} proyecto - Proyecto.
    */
   async notificarReversionAdmin(adminEmail, proyecto) {
     const subject = `🛑 ALERTA CRÍTICA: Proyecto Revertido - ${proyecto.nombre_proyecto}`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #d9534f; margin-top: 0;">¡Aviso! Proyecto Revertido a 'En Espera'</h2>
         <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) ha sido **REVERTIDO** a 'En Espera'.</p>
@@ -446,15 +367,12 @@ const emailService = {
 
   /**
    * Notifica a un **ADMINISTRADOR** que un proyecto ha completado su plazo.
-   * LÓGICA DE NEGOCIO: Alerta crítica de cierre que requiere **acciones manuales** de finalización,
-   * como marcar el estado final y gestionar devoluciones/lotes pendientes.
    * @param {string} adminEmail - Correo del administrador.
    * @param {object} proyecto - Proyecto finalizado.
    */
   async notificarFinalizacionAdmin(adminEmail, proyecto) {
     const subject = `✅ PROYECTO FINALIZADO - Acción: ${proyecto.nombre_proyecto}`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #0b1b36; margin-top: 0;">¡El Plazo del Proyecto ha Terminado!</h2>
         <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) ha completado su plazo de **${proyecto.plazo_inversion} meses**.</p>
@@ -492,18 +410,13 @@ const emailService = {
   async notificarPagoGenerado(user, proyecto, cuota, monto, fechaVencimiento) {
     const subject = `Recordatorio de Pago: ${proyecto.nombre_proyecto} - Cuota ${cuota}`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #0b1b36; margin-top: 0;">¡Tu Pago Mensual ha sido Generado!</h2>
         <p>Hola **${user.nombre}**:</p>
-        <p>Tu cuota **#${cuota}** para el proyecto **"${
-          proyecto.nombre_proyecto
-        }"** ha sido generada.</p>
+        <p>Tu cuota **#${cuota}** para el proyecto **"${proyecto.nombre_proyecto}"** ha sido generada.</p>
         <h3 style="color: #333;">Detalles del Pago</h3>
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
-            <li><strong style="color: #555;">Monto a pagar:</strong> <strong style="color: #4CAF50;">$${monto.toFixed(
-              2,
-            )}</strong></li>
+            <li><strong style="color: #555;">Monto a pagar:</strong> <strong style="color: #4CAF50;">$${monto.toFixed(2)}</strong></li>
             <li><strong style="color: #555;">Cuota Nro:</strong> ${cuota}</li>
             <li><strong style="color: #FF5733;">Fecha Límite de Pago:</strong> **${fechaVencimiento}**</li>
         </ul>
@@ -519,25 +432,20 @@ const emailService = {
     await this.sendEmail(
       user.email,
       subject,
-      `Se ha generado tu pago de $${monto.toFixed(2)} para el proyecto ${
-        proyecto.nombre_proyecto
-      }. Vence el ${fechaVencimiento}.`,
+      `Se ha generado tu pago de $${monto.toFixed(2)} para el proyecto ${proyecto.nombre_proyecto}. Vence el ${fechaVencimiento}.`,
       html,
     );
   },
 
   /**
    * Envía un correo con el enlace para restablecer la contraseña.
-   * CRÍTICO: Utiliza `FRONTEND_URL` y el token para un proceso de restablecimiento seguro.
    * @param {object} user - Usuario.
    * @param {string} token - Token de restablecimiento.
    */
   async sendPasswordResetEmail(user, token) {
-    // MODIFICADO: Uso de process.env.FRONTEND_URL y paso del token como query parameter.
     const resetLink = `${process.env.FRONTEND_URL}/restablecer_contrasena?token=${token}`;
     const subject = "Solicitud de Restablecimiento de Contraseña";
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #0b1b36; margin-top: 0;">Hola ${user.nombre},</h2>
         <p>Recibimos una solicitud para restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
@@ -560,7 +468,6 @@ const emailService = {
 
   /**
    * Notifica al **ADMINISTRADOR** sobre un pago vencido.
-   * LÓGICA DE NEGOCIO: Alerta de incumplimiento, mostrando el detalle del **recargo aplicado**.
    * @param {string} adminEmail - Correo del administrador.
    * @param {object} user - Usuario incumplidor.
    * @param {object} proyecto - Proyecto asociado.
@@ -578,26 +485,15 @@ const emailService = {
   ) {
     const subject = `⚠️ PAGO VENCIDO: Acción Requerida - Usuario ${user.nombre}`;
 
-    // Contenido interno específico para la plantilla
     const contenidoInterno = `
         <h2 style="color: #d9534f; margin-top: 0;">¡ALERTA DE PAGO VENCIDO!</h2>
-        <p>El usuario **${user.nombre}** (Email: ${
-          user.email
-        }) ha incumplido el pago de la cuota **#${pago.mes}** para el proyecto **"${
-          proyecto.nombre_proyecto
-        }"**.</p>
+        <p>El usuario **${user.nombre}** (Email: ${user.email}) ha incumplido el pago de la cuota **#${pago.mes}** para el proyecto **"${proyecto.nombre_proyecto}"**.</p>
         <h3 style="color: #333;">Detalles</h3>
         <ul style="list-style: none; padding-left: 0; line-height: 2;">
             <li><strong style="color: #555;">ID Pago:</strong> ${pago.id}</li>
-            <li><strong style="color: #555;">Monto Base:</strong> $${montoBase.toFixed(
-              2,
-            )}</li>
-            <li><strong style="color: #d9534f;">Monto con Recargo:</strong> $${pago.monto.toFixed(
-              2,
-            )} (Recargo: $${recargoTotal.toFixed(2)})</li>
-            <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${
-              pago.fecha_vencimiento
-            }</li>
+            <li><strong style="color: #555;">Monto Base:</strong> $${montoBase.toFixed(2)}</li>
+            <li><strong style="color: #d9534f;">Monto con Recargo:</strong> $${pago.monto.toFixed(2)} (Recargo: $${recargoTotal.toFixed(2)})</li>
+            <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${pago.fecha_vencimiento}</li>
         </ul>
         <p style="font-weight: bold;">Se ha enviado una alerta al cliente. Por favor, realice el seguimiento correspondiente.</p>
     `;
@@ -615,27 +511,10 @@ const emailService = {
   /**
    * @async
    * @function notificarReembolsoUsuario
-   * @description Notifica al usuario sobre un reembolso automático por fallo de negocio.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
-   * @param {object} transaccion - Objeto de la transacción (debe contener id, monto, tipo_transaccion).
-   * @param {string} motivoFallo - Mensaje de error de la lógica de negocio.
-   */
-  /**
-   * @async
-   * @function notificarReembolsoUsuario
-   * @description Notifica al usuario que su transacción falló y le informa sobre el estado del reembolso.
+   * @description Notifica al usuario que su transacción falló e informa sobre el estado del reembolso.
    * @param {object} user - Objeto del usuario (debe contener nombre y email).
    * @param {object} transaccion - Objeto de la transacción (debe contener monto, tipo_transaccion, id).
-   * @param {string} motivoFallo - Razón del fallo de la lógica de negocio (e.g., "no hay cupos").
-   * @param {boolean} reembolsoExitoso - Indica si el intento de reembolso en MP fue exitoso (NUEVO).
-   */
-  /**
-   * @async
-   * @function notificarReembolsoUsuario
-   * @description Notifica al usuario con un tono profesional y calmado que su transacción falló, informando el estado del reembolso.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
-   * @param {object} transaccion - Objeto de la transacción (debe contener monto, tipo_transaccion, id).
-   * @param {string} motivoFallo - Razón del fallo de la lógica de negocio (e.g., "no hay cupos").
+   * @param {string} motivoFallo - Razón del fallo de la lógica de negocio.
    * @param {boolean} reembolsoExitoso - Indica si el intento de reembolso en MP fue exitoso.
    */
   async notificarReembolsoUsuario(
@@ -647,26 +526,22 @@ const emailService = {
     if (!user || !user.email) return;
 
     const monto = parseFloat(transaccion.monto).toFixed(2);
-    // Determinar el tipo de acción que falló para un mensaje más natural
     const tipoAccion = transaccion.tipo_transaccion.includes("suscripcion")
       ? "la suscripción"
       : "la inversión";
 
-    let userSubject;
-    let tituloPrincipal;
-    let mensajeAccion;
-    let colorTitulo;
-    let mensajeAgradecimiento;
+    let userSubject,
+      tituloPrincipal,
+      mensajeAccion,
+      colorTitulo,
+      mensajeAgradecimiento;
 
     if (reembolsoExitoso) {
-      // --- Escenario 1: Reembolso Automático EXITOSO (Mensaje tranquilizador) ---
       userSubject = `✅ Acción Requerida: ${tipoAccion} Fallida - Reembolso Procesado`;
       tituloPrincipal = `<h2 style="color: #4CAF50; margin-top: 0; font-size: 24px;">¡Reembolso Procesado con Éxito!</h2>`;
       colorTitulo = "#4CAF50";
-
       mensajeAgradecimiento = `<p>Lamentamos informarte que ${tipoAccion} (Transacción <strong>#${transaccion.id}</strong> por <strong>$${monto}</strong>) no pudo completarse. La razón principal fue: <strong>${motivoFallo}</strong>.</p>
                                  <p style="font-size: 16px;">Sin embargo, **lo más importante** es que ya hemos procesado automáticamente el reembolso.</p>`;
-
       mensajeAccion = `
             <div style="border-left: 5px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin-top: 20px; border-radius: 4px;">
                 <p style="color: #4CAF50; font-weight: bold; font-size: 1.1em; margin: 0;"><strong>💰 Reembolso Acreditado:</strong></p>
@@ -675,14 +550,11 @@ const emailService = {
             </div>
         `;
     } else {
-      // --- Escenario 2: Reembolso Automático FALLIDO (Mensaje de acción simple) ---
       userSubject = `❌ Acción Requerida: ${tipoAccion} Fallida - Contáctanos`;
       tituloPrincipal = `<h2 style="color: #FF5733; margin-top: 0; font-size: 24px;">¡Atención! ${tipoAccion} no pudo completarse</h2>`;
       colorTitulo = "#FF5733";
-
       mensajeAgradecimiento = `<p>Te informamos que ${tipoAccion} (Transacción <strong>#${transaccion.id}</strong> por <strong>$${monto}</strong>) falló debido a: <strong>${motivoFallo}</strong>.</p>
                                  <p style="font-size: 16px;"><strong>Lo sentimos,</strong> pero nuestro intento de procesar el reembolso automático **no pudo completarse con éxito**.</p>`;
-
       mensajeAccion = `
             <div style="border-left: 5px solid #FF5733; padding: 15px; background-color: #ffe6e6; margin-top: 20px; border-radius: 4px;">
                 <p style="color: #FF5733; font-weight: bold; font-size: 1.1em; margin: 0;"><strong>🛠️ Acción Inmediata Requerida:</strong></p>
@@ -694,17 +566,12 @@ const emailService = {
         `;
     }
 
-    // --- Estructura Final del Contenido ---
     const contenidoInterno = `
         ${tituloPrincipal}
         <p style="font-size: 16px; margin-bottom: 20px;">Estimado(a) <strong>${user.nombre}</strong>,</p>
-        
         ${mensajeAgradecimiento}
-
         ${mensajeAccion}
-
         <p style="margin-top: 30px; font-size: 14px;">Lamentamos sinceramente este inconveniente. Puedes intentar realizar una nueva acción en otro proyecto si lo deseas.</p>
-        
         <p style="margin-top: 10px; font-size: 14px;">Saludos cordiales,</p>
         <p style="font-size: 14px; font-weight: bold; margin: 0;">El Equipo de Loteplan.com</p>
     `;
@@ -723,10 +590,10 @@ const emailService = {
    * @async
    * @function notificarPagoVencidoCliente
    * @description Notifica al usuario sobre su pago vencido, incluyendo el recargo aplicado.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre y email).
-   * @param {object} proyecto - Objeto del proyecto asociado (debe contener nombre_proyecto).
-   * @param {object} pago - Objeto del pago vencido (debe contener id, mes, monto, fecha_vencimiento).
-   * @param {number} montoBase - Monto original del pago sin recargos.
+   * @param {object} usuario - Objeto del usuario.
+   * @param {object} proyecto - Objeto del proyecto asociado.
+   * @param {object} pago - Objeto del pago vencido.
+   * @param {number} montoBase - Monto original sin recargos.
    * @param {number} recargoTotal - Recargo aplicado.
    */
   async notificarPagoVencidoCliente(
@@ -743,7 +610,6 @@ const emailService = {
     const montoActualTexto = pago.monto.toFixed(2);
     const recargoTotalTexto = recargoTotal.toFixed(2);
 
-    // --- Contenido para el Cliente (dentro de la plantilla) ---
     const contenidoInterno = `
             <h2 style="color: #d9534f; margin-top: 0;">¡ATENCIÓN, PAGO VENCIDO!</h2>
             <p>Estimado/a **${usuario.nombre}**:</p>
@@ -768,16 +634,16 @@ const emailService = {
       `Tu pago de $${montoActualTexto} para el proyecto ${proyecto.nombre_proyecto} ha vencido.`,
       html,
     );
-  }, // <-- COMA
+  },
 
   /**
    * @async
    * @function notificarRecordatorioPago
    * @description Envía un recordatorio al usuario de que su pago está próximo a vencer.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre y email).
-   * @param {object} proyecto - Objeto del proyecto asociado (debe contener nombre_proyecto).
-   * @param {object} pago - Objeto del pago (debe contener id, mes, monto, fecha_vencimiento).
-   * @param {string} email_empresa - Email de la empresa para enviar una copia (opcional/log).
+   * @param {object} usuario - Objeto del usuario.
+   * @param {object} proyecto - Objeto del proyecto asociado.
+   * @param {object} pago - Objeto del pago.
+   * @param {string} email_empresa - Email de la empresa (opcional).
    */
   async notificarRecordatorioPago(usuario, proyecto, pago, email_empresa) {
     if (!usuario || !usuario.email) return;
@@ -792,7 +658,6 @@ const emailService = {
       day: "numeric",
     });
 
-    // --- Contenido para el Cliente (dentro de la plantilla) ---
     const contenidoInterno = `
             <h2 style="color: #0b1b36; margin-top: 0;">¡Recordatorio de Pago!</h2>
             <p>Hola **${usuario.nombre}**:</p>
@@ -817,13 +682,13 @@ const emailService = {
 
   /**
    * @async
-   * @function notificarReembolsoAdmin (VERSIÓN MEJORADA)
-   * @description Notifica a un administrador sobre un reembolso automático CON DETALLES DEL RESULTADO
+   * @function notificarReembolsoAdminMejorada
+   * @description Notifica a un administrador sobre un reembolso automático con detalles del resultado.
    * @param {string} adminEmail - Correo del administrador.
-   * @param {object} user - Objeto del usuario (nombre, email, id).
-   * @param {object} transaccion - Objeto de la transacción (id, monto, tipo_transaccion).
+   * @param {object} user - Objeto del usuario.
+   * @param {object} transaccion - Objeto de la transacción.
    * @param {string} motivoFallo - Mensaje de error de la lógica de negocio.
-   * @param {object} detallesReembolso - Objeto con {reembolsoExitoso, errorReembolso, idPagoMP}
+   * @param {object} detallesReembolso - {reembolsoExitoso, errorReembolso, idPagoMP}
    */
   async notificarReembolsoAdminMejorada(
     adminEmail,
@@ -844,16 +709,13 @@ const emailService = {
 
     const monto = parseFloat(transaccion.monto).toFixed(2);
     const tipoTransaccion = transaccion.tipo_transaccion || "desconocida";
-
-    // Color y mensaje según el resultado
     const colorTitulo = reembolsoExitoso ? "#4CAF50" : "#d9534f";
+
     const estadoReembolso = reembolsoExitoso
       ? `<p style="color: #4CAF50; font-weight: bold; border-left: 3px solid #4CAF50; padding-left: 10px;">✅ El reembolso fue procesado exitosamente por Mercado Pago.</p>`
       : `<p style="color: #d9534f; font-weight: bold; border-left: 3px solid #d9534f; padding-left: 10px;">⚠️ EL REEMBOLSO FALLÓ. Debes realizarlo MANUALMENTE.</p>
                 <p style="background-color: #fff3cd; padding: 10px; border-left: 3px solid #ffc107; font-size: 0.9em;">
-                    <strong>Error del API:</strong> ${
-                      errorReembolso || "Sin detalles del error"
-                    }
+                    <strong>Error del API:</strong> ${errorReembolso || "Sin detalles del error"}
                 </p>`;
 
     const accionRequerida = reembolsoExitoso
@@ -866,24 +728,15 @@ const emailService = {
                     <li>Contacta al usuario para confirmar: ${user.email}</li>
                 </ol>`;
 
-    // --- Contenido para el Administrador (dentro de la plantilla) ---
     const contenidoInterno = `
-            <h2 style="color: ${colorTitulo}; margin-top: 0;">${
-              reembolsoExitoso ? "✅ Reembolso Procesado" : "🚨 ALERTA CRÍTICA"
-            }</h2>
-            <p>El pago de <strong>$${monto}</strong> del usuario <strong>${
-              user.nombre
-            }</strong> (ID: ${user.id}, Email: ${
-              user.email
-            }) fue aprobado por MP, pero el sistema no pudo procesar la lógica de negocio (${tipoTransaccion}).</p>
+            <h2 style="color: ${colorTitulo}; margin-top: 0;">${reembolsoExitoso ? "✅ Reembolso Procesado" : "🚨 ALERTA CRÍTICA"}</h2>
+            <p>El pago de <strong>$${monto}</strong> del usuario <strong>${user.nombre}</strong> (ID: ${user.id}, Email: ${user.email}) fue aprobado por MP, pero el sistema no pudo procesar la lógica de negocio (${tipoTransaccion}).</p>
 
             <h3 style="color: #0b1b36;">📋 Detalles del Fallo y Transacción</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 0.95em;">
                 <tr style="background-color: #f8f9fa;">
                     <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Transacción ID:</strong></td>
-                    <td style="padding: 10px; border: 1px solid #dee2e6;">${
-                      transaccion.id
-                    }</td>
+                    <td style="padding: 10px; border: 1px solid #dee2e6;">${transaccion.id}</td>
                 </tr>
                 <tr>
                     <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>ID Pago MP:</strong></td>
@@ -915,20 +768,17 @@ const emailService = {
     await this.sendEmail(
       adminEmail,
       adminSubject,
-      `Reembolso ${
-        reembolsoExitoso ? "exitoso" : "FALLIDO - Acción requerida"
-      } para Transacción #${transaccion.id} del usuario ${
-        user.email
-      }. Motivo: ${motivoFallo}`,
+      `Reembolso ${reembolsoExitoso ? "exitoso" : "FALLIDO - Acción requerida"} para Transacción #${transaccion.id} del usuario ${user.email}. Motivo: ${motivoFallo}`,
       adminHtml,
     );
   },
+
   /**
    * @async
    * @function notificarSuscripcionExitosa
-   * @description Confirma al usuario que su suscripción al proyecto se ha completado con éxito tras el pago.
+   * @description Confirma al usuario que su suscripción al proyecto se completó con éxito.
    * @param {string} userEmail - Correo del usuario.
-   * @param {object} proyecto - Objeto del proyecto asociado (debe contener nombre_proyecto, monto_suscripcion, plazo_inversion).
+   * @param {object} proyecto - Objeto del proyecto asociado.
    */
   async notificarSuscripcionExitosa(userEmail, proyecto) {
     if (!userEmail) return;
@@ -936,7 +786,6 @@ const emailService = {
     const subject = `✅ ¡Suscripción Exitosa! Bienvenido a "${proyecto.nombre_proyecto}"`;
     const montoCuota = parseFloat(proyecto.monto_suscripcion || 0).toFixed(2);
 
-    // --- Contenido para el Usuario ---
     const contenidoInterno = `
         <h2 style="color: #4CAF50; margin-top: 0;">¡Felicidades, tu inversión ha comenzado!</h2>
         <p>Tu suscripción al proyecto **"${proyecto.nombre_proyecto}"** ha sido confirmada y registrada exitosamente en nuestro sistema. ¡Estás a bordo!</p>
@@ -971,113 +820,14 @@ const emailService = {
       `Confirmación de Suscripción al proyecto ${proyecto.nombre_proyecto}.`,
       html,
     );
-  }, // <-- COMA
-
-  /**
-   * @async
-   * @function notificarInicioProyectoMasivo
-   * @description Notifica a todos los usuarios que un proyecto ha alcanzado su objetivo y ha iniciado oficialmente.
-   * @param {object} proyecto - Objeto del proyecto (debe contener nombre_proyecto, obj_suscripciones).
-   * @param {Array<object>} usuarios - Array de objetos de usuario (debe contener nombre y email).
-   */
-  async notificarInicioProyectoMasivo(proyecto, usuarios) {
-    if (!usuarios || usuarios.length === 0) return;
-
-    const subject = `🚀 ¡GRAN NOTICIA! "${proyecto.nombre_proyecto}" ha iniciado oficialmente`;
-    const totalSuscritos = proyecto.obj_suscripciones || "el objetivo";
-    const emailTo = usuarios.map((u) => u.email).join(",");
-
-    // NOTA: Es común enviar un email por cada usuario en lugar de un masivo BCC para personalizar el saludo.
-    // Aquí asumimos un envío masivo para simplificar el ejemplo, pero usamos el saludo genérico.
-
-    // --- Contenido para los Usuarios ---
-    const contenidoInterno = `
-        <h2 style="color: #FF5733; margin-top: 0;">¡Objetivo de Suscripción Alcanzado!</h2>
-        <p>A toda nuestra comunidad de inversores:</p>
-        <p>Tenemos el placer de anunciar que el proyecto **"${proyecto.nombre_proyecto}"** ha alcanzado su objetivo de **${totalSuscritos} suscriptores** y ha pasado oficialmente al estado **"En Proceso"**.</p>
-        
-        <div style="border: 1px solid #0b1b36; padding: 15px; background-color: #f7f9fc; margin-top: 20px;">
-            <p style="font-weight: bold; color: #0b1b36;">Próximos Pasos:</p>
-            <ul style="line-height: 1.6;">
-                <li>Tu plan de pagos comenzará a correr a partir de esta fecha.</li>
-                <li>Podrás seguir el progreso del proyecto en tu panel de control.</li>
-            </ul>
-        </div>
-
-        <p style="margin-top: 20px;">Gracias por tu confianza. ¡Empezamos a trabajar en tu próxima inversión!</p>
-        <a href="[URL_A_PROYECTO_EN_SITIO]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-            Ver Detalles del Proyecto
-        </a>
-    `;
-
-    const html = obtenerPlantillaHtml(contenidoInterno);
-
-    // Esta implementación requerirá un método sendEmail que soporte múltiples destinatarios
-    // (BCC o enviando un email individual por usuario dentro de un bucle en el servicio llamador, como se sugirió).
-    // Aquí se asume que se usa el bucle del servicio que lo llama.
-    for (const usuario of usuarios) {
-      await this.sendEmail(
-        usuario.email,
-        subject,
-        `El proyecto ${proyecto.nombre_proyecto} ha iniciado.`,
-        html,
-      );
-    }
-  }, // <-- COMA
-
-  /**
-   * @async
-   * @function notificarInicioProyectoAdmin
-   * @description Notifica al administrador que un proyecto ha alcanzado su objetivo y ha iniciado.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} proyecto - Objeto del proyecto asociado (debe contener nombre_proyecto, obj_suscripciones, id).
-   */
-  async notificarInicioProyectoAdmin(adminEmail, proyecto) {
-    if (!adminEmail) return;
-
-    const adminSubject = `✅ PROYECTO INICIADO: Objetivo alcanzado para #${proyecto.id} - ${proyecto.nombre_proyecto}`;
-    const totalSuscritos = proyecto.obj_suscripciones || "el objetivo";
-
-    // --- Contenido para el Administrador ---
-    const contenidoInterno = `
-        <h2 style="color: #4CAF50; margin-top: 0;">¡PROYECTO INICIADO AUTOMÁTICAMENTE!</h2>
-        <p>El proyecto **"${
-          proyecto.nombre_proyecto
-        }"** ha alcanzado el número de suscripciones requerido (**${totalSuscritos}**) y ha sido marcado como **"En Proceso"**.</p>
-        
-        <h3 style="color: #0b1b36;">Acciones Realizadas</h3>
-        <ul style="list-style-type: square; padding-left: 20px; line-height: 1.8;">
-            <li>El estado del proyecto fue actualizado a **"En proceso"**.</li>
-            <li>Se estableció la fecha de inicio del proceso: **${new Date().toLocaleDateString(
-              "es-ES",
-            )}**.</li>
-            <li>Se envió notificación masiva por email a todos los usuarios.</li>
-            <li>El contador de meses restantes ha sido inicializado.</li>
-        </ul>
-
-        <p style="font-weight: bold; color: #d9534f; margin-top: 20px;">🚨 ACCIÓN REQUERIDA (Opcional):</p>
-        <p>Verificar en el panel de administración que el cron job de generación de cuotas mensuales se haya activado correctamente, o activarlo manualmente si es necesario.</p>
-
-        <a href="[URL_A_PANEL_ADMIN]" style="display: inline-block; padding: 10px 20px; margin: 15px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            Ver Proyecto #${proyecto.id}
-        </a>
-    `;
-
-    const html = obtenerPlantillaHtml(contenidoInterno);
-
-    await this.sendEmail(
-      adminEmail,
-      adminSubject,
-      `Proyecto #${proyecto.id} (${proyecto.nombre_proyecto}) ha iniciado.`,
-      html,
-    );
   },
+
   /**
    * @async
    * @function notificarPagoRecibido
    * @description Notifica al usuario que su pago mensual ha sido procesado exitosamente.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre y email).
-   * @param {object} proyecto - Objeto del proyecto (debe contener nombre_proyecto).
+   * @param {object} usuario - Objeto del usuario.
+   * @param {object} proyecto - Objeto del proyecto.
    * @param {number} monto - Monto del pago procesado.
    * @param {number} mesPago - Número de la cuota pagada.
    */
@@ -1090,9 +840,7 @@ const emailService = {
     const contenidoInterno = `
     <h2 style="color: #4CAF50; margin-top: 0;">¡Pago Recibido con Éxito!</h2>
     <p>Hola <strong>${usuario.nombre}</strong>,</p>
-    <p>Te confirmamos que hemos recibido tu pago de <strong style="color: #4CAF50;">$${montoTexto}</strong> correspondiente a la <strong>cuota #${mesPago}</strong> del proyecto <strong>"${
-      proyecto.nombre_proyecto
-    }"</strong>.</p>
+    <p>Te confirmamos que hemos recibido tu pago de <strong style="color: #4CAF50;">$${montoTexto}</strong> correspondiente a la <strong>cuota #${mesPago}</strong> del proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
     
     <div style="border: 1px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
       <p style="margin: 0; font-weight: bold; color: #4CAF50;">✅ Tu inversión está al día</p>
@@ -1102,9 +850,7 @@ const emailService = {
     <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Proyecto:</strong></td>
-        <td style="padding: 10px; border: 1px solid #dee2e6;">${
-          proyecto.nombre_proyecto
-        }</td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.nombre_proyecto}</td>
       </tr>
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Cuota:</strong></td>
@@ -1116,9 +862,7 @@ const emailService = {
       </tr>
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Fecha:</strong></td>
-        <td style="padding: 10px; border: 1px solid #dee2e6;">${new Date().toLocaleDateString(
-          "es-ES",
-        )}</td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${new Date().toLocaleDateString("es-ES")}</td>
       </tr>
     </table>
 
@@ -1138,11 +882,11 @@ const emailService = {
       html,
     );
   },
+
   /**
    * @async
    * @function notificarDesactivacionCuenta
    * @description Notifica al usuario que su cuenta ha sido desactivada exitosamente.
-   * Incluye información sobre qué pueden y no pueden hacer con una cuenta desactivada.
    * @param {object} usuario - Objeto del usuario (debe contener nombre, email, nombre_usuario).
    */
   async notificarDesactivacionCuenta(usuario) {
@@ -1157,7 +901,6 @@ const emailService = {
       minute: "2-digit",
     });
 
-    // --- Contenido para el Usuario ---
     const contenidoInterno = `
     <h2 style="color: #0b1b36; margin-top: 0;">Confirmación de Desactivación de Cuenta</h2>
     <p>Estimado/a <strong>${usuario.nombre}</strong>,</p>
@@ -1238,6 +981,7 @@ El Equipo de Loteplan.com
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+
   /**
    * @async
    * @function notificarReactivacionCuenta
@@ -1256,7 +1000,6 @@ El Equipo de Loteplan.com
       minute: "2-digit",
     });
 
-    // --- Contenido para el Usuario ---
     const contenidoInterno = `
     <h2 style="color: #4CAF50; margin-top: 0;">¡Tu Cuenta ha Sido Reactivada!</h2>
     <p>Estimado/a <strong>${usuario.nombre}</strong>,</p>
@@ -1299,10 +1042,10 @@ El Equipo de Loteplan.com
     <div style="border-left: 4px solid #ffc107; padding: 15px; background-color: #fff9e6; margin: 20px 0;">
       <h3 style="color: #856404; margin-top: 0; font-size: 16px;">⚠️ Recordatorio Importante</h3>
       <p style="margin: 5px 0; color: #856404;">Si olvidaste tu contraseña, puedes restablecerla usando la opción "¿Olvidaste tu contraseña?" en la página de inicio de sesión.</p>
-      <p style="margin: 5px 0; color: #856404;">Recuerda que tus seguridades fueron desactivadas (2FA) necesita activarlas nuevamente para realizar operaciones por medio de la pagina</p>
+      <p style="margin: 5px 0; color: #856404;">Recuerda que tus seguridades fueron desactivadas (2FA), necesitas activarlas nuevamente para realizar operaciones por medio de la página.</p>
     </div>
 
-    <a href="&{FRONTEND_URL}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+    <a href="${process.env.FRONTEND_URL}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Iniciar Sesión Ahora
     </a>
 
