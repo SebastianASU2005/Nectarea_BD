@@ -71,6 +71,12 @@ router.patch(
   authMiddleware.authorizeAdmin,
   usuarioController.prepareForReactivation,
 );
+router.patch(
+  "/:id/reset-password",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin, 
+  usuarioController.adminResetPassword,
+);
 
 router.patch(
   "/:id/reactivate",

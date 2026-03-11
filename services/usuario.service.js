@@ -522,6 +522,30 @@ const usuarioService = {
     };
   },
   /**
+   * @async
+   * @function adminResetPassword
+   * @description Permite a un admin establecer una nueva contraseña para cualquier usuario.
+   * @param {number} userId - ID del usuario target.
+   * @param {string} newPassword - Nueva contraseña en texto plano.
+   * @returns {Promise<boolean>}
+   */
+  async adminResetPassword(userId, newPassword) {
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error("La contraseña debe tener al menos 8 caracteres.");
+    }
+
+    const usuario = await Usuario.findByPk(userId);
+    if (!usuario) {
+      throw new Error("Usuario no encontrado.");
+    }
+
+    const authService = require("./auth.service");
+    const newHash = await authService.hashPassword(newPassword);
+
+    await usuario.update({ contraseña_hash: newHash });
+    return true;
+  },
+  /**
    * @private
    * @function _buildDeactivationMessage
    * @description Construye un mensaje personalizado según las advertencias encontradas.

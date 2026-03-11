@@ -243,6 +243,36 @@ const usuarioController = {
   },
   /**
    * @async
+   * @function adminResetPassword
+   * @description Permite a un admin establecer una nueva contraseña para un usuario.
+   * (SOLO ADMIN)
+   */
+  async adminResetPassword(req, res) {
+    try {
+      const userId = parseInt(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "ID de usuario inválido." });
+      }
+
+      const { newPassword } = req.body;
+      if (!newPassword) {
+        return res
+          .status(400)
+          .json({ error: "Debes proporcionar la nueva contraseña." });
+      }
+
+      await usuarioService.adminResetPassword(userId, newPassword);
+
+      res.status(200).json({
+        message: `✅ Contraseña del usuario ID ${userId} actualizada exitosamente.`,
+      });
+    } catch (error) {
+      const statusCode = error.message.includes("no encontrado") ? 404 : 400;
+      res.status(statusCode).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
    * @function validateDeactivation
    * @description Valida si un usuario puede desactivar su cuenta sin realmente desactivarla.
    * Útil para mostrar advertencias en el frontend antes de confirmar.
