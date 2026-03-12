@@ -16,17 +16,21 @@ const cuotaMensualService = {
   /**
    * Cálculo de valores sin redondeo en pasos intermedios.
    *
-   * Los porcentajes ingresan como valores enteros o decimales desde el modelo:
-   * - porcentaje_plan: 70   → se convierte a 0.70
-   * - porcentaje_administrativo: 0.15 → se convierte a 0.0015
-   * - porcentaje_iva: 21   → se convierte a 0.21
+   * Los porcentajes ingresan YA normalizados como decimales:
+   * - porcentaje_plan: 0.70
+   * - porcentaje_administrativo: 0.0015
+   * - porcentaje_iva: 0.21
+   *
+   * La normalización ocurre en el controller (si vienen como enteros del frontend)
+   * o se usan directamente (si vienen de la BD ya almacenados como decimales).
    *
    * REGLA: No redondear valores intermedios. Redondear SOLO valor_mensual_final.
    */
   _calculateValues(data) {
-    const porcentaje_plan           = Number(data.porcentaje_plan) / 100;
-    const porcentaje_administrativo = Number(data.porcentaje_administrativo) / 100;
-    const porcentaje_iva            = Number(data.porcentaje_iva) / 100;
+    // ✅ Sin división /100 — los porcentajes ya llegan normalizados
+    const porcentaje_plan           = Number(data.porcentaje_plan);
+    const porcentaje_administrativo = Number(data.porcentaje_administrativo);
+    const porcentaje_iva            = Number(data.porcentaje_iva);
     const valor_cemento             = Number(data.valor_cemento);
     const valor_cemento_unidades    = Number(data.valor_cemento_unidades);
     const total_cuotas_proyecto     = Number(data.total_cuotas_proyecto);
