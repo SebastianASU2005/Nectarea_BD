@@ -34,6 +34,17 @@ const SuscripcionCancelada = sequelize.define('SuscripcionCancelada', {
     type: DataTypes.DATE,
     allowNull: false,
   },
+   // ✅ NUEVO: Control de devolución
+  devolucion_realizada: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,   // Por defecto, aún no se devolvió
+  },
+  fecha_devolucion: {
+    type: DataTypes.DATE,
+    allowNull: true,       // Se completa cuando se marca como devuelto
+    defaultValue: null,
+  },
 }, {
   tableName: 'suscripcion_cancelada',
 });

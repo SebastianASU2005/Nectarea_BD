@@ -837,6 +837,18 @@ const suscripcionProyectoService = {
       order: [["fecha_cancelacion", "DESC"]],
     });
   },
+  async marcarDevolucion(cancelacionId) {
+    const registro = await SuscripcionCancelada.findByPk(cancelacionId);
+
+    if (!registro) throw new Error("Registro de cancelación no encontrado.");
+    if (registro.devolucion_realizada)
+      throw new Error("La devolución ya fue registrada anteriormente.");
+
+    return await registro.update({
+      devolucion_realizada: true,
+      fecha_devolucion: new Date(),
+    });
+  },
 
   // -------------------------------------------------------------------
   // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS

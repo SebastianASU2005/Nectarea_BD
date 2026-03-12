@@ -11,14 +11,14 @@ const authMiddleware = require("../middleware/auth.middleware");
 router.put(
   "/:id/cancelar",
   authMiddleware.authenticate,
-  suscripcionController.cancel
+  suscripcionController.cancel,
 );
 
 // 2. Obtener las suscripciones canceladas del usuario autenticado
 router.get(
   "/mis_canceladas",
   authMiddleware.authenticate,
-  suscripcionController.findMyCanceladas // <-- Implementada en el paso anterior
+  suscripcionController.findMyCanceladas, // <-- Implementada en el paso anterior
 );
 
 // =======================================================
@@ -30,14 +30,20 @@ router.get(
   "/canceladas",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionController.findAllCanceladas // <-- Implementada en el paso anterior
+  suscripcionController.findAllCanceladas, // <-- Implementada en el paso anterior
 );
 // 4. Obtener las suscripciones canceladas por ID de Proyecto (Solo para Admin)
 router.get(
   "/proyecto/canceladas/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionController.findByProjectCanceladas
+  suscripcionController.findByProjectCanceladas,
+);
+router.patch(
+  "/canceladas/:id/devolucion",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionController.marcarDevolucion,
 );
 
 module.exports = router;

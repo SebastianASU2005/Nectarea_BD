@@ -1,77 +1,47 @@
+// services/suscripcion.service.js
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
-const Proyecto = require("../models/proyecto");
-const Pago = require("../models/pago");
-const SuscripcionCancelada = require("../models/suscripcion_cancelada");
-const { sequelize } = require("../config/database");
-
-// 🆕 Importar el servicio principal que ahora contiene la lógica de cancelación
 const suscripcionProyectoService = require("./suscripcion_proyecto.service");
 
 /**
- * Servicio de lógica de negocio para la gestión de CancelacionDeSuscripciones a Proyectos.
- * Funciona como un "wrapper" para redirigir la lógica pesada al servicio principal.
+ * Servicio wrapper para gestión de Suscripciones.
+ * Delega toda la lógica pesada al suscripcionProyectoService.
  */
 const suscripcionService = {
-  /**
-   * @async
-   * @function findById
-   */
   async findById(id) {
     return SuscripcionProyecto.findByPk(id);
   },
-  /**
-   * @async
-   * @function findByUserIdAndProjectId
-   */ async findByUserIdAndProjectId(userId, projectId) {
+
+  async findByUserIdAndProjectId(userId, projectId) {
     return SuscripcionProyecto.findOne({
-      where: {
-        id_usuario: userId,
-        id_proyecto: projectId,
-        activo: true,
-      },
+      where: { id_usuario: userId, id_proyecto: projectId, activo: true },
     });
   },
-  /**
-   * @async
-   * @function softDelete
-   * @description **DELEGADO:** Llama al softDelete del servicio principal.
-   * @param {number} suscripcionId - ID de la suscripción a cancelar.
-   * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol). 👈 CAMBIO AQUÍ
-   * @returns {Promise<SuscripcionProyecto>}
-   * @throws {Error} Si la cancelación falla.
-   */ async softDelete(suscripcionId, usuarioAutenticado) {
-    // 👈 Acepta el objeto completo
-    // Delega la lógica de negocio al servicio consolidado.
+
+  /** DELEGADO: Cancela una suscripción */
+  async softDelete(suscripcionId, usuarioAutenticado) {
     return suscripcionProyectoService.softDelete(
       suscripcionId,
-      usuarioAutenticado
-    ); // 👈 Pasa el objeto completo
+      usuarioAutenticado,
+    );
   },
-  // ...
-  /**
-   * @async
-   * @function findAllCanceladas
-   * @description **DELEGADO**
-   */ async findAllCanceladas() {
-    // 🛑 Delega la consulta al servicio consolidado.
+
+  /** DELEGADO: Marca la devolución de dinero de una cancelación */
+  async marcarDevolucion(cancelacionId) {
+    return suscripcionProyectoService.marcarDevolucion(cancelacionId);
+  },
+
+  /** DELEGADO: Obtiene todas las cancelaciones */
+  async findAllCanceladas() {
     return suscripcionProyectoService.findAllCanceladas();
   },
-  /**
-   * @async
-   * @function findMyCanceladas
-   * @description **DELEGADO**
-   */ async findMyCanceladas(userId) {
-    // 🛑 Delega la consulta al servicio consolidado.
+
+  /** DELEGADO: Obtiene las cancelaciones del usuario autenticado */
+  async findMyCanceladas(userId) {
     return suscripcionProyectoService.findMyCanceladas(userId);
   },
-  /**
-   * @async
-   * @function findByProjectCanceladas
-   * @description **DELEGADO**
-   */
+
+  /** DELEGADO: Obtiene las cancelaciones de un proyecto específico */
   async findByProjectCanceladas(projectId) {
-    // 👈 ¡Añadir esta función!
-    // 🛑 Delega la consulta al servicio consolidado.
     return suscripcionProyectoService.findByProjectCanceladas(projectId);
   },
 };
