@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const mensajeController = require("../controllers/mensaje.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // ===============================================
 // 1. RUTAS ESTÁTICAS Y CON PREFIJO (DEBEN IR PRIMERO)
 // ===============================================
@@ -39,6 +39,7 @@ router.put(
 router.get(
   "/:id_receptor",
   authMiddleware.authenticate,
+  userRateLimiter,
   mensajeController.obtenerConversacion
 );
 

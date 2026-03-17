@@ -4,7 +4,7 @@ const express = require("express");
 const router = express.Router();
 const transaccionController = require("../controllers/transaccion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // =======================================================
 // RUTAS PARA ADMINISTRADORES (Estáticas Primero)
 // =======================================================
@@ -33,6 +33,7 @@ router.put(
 router.get(
   "/mis_transacciones",
   authMiddleware.authenticate,
+  userRateLimiter,
   transaccionController.findMyTransactions
 );
 

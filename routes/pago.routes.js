@@ -6,7 +6,7 @@ const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // =================================================================
 // 1. RUTAS ESTÁTICAS Y SEMI-DINÁMICAS (USUARIO y ADMIN)
 // =================================================================
@@ -88,6 +88,7 @@ router.post(
   "/pagar-mes/:id",
   authMiddleware.authenticate,
   blockAdminTransactions,
+  userRateLimiter,
   checkKYCandTwoFA,
   pagoController.requestCheckout,
 );

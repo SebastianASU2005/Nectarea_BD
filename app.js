@@ -25,9 +25,9 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "=========================================================================",
   );
   console.error(
-    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas.",
+    "       ERROR CRÍTICO: Las variables MP_ACCESS_TOKEN y HOST_URL deben estar configuradas.",
   );
-  console.error("       El servicio de pagos NO funcionará.");
+  console.error("       El servicio de pagos NO funcionará.");
   console.error(
     "=========================================================================",
   );
@@ -53,8 +53,8 @@ function captureRawBody(req, res, buf, encoding) {
 const corsOptions = {
   origin:
     process.env.NODE_ENV === "production"
-      ? process.env.FRONTEND_URL // En producción usa la variable de entorno
-      : "http://localhost:5173", // En desarrollo usa localhost
+      ? process.env.FRONTEND_URL
+      : "http://localhost:5173",
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
   optionsSuccessStatus: 204,
@@ -62,30 +62,29 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
-// Permite acceder a archivos subidos mediante la URL /uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Importa la conexión a la base de datos
 const { sequelize } = require("./config/database");
 
-// --- Configuración básica de Multer para la subida de archivos ---
+// ✅ NUEVO: Importar rate limiters
+const {
+  initRateLimiters,
+  globalRateLimiter,
+} = require("./middleware/rateLimiter");
 
-// 🎯 FIX CRÍTICO: Definición del directorio de imágenes para Multer
+// --- Configuración básica de Multer para la subida de archivos ---
 const IMAGENES_DIR_PUBLIC = path.join(__dirname, "uploads", "imagenes");
 
-// Asegurar que el directorio de subida existe.
 if (!fs.existsSync(IMAGENES_DIR_PUBLIC)) {
   fs.mkdirSync(IMAGENES_DIR_PUBLIC, { recursive: true });
 }
 
-// ⚠️ Este Multer se mantiene solo si se usa globalmente. De lo contrario, se puede eliminar.
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // El destino debe ser la carpeta 'uploads/imagenes/'
     cb(null, "uploads/imagenes/");
   },
   filename: function (req, file, cb) {
-    // Usamos la convención del middleware imageUpload: fieldname-timestamp-random.ext
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(
       null,
@@ -93,13 +92,12 @@ const storage = multer.diskStorage({
     );
   },
 });
-const upload = multer({ storage: storage }); // Middleware de subida general (si aplica)
+const upload = multer({ storage: storage });
 
 // ====================================================================
 // 3. IMPORTACIÓN DE MODELOS (CRÍTICO)
 // ====================================================================
 
-// Importa todos los modelos para que Sequelize los conozca antes de configurar asociaciones
 const Usuario = require("./models/usuario");
 const Inversion = require("./models/inversion");
 const Lote = require("./models/lote");
@@ -120,7 +118,6 @@ const VerificacionIdentidad = require("./models/verificacion_identidad");
 const ContratoPlantilla = require("./models/ContratoPlantilla");
 const ContratoFirmado = require("./models/ContratoFirmado");
 
-// Importa la función de asociaciones
 const configureAssociations = require("./models/associations");
 
 // ====================================================================
@@ -147,7 +144,6 @@ const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
 const testRoutes = require("./routes/test.routes");
 const favoritoRoutes = require("./routes/favorito.routes");
-// 🚨 RUTA DE VERIFICACIÓN DE IDENTIDAD AÑADIDA
 const kycRoutes = require("./routes/kyc.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
@@ -168,6 +164,7 @@ const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler")
 // ====================================================================
 
 // 5.1. WEBHOOK (DEBE IR PRIMERO POR EL RAW BODY)
+// No le aplicamos rate limiting — el skip en globalRateLimiter ya lo excluye.
 const webhookRouter = express.Router();
 webhookRouter.use(
   express.json({ verify: captureRawBody }),
@@ -177,33 +174,33 @@ webhookRouter.post("/:metodo", paymentController.handleWebhook);
 app.use("/api/payment/webhook", webhookRouter);
 
 // --------------------------------------------------------------------
-// 5.2. 🔥 BODY PARSING GLOBAL (MOVIDO AQUÍ ABAJO)
+// 5.2. 🔥 BODY PARSING GLOBAL
 // --------------------------------------------------------------------
-// Esto permitirá que las rutas de abajo (incluyendo KYC) puedan leer req.body en JSON.
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 console.log("✅ Body parsing global activado");
 
+// ✅ NUEVO: RATE LIMITER GLOBAL (justo después del body parsing, antes de rutas)
+// Bloquea IPs abusivas (> 100 req/min) antes de que lleguen a cualquier controlador.
+// El webhook de MercadoPago queda automáticamente excluido vía skip interno.
+app.use(globalRateLimiter);
+
+console.log("✅ Rate limiter global activado");
+
 // --------------------------------------------------------------------
-// 5.3. 🔥 RUTAS DE LA API (INCLUYENDO LAS DE MULTER)
+// 5.3. 🔥 RUTAS DE LA API
 // --------------------------------------------------------------------
 
-// Debug para ver qué llega (puedes borrarlo después)
 app.use("/api/kyc", (req, res, next) => {
   console.log(`\n🔍 PETICIÓN KYC: ${req.method} ${req.url}`);
   console.log("📍 Content-Type:", req.get("content-type"));
   next();
 });
 
-// AHORA KYC está después de express.json()
-// - Si es Reject (JSON): express.json() llena req.body ✅
-// - Si es Submit (Multipart): express.json() lo ignora y Multer lo procesa ✅
 app.use("/api/kyc", kycRoutes);
 app.use("/api/contratos", contratoRoutes);
 app.use("/api/imagenes", imagenRoutes);
-// 🚨 Nota: El orden de estas rutas es importante si tienen prefijos genéricos.
-// Dado que la ruta "/api/pagos" no tiene parámetros dinámicos, el orden actual es adecuado.
 
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
@@ -222,28 +219,18 @@ app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/test", testRoutes);
 app.use("/api/favoritos", favoritoRoutes);
 
-// Rutas de pago (autenticadas) - SIN EL WEBHOOK
 app.use("/api/payment", pagoMercadoRoutes);
-
-// Rutas de redirección (páginas de resultado de pago)
 app.use(redireccionRoutes);
 
 // ====================================================================
 // 6. SINCRONIZACIÓN DE BASE DE DATOS E INICIO DEL SERVIDOR (CRÍTICO)
 // ====================================================================
 
-/**
- * @async
- * @function synchronizeDatabase
- * @description Conecta y sincroniza la base de datos en dos fases para garantizar
- * que todas las tablas existan antes de configurar las claves foráneas.
- */
 async function synchronizeDatabase() {
   try {
     // ==========================================================
     // FASE 1: Creación inicial de las tablas (solo columnas)
     // ==========================================================
-    // Sincroniza todos los modelos para asegurar que las tablas existen
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
     await Lote.sync({ alter: true });
@@ -259,14 +246,13 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
-    await ContratoPlantilla.sync({ alter: true }); // 🟢 AÑADIDO: Sincroniza la tabla de Plantillas
+    await ContratoPlantilla.sync({ alter: true });
     await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
-    // 🚨 SINCRONIZACIÓN DE KYC AÑADIDA
     await VerificacionIdentidad.sync({ alter: true });
 
     // ==========================================================
-    // 🎯 FIX CRÍTICO: Definimos las asociaciones AQUÍ
+    // ASOCIACIONES
     // ==========================================================
     configureAssociations();
 
@@ -288,16 +274,20 @@ async function synchronizeDatabase() {
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
-    await ContratoPlantilla.sync({ alter: true }); // 🟢 AÑADIDO: Sincroniza la tabla de Plantillas
+    await ContratoPlantilla.sync({ alter: true });
     await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
-    // 🚨 SINCRONIZACIÓN DE KYC AÑADIDA
     await VerificacionIdentidad.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
+    // ✅ NUEVO: Inicializar rate limiters DESPUÉS de que la DB esté lista.
+    // Crea automáticamente las tablas rate_limit_global_ip, rate_limit_user_default
+    // y rate_limit_user_premium en tu base de datos PostgreSQL.
+    await initRateLimiters();
+
     // ==========================================================
-    // 🚀 INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
+    // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
     // ==========================================================
     paymentReminderScheduler.scheduleJobs();
     monthlyPaymentGenerationTask.start();
@@ -314,12 +304,13 @@ async function synchronizeDatabase() {
       console.log(`Servidor escuchando en puerto ${PORT}`);
       console.log("=".repeat(70));
       console.log("📋 ORDEN DE MIDDLEWARES CONFIGURADO:");
-      console.log("   1. CORS");
-      console.log("   2. Archivos estáticos (/uploads)");
-      console.log("   3. Webhook (con raw body)");
-      console.log("   4. Rutas con Multer (KYC, Contratos, Imágenes)");
-      console.log("   5. Body parsing global (express.json)");
-      console.log("   6. Resto de rutas de la API");
+      console.log("   1. CORS");
+      console.log("   2. Archivos estáticos (/uploads)");
+      console.log("   3. Webhook (con raw body) — excluido del rate limit");
+      console.log("   4. Body parsing global (express.json)");
+      console.log("   5. ✅ Rate limiter global (100 req/min por IP)");
+      console.log("   6. Rutas con Multer (KYC, Contratos, Imágenes)");
+      console.log("   7. Resto de rutas de la API");
       console.log("=".repeat(70));
     });
   } catch (error) {
@@ -328,5 +319,4 @@ async function synchronizeDatabase() {
   }
 }
 
-// Llama a la función para iniciar el proceso de sincronización y el servidor
 synchronizeDatabase();

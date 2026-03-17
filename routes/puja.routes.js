@@ -3,7 +3,7 @@ const router = express.Router();
 const pujaController = require("../controllers/puja.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // RUTAS PARA USUARIOS
 router.post(
   "/",
@@ -14,6 +14,7 @@ router.post(
 router.get(
   "/activas",
   authMiddleware.authenticate,
+  userRateLimiter,
   pujaController.findAllActivo,
 );
 router.get(
@@ -42,6 +43,7 @@ router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
   blockAdminTransactions,
+  userRateLimiter,
   pujaController.requestCheckout,
 );
 router.post(

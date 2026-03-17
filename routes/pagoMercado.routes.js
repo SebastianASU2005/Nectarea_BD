@@ -3,6 +3,7 @@
 const express = require("express");
 const paymentController = require("../controllers/pagoMercado.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const { userRateLimiter } = require("../middleware/rateLimiter");
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ const router = express.Router();
 router.post(
   "/checkout/:modelo/:modeloId",
   authMiddleware.authenticate,
+  userRateLimiter,
   paymentController.iniciarPagoPorModelo
 );
 
@@ -29,6 +31,7 @@ router.post(
 router.post(
   "/checkout/generico",
   authMiddleware.authenticate,
+  userRateLimiter,
   paymentController.createCheckoutGenerico
 );
 
@@ -49,13 +52,10 @@ router.post(
 router.get(
   "/status/:id_transaccion",
   authMiddleware.authenticate,
+  userRateLimiter,
   paymentController.getPaymentStatus
 );
 
-// ===============================================
-// ❌ ELIMINAR ESTA RUTA DE AQUÍ: SE DEFINE EN SERVER.JS
-// ===============================================
 
-// router.post("/webhook/:metodo", paymentController.handleWebhook); 
 
 module.exports = router;

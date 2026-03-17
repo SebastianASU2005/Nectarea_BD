@@ -6,7 +6,7 @@ const suscripcionProyectoController = require("../controllers/suscripcion_proyec
 const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas y Semidinámicas Primero)
 // =======================================================
@@ -18,6 +18,7 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions, // ✅ YA TIENE
   checkKYCandTwoFA,
+  userRateLimiter,
   suscripcionProyectoController.iniciarSuscripcion
 );
 

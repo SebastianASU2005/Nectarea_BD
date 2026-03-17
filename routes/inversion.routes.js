@@ -6,7 +6,7 @@ const inversionController = require("../controllers/inversion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
 const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
-
+const { userRateLimiter } = require("../middleware/rateLimiter")
 // ===============================================
 // 1. RUTAS POST (Estáticas y Semi-Dinámicas)
 // ===============================================
@@ -38,6 +38,7 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions, // ✅ NUEVO: Bloquea admins
   checkKYCandTwoFA,
+  userRateLimiter,
   inversionController.requestCheckoutInversion
 );
 
