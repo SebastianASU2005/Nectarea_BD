@@ -27,7 +27,7 @@ Nectárea es una **plataforma digital de crowdfunding** (financiamiento colectiv
 
 ✅ Permite a las personas **invertir dinero** en proyectos de construcción  
 ✅ Ofrece **dos formas de inversión**: directa (un solo pago osea inversores) o mensual (cuotas osea ahorristas)  
-✅ Incluye un **sistema de subastas** para lotes 
+✅ Incluye un **sistema de subastas** para lotes
 ✅ Procesa **pagos seguros** mediante Mercado Pago  
 ✅ Envía **notificaciones automáticas** por email  
 ✅ Genera **contratos digitales** para cada inversión
@@ -245,6 +245,7 @@ Nectárea es una **plataforma digital de crowdfunding** (financiamiento colectiv
 
 **¿Cuándo se usa?**
 (Solo funciona y se aplica si el usuario activo la seguridad 2FA)
+
 - ✅ Al iniciar sesión (opcional)
 - ✅ Antes de realizar un pago grande
 - ✅ Al modificar datos sensibles
@@ -293,7 +294,6 @@ Aunque alguien robe tu contraseña, NO puede acceder sin el código temporal de 
 **¿Cómo funciona?**
 
 1. **Al subir el contrato:**
-
    - Sistema calcula el "hash" del archivo
    - Ejemplo: `a3f5b8c9d2e1...` (código único de 64 caracteres)
    - Se guarda en la base de datos
@@ -304,6 +304,65 @@ Aunque alguien robe tu contraseña, NO puede acceder sin el código temporal de 
    - Si NO coincide: ⚠️ **Archivo modificado** (alerta de integridad)
 
 **Beneficio:** Nadie puede modificar un contrato sin que el sistema lo detecte.
+
+### 3. Control de Tráfico (Rate Limiting)
+
+**¿Qué es?** Un sistema que limita cuántas veces por minuto alguien puede enviar solicitudes al servidor, como un portero que controla el acceso.
+
+**¿Por qué existe?**  
+Sin este control, una persona malintencionada podría enviar miles de solicitudes por segundo y colapsar el servidor, dejando a todos los usuarios sin acceso. También previene ataques de fuerza bruta (intentar adivinar contraseñas probando miles de combinaciones).
+
+**¿Cómo funciona en Nectárea?**
+
+El sistema tiene **tres capas de protección**, cada una con su propio límite:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  CAPA 1 — Control Global por Dirección IP               │
+│                                                         │
+│  • Aplica a TODOS los visitantes sin excepción          │
+│  • Límite: 100 solicitudes por minuto por IP            │
+│  • Un usuario normal genera entre 15 y 40 por minuto    │
+│  • Bloquea IPs sospechosas antes de llegar a cualquier  │
+│    funcionalidad de la plataforma                       │
+└─────────────────────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  CAPA 2 — Control por Cuenta de Usuario                 │
+│                                                         │
+│  • Aplica solo a usuarios que iniciaron sesión          │
+│  • Límite: 300 solicitudes por minuto por cuenta        │
+│  • Se activa principalmente en operaciones de pago      │
+│    (iniciar inversión, pagar cuota, pujar en subasta)   │
+│  • Administradores: sin límite por cuenta               │
+└─────────────────────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  CAPA 3 — Control de Intentos de Acceso                 │
+│                                                         │
+│  • Login y registro: 5 intentos cada 5 minutos por IP  │
+│  • Código 2FA y reset de contraseña: 3 intentos por    │
+│    minuto por IP                                        │
+│  • Previene que alguien intente adivinar contraseñas    │
+│    o códigos de seguridad de forma automatizada         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**¿Qué pasa si alguien supera el límite?**  
+El sistema responde con un error `429 - Demasiadas Peticiones` e informa cuántos segundos debe esperar antes de volver a intentarlo. Un usuario legítimo que usa la plataforma normalmente **nunca** alcanzará estos límites.
+
+**¿Y las notificaciones de Mercado Pago?**  
+Las notificaciones automáticas que envía Mercado Pago cuando un pago se completa (webhook) están **excluidas** de este control. Esto garantiza que ninguna confirmación de pago sea bloqueada por error, sin importar el volumen de notificaciones que lleguen.
+
+**Resumen de límites:**
+
+| Situación                       | Límite              | ¿Afecta al usuario normal?  |
+| ------------------------------- | ------------------- | --------------------------- |
+| Navegación general (sin sesión) | 100 req/min por IP  | No (usa ~15–40)             |
+| Uso de la plataforma con sesión | 300 req/min         | No (usa ~15–40)             |
+| Intentos de login o registro    | 5 cada 5 min por IP | No (no hay motivo para más) |
+| Código 2FA o reset contraseña   | 3 por min por IP    | No (son flujos de un paso)  |
+| Notificaciones de Mercado Pago  | Sin límite          | No aplica (es automático)   |
 
 ---
 
@@ -436,15 +495,15 @@ Excedente restante: $0
 Guarda como "saldo a favor"
 Si aún queda dinero, se guarda para cuotas futuras
 Próxima cuota: $500 - $500 saldo = $0 a pagar
-En caso de no haber mas meses a pagar y aun asi el usuario tiene un saldo a favor 
+En caso de no haber mas meses a pagar y aun asi el usuario tiene un saldo a favor
 el sistema usa ese valor excedente que no se usa en nada para aumentar el valor
-inicial del lote ya que la demanda del lote fue inesperada por ende el precio sube 
+inicial del lote ya que la demanda del lote fue inesperada por ende el precio sube
 
 
 ¿Puedo revertir un pago?
 Depende del estado:
 Estado¿Se puede revertir?¿Cómo?Pendiente✅ SíCancelar la transacción manualmentePagado⚠️ Sí, pero...Solo el Admin puede marcar como "reembolsado"Reembolsado❌ NoLa operación ya fue revertidaFallido❌ NoNo hubo cobro, no hay nada que revertir
-Para los casos de reembolso los usuarios deben hablar con administracion para analizar el caso 
+Para los casos de reembolso los usuarios deben hablar con administracion para analizar el caso
 
 ¿Qué es el "token de puja"?
 Explicación simple:
