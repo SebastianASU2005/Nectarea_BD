@@ -1,22 +1,38 @@
 // Archivo: config/database.js
 
 require("dotenv").config();
-// 1. IMPORTA 'Op' de sequelize
 const { Sequelize, DataTypes, Op } = require("sequelize");
 
-// Usar variables de entorno para las credenciales de la base de datos
-const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASS,
-  {
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    dialect: "postgres",
-  }
-);
+// ============================================================
+// Railway inyecta DATABASE_URL automáticamente cuando el
+// servicio Node.js y la DB están en el mismo proyecto.
+// En desarrollo local se usan las variables individuales.
+// ============================================================
 
-// Verificar la conexión a la base de datos (opcional, pero recomendable)
+const isProduction = process.env.NODE_ENV === "production";
+
+const sequelize = process.env.DATABASE_URL
+  ? new Sequelize(process.env.DATABASE_URL, {
+      dialect: "postgres",
+      dialectOptions: {
+        ssl: isProduction
+          ? { require: true, rejectUnauthorized: false }
+          : false,
+      },
+      logging: false,
+    })
+  : new Sequelize(
+      process.env.DB_NAME,
+      process.env.DB_USER,
+      process.env.DB_PASS,
+      {
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT,
+        dialect: "postgres",
+        logging: false,
+      }
+    );
+
 (async () => {
   try {
     await sequelize.authenticate();
@@ -26,5 +42,4 @@ const sequelize = new Sequelize(
   }
 })();
 
-// 2. EXPORTA 'Op' junto con sequelize y DataTypes
-module.exports = { sequelize, DataTypes, Op }; // ✅ ¡CORREGIDO!
+module.exports = { sequelize, DataTypes, Op };

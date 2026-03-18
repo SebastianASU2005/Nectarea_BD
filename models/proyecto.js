@@ -1,10 +1,12 @@
+// models/proyecto.js
+
 const { sequelize, DataTypes } = require("../config/database");
 const baseAttributes = require("./base");
 
 const Proyecto = sequelize.define(
   "Proyecto",
   {
-    ...baseAttributes, // Incluye los campos 'id' y 'activo'
+    ...baseAttributes,
     nombre_proyecto: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -25,7 +27,6 @@ const Proyecto = sequelize.define(
     monto_inversion: {
       type: DataTypes.DECIMAL(18, 2),
     },
-    // NUEVO CAMPO: Tipo de moneda para el monto_inversion
     moneda: {
       type: DataTypes.STRING(10),
       allowNull: true,
@@ -66,38 +67,40 @@ const Proyecto = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
-    // NUEVOS CAMPOS PARA PROYECTOS MENSUALES
     fecha_inicio_proceso: {
-      type: DataTypes.DATEONLY, // Fecha en que alcanzó el objetivo de suscripciones y pasó a 'En proceso'
-      allowNull: true, // Puede ser nulo si no ha iniciado el proceso
+      type: DataTypes.DATEONLY,
+      allowNull: true,
     },
     meses_restantes: {
-      type: DataTypes.INTEGER, // Contador para el plazo de inversión
+      type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: null,
     },
-    // 🆕 NUEVOS CAMPOS PARA UBICACIÓN GEOGRÁFICA
+
+    // ── Ubicación geográfica ──────────────────────────────────────────
+    // latitud y longitud se mantienen por si en el futuro se necesitan
+    // para lógica interna (distancias, filtros geográficos, etc.)
     latitud: {
-      type: DataTypes.DECIMAL(10, 8), // Precisión suficiente para coordenadas
+      type: DataTypes.DECIMAL(10, 8),
       allowNull: true,
       comment: "Latitud de la ubicación del proyecto (ej: -32.889459)",
-      validate: {
-        min: -90,
-        max: 90,
-      },
+      validate: { min: -90, max: 90 },
     },
     longitud: {
-      type: DataTypes.DECIMAL(11, 8), // Precisión suficiente para coordenadas
+      type: DataTypes.DECIMAL(11, 8),
       allowNull: true,
       comment: "Longitud de la ubicación del proyecto (ej: -68.845839)",
-      validate: {
-        min: -180,
-        max: 180,
-      },
+      validate: { min: -180, max: 180 },
+    },
+
+    map_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "URL embebida del mapa (Google Maps embed, OpenStreetMap, etc.)",
     },
   },
   {
-    tableName: "proyecto", // Nombre de la tabla en la base de datos
+    tableName: "proyecto",
   }
 );
 
