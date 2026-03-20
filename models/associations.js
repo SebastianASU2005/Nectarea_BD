@@ -235,6 +235,12 @@ const configureAssociations = () => {
 
   // Un Lote tiene múltiples registros de Favorito.
   Lote.hasMany(Favorito, { foreignKey: "id_lote", as: "favoritos" });
+  // Agregar junto a las otras relaciones de Lote
+  Lote.belongsTo(Puja, {
+    foreignKey: "id_puja_mas_alta",
+    as: "pujaMasAlta",
+    constraints: false, // evita problemas de FK circular con Puja→Lote
+  });
 
   // -------------------------------------------------------------------
   // --- Relaciones de Puja (Una Puja pertenece a...) ---
