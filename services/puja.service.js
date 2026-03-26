@@ -309,9 +309,22 @@ const pujaService = {
     const shouldCommit = !externalTransaction;
 
     try {
-      const puja = await Puja.findByPk(pujaId, {
+      // 1️⃣ PASO CLAVE: Bloqueo quirúrgico.
+      // Buscamos la puja SOLA para poner el lock sin que los JOINs nulables rompan Postgres.
+      const pujaBase = await Puja.findByPk(pujaId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+      });
+
+      if (!pujaBase) {
+        throw new Error("Puja no encontrada.");
+      }
+
+      // 2️⃣ CARGA DE DATOS: Ahora que la fila está bloqueada, traemos toda tu estructura de includes.
+      // Como ya tenemos el lock en la fila de la puja dentro de la misma transacción 't',
+      // esta lectura es segura y no necesitamos poner 'lock: true' aquí, evitando el error.
+      const puja = await Puja.findByPk(pujaId, {
+        transaction: t,
         include: [
           {
             model: SuscripcionProyecto,
@@ -360,6 +373,8 @@ const pujaService = {
         );
       }
 
+      // --- INICIO DE TU LÓGICA DE NEGOCIO ORIGINAL ---
+
       if (puja.estado_puja === "ganadora_pagada") {
         if (shouldCommit) await t.commit();
         return puja;
@@ -367,7 +382,7 @@ const pujaService = {
 
       if (puja.estado_puja !== "ganadora_pendiente") {
         throw new Error(
-          `La puja ${pujaId} tiene un estado inválido para el procesamiento de pago: ${puja.estado_puja}`,
+          `La puja ${pujaId} tiene un estado inválido: ${puja.estado_puja}`,
         );
       }
 
@@ -383,10 +398,11 @@ const pujaService = {
       const cuotaMensual = toFloat(
         suscripcion.proyectoAsociado.monto_inversion,
       );
+      let excedente = calculateFloat(
+        toFloat(puja.monto_puja) - toFloat(lote.precio_base),
+      );
 
-      let excedente = toFloat(puja.monto_puja) - toFloat(lote.precio_base);
-      excedente = calculateFloat(excedente);
-
+      // Procesar pagos pendientes con el excedente
       const pagosPendientes = await Pago.findAll({
         where: { id_suscripcion: suscripcion.id, estado_pago: "pendiente" },
         order: [["fecha_vencimiento", "ASC"]],
@@ -397,10 +413,7 @@ const pujaService = {
         const montoPago = toFloat(pago.monto);
         if (excedente >= montoPago) {
           await pago.update(
-            {
-              estado_pago: "cubierto_por_puja",
-              fecha_pago: new Date(),
-            },
+            { estado_pago: "cubierto_por_puja", fecha_pago: new Date() },
             { transaction: t },
           );
           excedente = calculateFloat(excedente - montoPago);
@@ -417,6 +430,7 @@ const pujaService = {
         }
       }
 
+      // Cubrir cuotas futuras si sobra excedente
       if (excedente > 0 && cuotaMensual > 0 && suscripcion.meses_a_pagar > 0) {
         const mesesAdicionales = Math.min(
           Math.floor(excedente / cuotaMensual),
@@ -433,6 +447,7 @@ const pujaService = {
         }
       }
 
+      // Saldo a favor remanente
       if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
         const nuevoSaldo = calculateFloat(
           toFloat(suscripcion.saldo_a_favor) + excedente,
@@ -444,6 +459,7 @@ const pujaService = {
         excedente = 0;
       }
 
+      // Excedente visual si ya pagó todo
       if (suscripcion.meses_a_pagar <= 0 && excedente > 0) {
         await lote.update(
           { excedente_visualizacion: calculateFloat(excedente) },
@@ -452,14 +468,16 @@ const pujaService = {
         excedente = 0;
       }
 
+      // Actualizar estado de la puja
       await puja.update({ estado_puja: "ganadora_pagada" }, { transaction: t });
 
+      // Actualizar resumen
       await ResumenCuentaService.updateAccountSummaryOnPayment(suscripcion.id, {
         transaction: t,
       });
 
+      // Liberar tokens de otros usuarios
       const usuariosGanadoresActuales = [puja.id_usuario];
-
       const pujasActivasPendientes = await Puja.findAll({
         where: {
           id_lote: lote.id,
@@ -485,19 +503,16 @@ const pujaService = {
         });
       }
 
-      if (shouldCommit) {
-        await t.commit();
-      }
+      // --- FIN DE TU LÓGICA DE NEGOCIO ORIGINAL ---
 
+      if (shouldCommit) await t.commit();
       return { message: "Puja procesada y pagos actualizados exitosamente." };
     } catch (error) {
-      if (shouldCommit && t) {
-        await t.rollback();
-      }
+      if (shouldCommit && t) await t.rollback();
+      console.error("Error en procesarPujaGanadora:", error.message);
       throw error;
     }
   },
-
   /**
    * @async
    * @function revertirPagoPujaGanadora
@@ -1140,9 +1155,15 @@ const pujaService = {
     });
   },
 
-  /** @async @function findById @description Busca una puja por ID (admin). */
-  async findById(id) {
-    return Puja.findByPk(id, {
+  /** * @async
+   * @function findById
+   * @description Busca una puja por ID con todas sus asociaciones.
+   * @param {number} id - ID de la puja.
+   * @param {object} [options={}] - Opciones adicionales (transaction, lock, etc.).
+   */
+  async findById(id, options = {}) {
+    return await Puja.findByPk(id, {
+      ...options, // 👈 Importante: permite pasar la transacción y otras configs
       include: [
         {
           model: Usuario,
@@ -1183,6 +1204,19 @@ const pujaService = {
           model: SuscripcionProyecto,
           as: "suscripcion",
           attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
+          // Agregamos el proyecto asociado a la suscripción si es necesario para los cálculos de cuotas
+          include: [
+            {
+              association: "proyectoAsociado",
+              attributes: [
+                "id",
+                "monto_inversion",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+              ],
+            },
+          ],
         },
         {
           model: Proyecto,
