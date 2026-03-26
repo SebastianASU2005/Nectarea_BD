@@ -1,3 +1,5 @@
+// Archivo: controllers/inversion.controller.js
+
 const inversionService = require("../services/inversion.service");
 const TransaccionService = require("../services/transaccion.service");
 const UsuarioService = require("../services/usuario.service");
@@ -5,38 +7,37 @@ const auth2faService = require("../services/auth2fa.service");
 
 /**
  * Controlador de Express para gestionar el ciclo de vida de las Inversiones.
- * Incluye la creación inicial, el flujo de pago con 2FA y las operaciones CRUD.
+ * Incluye la creación inicial, el flujo de pago con 2FA obligatorio y las operaciones CRUD.
  */
 const inversionController = {
   // ===================================================================
-  // CREACIÓN Y GESTIÓN INICIAL
+  // PASO 1: CREAR INVERSIÓN EN PENDIENTE
   // ===================================================================
 
   /**
    * @async
    * @function create
-   * @description Maneja la solicitud inicial para crear una inversión (registra el compromiso, estado: 'pendiente').
-   * @param {object} req - Objeto de solicitud de Express (con datos de inversión en `body`).
-   * @param {object} res - Objeto de respuesta de Express.
+   * @description Registra una inversión en estado "pendiente".
+   * No procesa ningún pago — solo compromete la intención de inversión.
+   * El pago se completa en el endpoint POST /pagar con verificación 2FA.
    */
   async create(req, res) {
     try {
       if (req.user.rol === "admin") {
         return res.status(403).json({
           error:
-            "⛔ Los administradores no pueden crear inversiones como clientes por motivos de seguridad.",
+            "Los administradores no pueden crear inversiones como clientes.",
         });
       }
-      const id_usuario = req.user.id;
-      const data = { ...req.body, id_usuario };
-      const nuevaInversion = await inversionService.crearInversion(data);
 
-      res.status(201).json({
-        message:
-          "Inversión registrada con éxito. Por favor, proceda a la activación del pago.",
+      const nuevaInversion = await inversionService.crearInversion({
+        ...req.body,
+        id_usuario: req.user.id,
+      });
+
+      return res.status(201).json({
+        message: "Inversión registrada. Procedé al pago con tu código 2FA.",
         inversionId: nuevaInversion.id,
-        modelo: "Inversion",
-        url_pago_sugerida: `/api/inversion/iniciar-pago/${nuevaInversion.id}`,
       });
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -44,28 +45,35 @@ const inversionController = {
   },
 
   // ===================================================================
-  // 🚀 FLUJO DE PAGO CON 2FA
+  // PASO 2: VERIFICAR 2FA Y GENERAR CHECKOUT
   // ===================================================================
 
   /**
    * @async
-   * @function requestCheckoutInversion
-   * @description Inicia el proceso de checkout para una inversión pendiente.
-   * Si el 2FA está activo para el usuario, detiene el flujo y solicita el código.
-   * @param {object} req - Objeto de solicitud de Express (con `idInversion` en `params`).
-   * @param {object} res - Objeto de respuesta de Express.
+   * @function iniciarPago
+   * @description Verifica el código 2FA y, si es correcto, crea la transacción
+   * y devuelve la URL de la pasarela de pago.
+   * El 2FA es obligatorio — si el usuario no lo tiene activo, se bloquea el pago.
+   * @body { inversionId, codigo_2fa }
    */
-  async requestCheckoutInversion(req, res) {
+  async iniciarPago(req, res) {
     try {
-      const inversionId = req.params.idInversion;
       const userId = req.user.id;
+      const { inversionId, codigo_2fa } = req.body;
 
-      // 1. Validar la Inversión (existencia, propiedad, estado) y obtener el usuario
+      if (!inversionId || !codigo_2fa) {
+        return res.status(400).json({
+          error: "Se requieren inversionId y codigo_2fa.",
+        });
+      }
+
+      // 1. Cargar inversión y usuario en paralelo
       const [inversion, user] = await Promise.all([
         inversionService.findById(inversionId),
         UsuarioService.findById(userId),
       ]);
 
+      // 2. Validar que la inversión existe, pertenece al usuario y está pendiente
       if (
         !inversion ||
         inversion.id_usuario !== userId ||
@@ -76,104 +84,36 @@ const inversionController = {
         });
       }
 
-      // 🛑 2. PUNTO DE CONTROL DE SEGURIDAD 2FA 🛑
-      if (user && user.is_2fa_enabled) {
-        // Retorna 202 Accepted para que el cliente solicite el código 2FA
-        return res.status(202).json({
-          message:
-            "Se requiere verificación 2FA para iniciar el checkout de la inversión.",
-          is2FARequired: true,
-          inversionId: inversion.id,
-        });
-      }
-
-      // 3. FLUJO NORMAL: Generar Transacción y Checkout (Si el 2FA no está activo)
-      const { transaccion, redirectUrl } =
-        await TransaccionService.iniciarTransaccionYCheckout(
-          "inversion",
-          inversion.id,
-          userId
-        );
-
-      // 4. DEVOLVER DIRECTAMENTE LA URL DE REDIRECCIÓN
-      res.status(200).json({
-        message: `Transacción #${transaccion.id} creada. Redireccionando a la pasarela de pago.`,
-        transaccionId: transaccion.id,
-        inversionId: inversion.id,
-        redirectUrl: redirectUrl,
-      });
-    } catch (error) {
-      // Manejo de errores simplificado
-      const status =
-        error.message.includes("no encontrado") ||
-        error.message.includes("Acceso denegado")
-          ? 403
-          : 400;
-      res.status(status).json({ error: error.message });
-    }
-  },
-
-  /**
-   * @async
-   * @function confirmarInversionCon2FA
-   * @description Verifica el código 2FA proporcionado por el usuario y, si es correcto,
-   * genera la Transacción y el Checkout para la Inversión pendiente.
-   * @param {object} req - Objeto de solicitud de Express (con `inversionId` y `codigo_2fa` en `body`).
-   * @param {object} res - Objeto de respuesta de Express.
-   */
-  async confirmarInversionCon2FA(req, res) {
-    try {
-      const userId = req.user.id;
-      const { inversionId, codigo_2fa } = req.body;
-
-      // 1. Validar Inversión y Usuario (mismas validaciones de seguridad)
-      const [user, inversion] = await Promise.all([
-        UsuarioService.findById(userId),
-        inversionService.findById(inversionId),
-      ]);
-
-      if (
-        !user ||
-        !inversion ||
-        inversion.id_usuario !== userId ||
-        inversion.estado !== "pendiente"
-      ) {
-        return res.status(403).json({
-          error: "Inversión no válida, no pendiente o no te pertenece.",
-        });
-      }
-
-      // 2. VERIFICACIÓN CRÍTICA DEL 2FA
+      // 3. Bloquear si el usuario no tiene 2FA activo — es obligatorio para invertir
       if (!user.is_2fa_enabled || !user.twofa_secret) {
-        return res
-          .status(403)
-          .json({ error: "2FA no activo. Error de flujo." });
+        return res.status(403).json({
+          error:
+            "Debés activar la verificación en dos pasos (2FA) antes de realizar una inversión.",
+          is2FARequired: true,
+        });
       }
 
+      // 4. Verificar el código 2FA
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
-        codigo_2fa
+        codigo_2fa,
       );
-
       if (!isVerified) {
-        return res
-          .status(401)
-          .json({ error: "Código 2FA incorrecto. Inversión rechazada." });
+        return res.status(401).json({ error: "Código 2FA incorrecto." });
       }
 
-      // 3. 🚀 EJECUTAR LA LÓGICA DE PASARELA (Solo si el 2FA es correcto)
+      // 5. Crear transacción y obtener URL de la pasarela
       const { transaccion, redirectUrl } =
         await TransaccionService.iniciarTransaccionYCheckout(
           "inversion",
           inversion.id,
-          userId
+          userId,
         );
 
-      // 4. Respuesta de Éxito: Devolver la URL de redirección
-      res.status(200).json({
-        message: `Verificación 2FA exitosa. Transacción #${transaccion.id} creada. Redireccionando a la pasarela.`,
+      return res.status(200).json({
+        message: `Transacción #${transaccion.id} creada. Redirigiendo a la pasarela.`,
         transaccionId: transaccion.id,
-        redirectUrl: redirectUrl,
+        redirectUrl,
       });
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -181,7 +121,7 @@ const inversionController = {
   },
 
   // ===================================================================
-  // FUNCIONES DE LECTURA (FIND)
+  // LECTURA
   // ===================================================================
 
   /**
@@ -191,8 +131,7 @@ const inversionController = {
    */
   async findMyInversions(req, res) {
     try {
-      const userId = req.user.id;
-      const inversiones = await inversionService.findByUserId(userId);
+      const inversiones = await inversionService.findByUserId(req.user.id);
       res.status(200).json(inversiones);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -201,8 +140,30 @@ const inversionController = {
 
   /**
    * @async
+   * @function findMyInversionById
+   * @description Obtiene una inversión por ID verificando que pertenezca al usuario autenticado.
+   */
+  async findMyInversionById(req, res) {
+    try {
+      const inversion = await inversionService.findByIdAndUserId(
+        req.params.id,
+        req.user.id,
+      );
+      if (!inversion) {
+        return res
+          .status(404)
+          .json({ message: "Inversión no encontrada o no te pertenece." });
+      }
+      res.status(200).json(inversion);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  /**
+   * @async
    * @function findAll
-   * @description Obtiene todas las inversiones (para administradores).
+   * @description Obtiene todas las inversiones. Solo para administradores.
    */
   async findAll(req, res) {
     try {
@@ -216,7 +177,7 @@ const inversionController = {
   /**
    * @async
    * @function findAllActivo
-   * @description Obtiene todas las inversiones activas (si aplica, para mostrar en un dashboard).
+   * @description Obtiene todas las inversiones activas. Solo para administradores.
    */
   async findAllActivo(req, res) {
     try {
@@ -230,35 +191,13 @@ const inversionController = {
   /**
    * @async
    * @function findById
-   * @description Obtiene una inversión por ID (para administradores).
+   * @description Obtiene una inversión por ID. Solo para administradores.
    */
   async findById(req, res) {
     try {
-      const { id } = req.params;
-      const inversion = await inversionService.findById(id);
+      const inversion = await inversionService.findById(req.params.id);
       if (!inversion) {
-        return res.status(404).json({ message: "Inversión no encontrada" });
-      }
-      res.status(200).json(inversion);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-
-  /**
-   * @async
-   * @function findMyInversionById
-   * @description Obtiene una inversión por ID, verificando que pertenezca al usuario autenticado.
-   */
-  async findMyInversionById(req, res) {
-    try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const inversion = await inversionService.findByIdAndUserId(id, userId);
-      if (!inversion) {
-        return res
-          .status(404)
-          .json({ message: "Inversión no encontrada o no te pertenece." });
+        return res.status(404).json({ message: "Inversión no encontrada." });
       }
       res.status(200).json(inversion);
     } catch (error) {
@@ -267,20 +206,22 @@ const inversionController = {
   },
 
   // ===================================================================
-  // FUNCIONES DE ACTUALIZACIÓN Y ELIMINACIÓN (UPDATE / DELETE)
+  // ACTUALIZACIÓN Y ELIMINACIÓN
   // ===================================================================
 
   /**
    * @async
    * @function update
-   * @description Actualiza una inversión por ID (para administradores).
+   * @description Actualiza una inversión por ID. Solo para administradores.
    */
   async update(req, res) {
     try {
-      const { id } = req.params;
-      const inversionActualizada = await inversionService.update(id, req.body);
+      const inversionActualizada = await inversionService.update(
+        req.params.id,
+        req.body,
+      );
       if (!inversionActualizada) {
-        return res.status(404).json({ message: "Inversión no encontrada" });
+        return res.status(404).json({ message: "Inversión no encontrada." });
       }
       res.status(200).json(inversionActualizada);
     } catch (error) {
@@ -291,16 +232,14 @@ const inversionController = {
   /**
    * @async
    * @function updateMyInversion
-   * @description Actualiza una inversión por ID, verificando propiedad.
+   * @description Actualiza una inversión verificando que pertenezca al usuario autenticado.
    */
   async updateMyInversion(req, res) {
     try {
-      const { id } = req.params;
-      const userId = req.user.id;
       const inversionActualizada = await inversionService.updateByIdAndUserId(
-        id,
-        userId,
-        req.body
+        req.params.id,
+        req.user.id,
+        req.body,
       );
       if (!inversionActualizada) {
         return res
@@ -316,16 +255,17 @@ const inversionController = {
   /**
    * @async
    * @function softDelete
-   * @description Elimina lógicamente una inversión (para administradores).
+   * @description Eliminación lógica de una inversión por ID. Solo para administradores.
    */
   async softDelete(req, res) {
     try {
-      const { id } = req.params;
-      const inversionEliminada = await inversionService.softDelete(id);
+      const inversionEliminada = await inversionService.softDelete(
+        req.params.id,
+      );
       if (!inversionEliminada) {
-        return res.status(404).json({ message: "Inversión no encontrada" });
+        return res.status(404).json({ message: "Inversión no encontrada." });
       }
-      res.status(204).send(); // 204 No Content para borrado exitoso
+      res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -334,36 +274,33 @@ const inversionController = {
   /**
    * @async
    * @function softDeleteMyInversion
-   * @description Elimina lógicamente una inversión, verificando propiedad.
+   * @description Eliminación lógica de una inversión verificando que pertenezca al usuario autenticado.
    */
   async softDeleteMyInversion(req, res) {
     try {
-      const { id } = req.params;
-      const userId = req.user.id;
       const inversionEliminada = await inversionService.softDeleteByIdAndUserId(
-        id,
-        userId
+        req.params.id,
+        req.user.id,
       );
       if (!inversionEliminada) {
         return res
           .status(404)
           .json({ message: "Inversión no encontrada o no te pertenece." });
       }
-      res.status(204).send(); // 204 No Content para borrado exitoso
+      res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
-  // -------------------------------------------------------------------
-  // 📊 NUEVAS FUNCIONES DE REPORTE/MÉTRICAS (ADMIN)
-  // -------------------------------------------------------------------
+
+  // ===================================================================
+  // MÉTRICAS Y REPORTES (ADMIN)
+  // ===================================================================
 
   /**
    * @async
    * @function getLiquidityRate
    * @description Obtiene la Tasa de Liquidez de Inversiones (KPI 6).
-   * @param {object} req - Objeto de solicitud de Express.
-   * @param {object} res - Objeto de respuesta de Express.
    */
   async getLiquidityRate(req, res) {
     try {
@@ -375,19 +312,18 @@ const inversionController = {
       });
     } catch (error) {
       console.error("Error al obtener Tasa de Liquidez:", error.message);
-      res.status(500).json({
-        error: "Error interno al procesar las métricas de inversión.",
-      });
+      res
+        .status(500)
+        .json({
+          error: "Error interno al procesar las métricas de inversión.",
+        });
     }
   },
 
   /**
    * @async
    * @function getAggregatedByUser
-   * @description Obtiene el monto total invertido (pagado) por cada usuario.
-   * (Base para KPI 7: Rendimiento del Inversor).
-   * @param {object} req - Objeto de solicitud de Express.
-   * @param {object} res - Objeto de respuesta de Express.
+   * @description Obtiene el monto total invertido (pagado) por cada usuario (base para KPI 7).
    */
   async getAggregatedByUser(req, res) {
     try {
@@ -399,7 +335,7 @@ const inversionController = {
     } catch (error) {
       console.error(
         "Error al obtener inversión agregada por usuario:",
-        error.message
+        error.message,
       );
       res.status(500).json({
         error: "Error interno al procesar la agregación de inversiones.",

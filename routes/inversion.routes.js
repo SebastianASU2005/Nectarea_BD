@@ -5,107 +5,107 @@ const router = express.Router();
 const inversionController = require("../controllers/inversion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
-const { blockAdminTransactions } = require("../middleware/roleValidation"); // ✅ NUEVO
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { blockAdminTransactions } = require("../middleware/roleValidation");
+const { userRateLimiter } = require("../middleware/rateLimiter");
+
 // ===============================================
-// 1. RUTAS POST (Estáticas y Semi-Dinámicas)
+// 1. RUTAS POST
 // ===============================================
 
 // POST /
-// 🔒 OPERACIÓN CRÍTICA: Crear inversión (requiere KYC + 2FA + NO ser admin)
+// Paso 1: Registrar inversión en "pendiente".
+// El middleware checkKYCandTwoFA ya no valida 2FA aquí porque en este
+// punto el usuario todavía no lo usa — solo verifica KYC.
 router.post(
-  "/",
+  "/crear",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
+  blockAdminTransactions,
   checkKYCandTwoFA,
-  inversionController.create
+  inversionController.create,
 );
 
-// POST /confirmar-2fa
-// 🔒 OPERACIÓN CRÍTICA: Verifica el 2FA para continuar con el pago
+// POST /pagar
+// Paso 2: Verificar código 2FA y generar checkout.
+// No lleva checkKYCandTwoFA porque el propio controlador valida
+// el 2FA de forma más estricta (lo bloquea si no está activo).
+// Lleva rate limiter para evitar fuerza bruta sobre el código 2FA.
 router.post(
-  "/confirmar-2fa",
+  "/pagar",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
-  checkKYCandTwoFA,
-  inversionController.confirmarInversionCon2FA
-);
-
-// POST /iniciar-pago/:idInversion
-// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de pago (requiere KYC + 2FA + NO ser admin)
-router.post(
-  "/iniciar-pago/:idInversion",
-  authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ NUEVO: Bloquea admins
-  checkKYCandTwoFA,
+  blockAdminTransactions,
   userRateLimiter,
-  inversionController.requestCheckoutInversion
+  inversionController.iniciarPago,
 );
 
 // ===============================================
-// 2. RUTAS GET (Estáticas y Con Prefijo)
+// 2. RUTAS GET (Estáticas primero, dinámicas al final)
 // ===============================================
 
-// GET /
+// GET / — todas las inversiones (admin)
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.findAll
+  inversionController.findAll,
 );
 
-// GET /metricas/liquidez (KPI 6)
+// GET /metricas/liquidez — KPI 6 (admin)
 router.get(
   "/metricas/liquidez",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.getLiquidityRate
+  inversionController.getLiquidityRate,
 );
 
-// GET /metricas/agregado-por-usuario (KPI 7)
+// GET /metricas/agregado-por-usuario — KPI 7 (admin)
 router.get(
   "/metricas/agregado-por-usuario",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.getAggregatedByUser
+  inversionController.getAggregatedByUser,
 );
 
-// GET /mis_inversiones
+// GET /mis_inversiones — inversiones del usuario autenticado
 router.get(
   "/mis_inversiones",
   authMiddleware.authenticate,
-  inversionController.findMyInversions
+  inversionController.findMyInversions,
 );
 
-// GET /activas
+// GET /activas — inversiones activas (admin)
 router.get(
   "/activas",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.findAllActivo
+  inversionController.findAllActivo,
 );
 
-// GET /:id (DINÁMICO - Va al final)
-router.get("/:id", authMiddleware.authenticate, inversionController.findById);
+// GET /:id — por ID (admin) — SIEMPRE al final para no capturar rutas estáticas
+router.get(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  inversionController.findById,
+);
 
 // ===============================================
-// 3. RUTAS PUT/DELETE (DINÁMICAS GENÉRICAS)
+// 3. RUTAS PUT / DELETE
 // ===============================================
 
-// PUT /:id
+// PUT /:id — actualizar inversión (admin)
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.update
+  inversionController.update,
 );
 
-// DELETE /:id
+// DELETE /:id — soft delete (admin)
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  inversionController.softDelete
+  inversionController.softDelete,
 );
 
 module.exports = router;
