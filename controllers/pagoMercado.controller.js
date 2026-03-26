@@ -33,159 +33,68 @@ function verifySignature(req) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   const signatureHeader = req.headers["x-signature"];
   const requestId = req.headers["x-request-id"];
-
-  // ✅ EXTRAER TOPIC DE TODAS LAS FUENTES POSIBLES
   const topic =
     req.query.topic || req.body?.topic || req.query.type || req.body?.type;
-
-  console.log("🔐 VALIDACIÓN DE FIRMA - DATOS COMPLETOS:", {
-    signature: signatureHeader
-      ? signatureHeader.substring(0, 50) + "..."
-      : "MISSING",
-    requestId: requestId || "MISSING",
-    topic: topic || "MISSING",
-    queryTopic: req.query.topic,
-    queryType: req.query.type,
-    bodyTopic: req.body?.topic,
-    bodyType: req.body?.type,
-    queryId: req.query.id,
-    queryDataId: req.query["data.id"],
-    bodyDataId: req.body?.data?.id,
-    bodyResource: req.body?.resource,
-    hasSecret: !!secret,
-    secretPrefix: secret ? secret.substring(0, 10) + "..." : "MISSING",
-  });
 
   if (!secret) {
     console.error("❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado");
     return false;
   }
 
-  // 🚫 IGNORAR formato antiguo de merchant_order que no se valida correctamente
-  // MP envía el mismo evento con topic='topic_merchant_order_wh' que sí se valida bien
   if (topic === "merchant_order" && signatureHeader) {
-    console.log(
-      "⚠️ Webhook merchant_order (formato antiguo) IGNORADO - MP enviará topic_merchant_order_wh"
-    );
-    return true; // Aceptamos pero será ignorado en el handler
+    return true;
   }
 
-  // ✅ CASO 1: Webhooks SIN firma (merchant_order legacy, algunos eventos antiguos)
   if (!signatureHeader) {
-    // ✅ MERCHANT_ORDER: Algunos webhooks NO traen firma (comportamiento legacy)
-    if (topic === "merchant_order" || topic === "order") {
-      console.log(
-        "⚠️ Webhook merchant_order sin firma ACEPTADO (comportamiento legacy de MP)"
-      );
-      return true;
-    }
-
-    // ✅ PAYMENT SIN FIRMA: Solo aceptar si tiene datos básicos válidos
+    // ... tu lógica existente para webhooks sin firma
+    if (topic === "merchant_order" || topic === "order") return true;
     if (topic === "payment") {
       const hasBasicData = !!(
         req.query.id ||
         req.body?.data?.id ||
         req.query["data.id"]
       );
-
-      if (hasBasicData) {
-        console.warn(
-          "⚠️ Payment webhook sin firma pero con datos válidos - ACEPTANDO (entorno legacy)"
-        );
-        return true;
-      }
+      if (hasBasicData) return true;
     }
-
-    console.error(
-      "❌ Webhook sin firma y sin tipo reconocido o datos válidos",
-      {
-        topic,
-        hasQueryId: !!req.query.id,
-        hasBodyDataId: !!req.body?.data?.id,
-      }
-    );
     return false;
   }
 
-  // ✅ CASO 2: Webhooks CON firma
-  if (!requestId) {
-    console.error("❌ Falta x-request-id pero hay x-signature");
-    return false;
-  }
+  if (!requestId) return false;
 
-  // ✅ Extraer dataId usando la función auxiliar
-  const dataId = extractDataId(req);
-
-  if (!dataId) {
-    console.error("❌ No se pudo extraer dataId para validar firma", {
-      topic,
-      queryId: req.query.id,
-      bodyDataId: req.body?.data?.id,
-      resource: req.body?.resource,
-    });
-    return false;
-  }
-
-  // Parsear ts y v1 de la firma
   const parts = signatureHeader.split(",");
   let ts, v1;
-
   for (const part of parts) {
     const [key, value] = part.split("=");
     if (key?.trim() === "ts") ts = value?.trim();
     if (key?.trim() === "v1") v1 = value?.trim();
   }
+  if (!ts || !v1) return false;
 
-  if (!ts || !v1) {
-    console.error("❌ No se pudo extraer ts o v1 de la firma", {
-      signatureHeader: signatureHeader.substring(0, 100),
-    });
-    return false;
+  // ✅ Intentar validar con body.data.id primero, luego con query.id
+  const candidateIds = [
+    req.body?.data?.id,
+    req.query.id,
+    req.query["data.id"],
+  ].filter(Boolean);
+
+  for (const candidateId of candidateIds) {
+    const manifest = `id:${candidateId};request-id:${requestId};ts:${ts};`;
+    const localHash = crypto
+      .createHmac("sha256", secret)
+      .update(manifest)
+      .digest("hex");
+
+    if (localHash === v1) {
+      console.log(`✅ Firma válida con dataId: ${candidateId}`);
+      return true;
+    }
   }
 
-  // 🔥 DIFERENCIA CLAVE: El manifest varía según el tipo de webhook
-  let manifest;
-
-  if (topic === "merchant_order" || topic === "order") {
-    // Para merchant_order: solo se usa el ID del merchant_order
-    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  } else if (topic === "payment") {
-    // Para payment: se usa el ID del payment
-    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  } else {
-    // Para otros tipos, usar el formato estándar
-    manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  }
-
-  const localHash = crypto
-    .createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex");
-
-  const isValid = localHash === v1;
-
-  if (isValid) {
-    console.log("✅ Firma válida", {
-      topic,
-      dataId,
-      requestId,
-      ts,
-      expected: localHash.substring(0, 20) + "...",
-      received: v1.substring(0, 20) + "...",
-    });
-  } else {
-    console.error("❌ Firma inválida", {
-      topic,
-      dataId,
-      requestId,
-      ts,
-      manifest, // 🔍 Agregado para debugging
-      expected: localHash.substring(0, 20) + "...",
-      received: v1.substring(0, 20) + "...",
-    });
-  }
-
-  return isValid;
+  console.error("❌ Firma inválida con todos los candidatos", {
+    candidateIds,
+    ts,
+  });
+  return false;
 }
 
 /**
@@ -212,7 +121,7 @@ function extractDataId(req) {
       if (match && match[1]) {
         dataId = match[1];
         console.log(
-          `✅ DataId de merchant_order extraído de resource URL: ${dataId}`
+          `✅ DataId de merchant_order extraído de resource URL: ${dataId}`,
         );
       }
     }
@@ -275,7 +184,7 @@ const paymentController = {
           await transaccionService.generarCheckoutParaTransaccionExistente(
             transaccion,
             metodo,
-            { transaction: t }
+            { transaction: t },
           ));
       } else {
         // Flujo para Transacción Nueva
@@ -294,7 +203,7 @@ const paymentController = {
           await transaccionService.crearTransaccionConCheckout(
             datosTransaccion,
             metodo,
-            { transaction: t }
+            { transaction: t },
           ));
       }
 
@@ -378,8 +287,8 @@ const paymentController = {
           // 8 horas = 28800 segundos
           console.log(
             `⏱️ Webhook muy antiguo (${webhookAgeHours.toFixed(
-              1
-            )} horas). Ignorando para evitar procesamiento duplicado.`
+              1,
+            )} horas). Ignorando para evitar procesamiento duplicado.`,
           );
           return res.status(200).send("OK - Webhook antiguo ignorado");
         }
@@ -411,7 +320,7 @@ const paymentController = {
     // 🚫 IGNORAR el formato antiguo de merchant_order (MP envía duplicados)
     if (topic === "merchant_order") {
       console.log(
-        `⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`
+        `⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`,
       );
       return res.status(200).send("OK - Formato antiguo ignorado");
     }
@@ -420,16 +329,16 @@ const paymentController = {
     if (topic === "topic_merchant_order_wh" && id) {
       try {
         console.log(
-          `🔄 Merchant Order ${id} recibida (formato nuevo). Buscando pagos asociados...`
+          `🔄 Merchant Order ${id} recibida (formato nuevo). Buscando pagos asociados...`,
         );
         await pagoMercadoService.procesarPagosDeMerchantOrder(id);
         console.log(
-          `✅ Merchant Order ${id} procesada. Pagos internos actualizados.`
+          `✅ Merchant Order ${id} procesada. Pagos internos actualizados.`,
         );
         return res.status(200).send("OK - Merchant Order procesada");
       } catch (error) {
         console.error(
-          `❌ Error al procesar Merchant Order ${id}: ${error.message}`
+          `❌ Error al procesar Merchant Order ${id}: ${error.message}`,
         );
         return res.status(200).send("OK - Error en procesamiento de MO");
       }
@@ -438,7 +347,7 @@ const paymentController = {
     // Si no es merchant_order, se asume un flujo de `payment` individual
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
-      metodo
+      metodo,
     );
 
     if (!paymentResult || !paymentResult.transaccionId) {
@@ -477,7 +386,7 @@ const paymentController = {
       if (transaccion.estado_transaccion === "pagado") {
         await t.commit();
         console.log(
-          `Transacción ${transaccionId} ya procesada. Webhook ignorado.`
+          `Transacción ${transaccionId} ya procesada. Webhook ignorado.`,
         );
         return res.status(200).send("OK - Ya procesado");
       }
@@ -505,11 +414,11 @@ const paymentController = {
             metodo_pasarela: metodo,
             ...pagoData,
           },
-          { transaction: t }
+          { transaction: t },
         );
         await transaccion.update(
           { id_pago_pasarela: pagoMercado.id },
-          { transaction: t }
+          { transaction: t },
         );
       } else {
         // Si existe, solo actualiza
@@ -519,7 +428,7 @@ const paymentController = {
       // 3. Ejecutar Lógica de Negocio según el Estado
       if (internalStatus === "aprobado") {
         console.log(
-          `✅ Pago ${transactionId} APROBADO. Ejecutando lógica de negocio...`
+          `✅ Pago ${transactionId} APROBADO. Ejecutando lógica de negocio...`,
         );
         // El servicio confirma la transacción y aplica la lógica de negocio (ej. crear Inversión, asignar tokens, etc.)
         await transaccionService.confirmarTransaccion(transaccion.id, {
@@ -535,26 +444,26 @@ const paymentController = {
           internalStatus === "rechazado"
             ? "fallido"
             : internalStatus === "devuelto"
-            ? "reembolsado"
-            : "en_proceso";
+              ? "reembolsado"
+              : "en_proceso";
 
         await transaccionService.procesarFalloTransaccion(
           transaccion.id,
           newStatus,
           `Pago ${internalStatus}: ${status}`,
-          { transaction: t }
+          { transaction: t },
         );
       } else {
         // Actualizar el estado de la transacción con el estado interno mapeado
         await transaccion.update(
           { estado_transaccion: internalStatus },
-          { transaction: t }
+          { transaction: t },
         );
       }
 
       await t.commit();
       console.log(
-        `✅ Webhook procesado: Transacción ${transaccionId} (MP Estado: ${internalStatus})`
+        `✅ Webhook procesado: Transacción ${transaccionId} (MP Estado: ${internalStatus})`,
       );
 
       return res.status(200).send("OK");
@@ -574,7 +483,7 @@ const paymentController = {
 
       if (requiereReembolso) {
         console.log(
-          `💰 Iniciando flujo de reembolso automático para Transacción ${transaccionId} por error de negocio: ${errorMsg}`
+          `💰 Iniciando flujo de reembolso automático para Transacción ${transaccionId} por error de negocio: ${errorMsg}`,
         );
 
         try {
@@ -593,20 +502,20 @@ const paymentController = {
               const resultadoReembolso =
                 await pagoMercadoService.realizarReembolso(
                   pagoMercado.id_transaccion_pasarela,
-                  parseFloat(transaccion.monto)
+                  parseFloat(transaccion.monto),
                 );
 
               reembolsoExitoso = resultadoReembolso?.success === true;
 
               if (reembolsoExitoso) {
                 console.log(
-                  `✅ Reembolso de MP solicitado exitosamente para ${pagoMercado.id_transaccion_pasarela}.`
+                  `✅ Reembolso de MP solicitado exitosamente para ${pagoMercado.id_transaccion_pasarela}.`,
                 );
               } else {
                 errorReembolso =
                   resultadoReembolso?.message || "Reembolso falló sin detalles";
                 console.warn(
-                  `⚠️ Fallo en el reembolso de MP: ${errorReembolso}`
+                  `⚠️ Fallo en el reembolso de MP: ${errorReembolso}`,
                 );
               }
             } catch (refundError) {
@@ -624,7 +533,7 @@ const paymentController = {
                   user,
                   transaccion,
                   errorMsg, // Razón del fallo de negocio
-                  reembolsoExitoso // <--- NUEVO ARGUMENTO
+                  reembolsoExitoso, // <--- NUEVO ARGUMENTO
                 );
               } catch (e) {
                 console.error(`Error al enviar email al usuario: ${e.message}`);
@@ -646,34 +555,34 @@ const paymentController = {
                           reembolsoExitoso,
                           errorReembolso,
                           idPagoMP: pagoMercado.id_transaccion_pasarela,
-                        }
+                        },
                       );
                     } catch (e) {
                       console.error(
-                        `Error al enviar email de reembolso al admin ${admin.id}: ${e.message}`
+                        `Error al enviar email de reembolso al admin ${admin.id}: ${e.message}`,
                       );
                     }
                   }
                 }
               } catch (adminError) {
                 console.error(
-                  `Error al notificar a administradores: ${adminError.message}`
+                  `Error al notificar a administradores: ${adminError.message}`,
                 );
               }
             } else {
               console.error(
-                `Error: Usuario ${transaccion.id_usuario} no encontrado para notificar reembolso.`
+                `Error: Usuario ${transaccion.id_usuario} no encontrado para notificar reembolso.`,
               );
             }
           } else {
             console.warn(
-              `⚠️ NO se pudo realizar el reembolso automático para Transacción ${transaccionId}. Faltan datos de pago de MP.`
+              `⚠️ NO se pudo realizar el reembolso automático para Transacción ${transaccionId}. Faltan datos de pago de MP.`,
             );
           }
         } catch (reembolsoError) {
           console.error(
             `❌ ERROR GENERAL EN FLUJO DE REEMBOLSO:`,
-            reembolsoError.message
+            reembolsoError.message,
           );
         }
       }
@@ -682,7 +591,7 @@ const paymentController = {
       await t.rollback();
       console.error(
         `❌ Error CRÍTICO en webhook (Transacción ${transaccionId}):`,
-        errorMsg
+        errorMsg,
       );
 
       // Marcar como fallido fuera de la transacción
@@ -697,12 +606,12 @@ const paymentController = {
               estado_transaccion: "fallido",
               error_detalle: detalleError,
             },
-            { where: { id: transaccionId } }
+            { where: { id: transaccionId } },
           );
         } catch (updateError) {
           console.error(
             "ERROR GRAVE al marcar como fallido:",
-            updateError.message
+            updateError.message,
           );
         }
       }
@@ -737,7 +646,7 @@ const paymentController = {
         await transaccionService.iniciarTransaccionYCheckout(
           modelo,
           idNumerico,
-          userId
+          userId,
         );
 
       res.status(200).json({
@@ -751,7 +660,7 @@ const paymentController = {
     } catch (error) {
       console.error(
         `Error en el checkout genérico para ${req.params.modelo}:`,
-        error.message
+        error.message,
       );
       res.status(400).json({
         error: error.message,
@@ -783,23 +692,23 @@ const paymentController = {
         finalStatus === "failure"
       ) {
         console.log(
-          `Usuario canceló o pago rechazado para Transacción ${id_transaccion}. Marcando como fallido.`
+          `Usuario canceló o pago rechazado para Transacción ${id_transaccion}. Marcando como fallido.`,
         );
         // Marca la transacción como fallida, pero la lógica crítica de pago la maneja el webhook.
         await transaccionService.cancelarTransaccionPorUsuario(id_transaccion);
         return res.redirect(
-          `${process.env.FRONTEND_URL}/pago-fallido?transaccion=${id_transaccion}`
+          `${process.env.FRONTEND_URL}/pago-fallido?transaccion=${id_transaccion}`,
         );
       }
 
       // Si no es fallo/cancelación, redirige al frontend para mostrar el estado final (que se obtiene con `getPaymentStatus`)
       return res.redirect(
-        `${process.env.FRONTEND_URL}/pago-estado?transaccion=${id_transaccion}`
+        `${process.env.FRONTEND_URL}/pago-estado?transaccion=${id_transaccion}`,
       );
     } catch (error) {
       console.error("Error en la redirección de checkout:", error.message);
       return res.redirect(
-        `${process.env.FRONTEND_URL}/error-fatal?transaccion=${id_transaccion}`
+        `${process.env.FRONTEND_URL}/error-fatal?transaccion=${id_transaccion}`,
       );
     }
   },
@@ -843,13 +752,13 @@ const paymentController = {
       // 2. Forzar actualización de estado si se solicita y es necesario
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
         console.log(
-          `Forzando actualización de estado de MP para transacción ${id_transaccion}`
+          `Forzando actualización de estado de MP para transacción ${id_transaccion}`,
         );
 
         // El servicio consulta a la API de MP y actualiza DB si el estado ha cambiado
         const updatedData = await pagoMercadoService.refreshPaymentStatus(
           transaccion.id,
-          pagoMercado.id_transaccion_pasarela
+          pagoMercado.id_transaccion_pasarela,
         );
 
         if (updatedData) {

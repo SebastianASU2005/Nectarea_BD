@@ -153,6 +153,7 @@ const transaccionService = {
       transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+        // ✅ Sin includes: FOR UPDATE no puede aplicarse a LEFT JOINs nulables
       });
 
       if (!transaccion) {
@@ -212,6 +213,7 @@ const transaccionService = {
       const transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+        // ✅ Sin includes
       });
 
       if (!transaccion) {
@@ -1076,8 +1078,13 @@ const transaccionService = {
 
   /**
    * @async
-   * @function confirmarTransaccion (MODIFICADO)
-   * @description Confirma una transacción CON VALIDACIÓN DE TIMEOUT
+   * @function confirmarTransaccion
+   * @description Confirma una transacción CON VALIDACIÓN DE TIMEOUT.
+   *
+   * CORRECCIÓN CRÍTICA: La búsqueda con lock: t.LOCK.UPDATE se hace SIN includes.
+   * PostgreSQL no permite FOR UPDATE en el lado nulable de un outer join (LEFT JOIN).
+   * Se hace findByPk limpio para el lock y luego se accede a los campos escalares
+   * directamente desde la fila bloqueada, sin necesidad de joins adicionales.
    */
   async confirmarTransaccion(transaccionId, options = {}) {
     const t = options.transaction;
@@ -1091,40 +1098,15 @@ const transaccionService = {
     let transaccion;
 
     try {
+      // ✅ FIX: findByPk SIN includes para que el FOR UPDATE funcione correctamente
+      // en PostgreSQL. Todos los campos que necesitamos (tipo_transaccion, id_proyecto,
+      // id_inversion, id_puja, id_pago_mensual, id_suscripcion, id_usuario, monto)
+      // son columnas escalares de la propia tabla — no necesitan joins para leerse.
       transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
-      if (
-        transaccion.tipo_transaccion === "directo" &&
-        transaccion.id_proyecto
-      ) {
-        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
-          transaction: t,
-        });
 
-        if (!proyecto) {
-          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
-        }
-
-        // ✅ Verificar si el proyecto sigue abierto para inversiones
-        if (
-          proyecto.estado_proyecto === "Finalizado" ||
-          proyecto.estado_proyecto === "Cancelado"
-        ) {
-          await transaccion.update(
-            {
-              estado_transaccion: "rechazado_proyecto_cerrado",
-              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
-            },
-            { transaction: t },
-          );
-
-          throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión (${proyecto.estado_proyecto}). Pago rechazado.`,
-          );
-        }
-      }
       if (!transaccion) {
         throw new Error("Transacción no encontrada.");
       }
@@ -1144,6 +1126,39 @@ const transaccionService = {
         );
       }
 
+      // Verificación de proyecto para inversiones directas
+      // El id_proyecto es una columna escalar, no requiere join
+      if (
+        transaccion.tipo_transaccion === "directo" &&
+        transaccion.id_proyecto
+      ) {
+        // Consulta separada SIN lock para el proyecto (no es la fila que queremos lockear)
+        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
+          transaction: t,
+        });
+
+        if (!proyecto) {
+          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
+        }
+
+        if (
+          proyecto.estado_proyecto === "Finalizado" ||
+          proyecto.estado_proyecto === "Cancelado"
+        ) {
+          await transaccion.update(
+            {
+              estado_transaccion: "rechazado_proyecto_cerrado",
+              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
+            },
+            { transaction: t },
+          );
+
+          throw new Error(
+            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión (${proyecto.estado_proyecto}). Pago rechazado.`,
+          );
+        }
+      }
+
       // ⏰ VALIDACIÓN CRÍTICA: Verificar si la transacción expiró
       const haExpirado = await this.verificarYExpirarTransaccionAntigua(
         transaccion,
@@ -1161,6 +1176,7 @@ const transaccionService = {
         transaccion.tipo_transaccion === "pago_suscripcion_inicial" &&
         transaccion.id_proyecto
       ) {
+        // Consulta separada SIN lock para el proyecto
         const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
           transaction: t,
         });
@@ -1169,9 +1185,7 @@ const transaccionService = {
           throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
         }
 
-        // ✅ Verificar si hay capacidad disponible
         if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
-          // Marcar como rechazado por capacidad
           await transaccion.update(
             {
               estado_transaccion: "rechazado_por_capacidad",
@@ -1185,7 +1199,6 @@ const transaccionService = {
           );
         }
 
-        // ✅ Verificar si el proyecto sigue abierto
         if (
           proyecto.estado_proyecto === "Finalizado" ||
           proyecto.estado_proyecto === "Cancelado"
