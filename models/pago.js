@@ -17,17 +17,17 @@ const Pago = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
-        model: 'usuario', // nombre de la tabla de usuarios
-        key: 'id'
-      }
+        model: "usuario", // nombre de la tabla de usuarios
+        key: "id",
+      },
     },
     id_proyecto: {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
-        model: 'proyecto', // nombre de la tabla de proyectos
-        key: 'id'
-      }
+        model: "proyecto", // nombre de la tabla de proyectos
+        key: "id",
+      },
     },
     // FIN DE CAMPOS NUEVOS ✅
     monto: {
@@ -52,7 +52,8 @@ const Pago = sequelize.define(
         "pagado",
         "vencido",
         "cancelado",
-        "cubierto_por_puja"
+        "cubierto_por_puja",
+        "forzado",
       ),
       allowNull: false,
       defaultValue: "pendiente",
@@ -61,10 +62,15 @@ const Pago = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    motivo: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      defaultValue: null,
+    },
   },
   {
     tableName: "pago",
-  }
+  },
 );
 
 module.exports = Pago;

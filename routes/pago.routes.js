@@ -6,7 +6,7 @@ const pagoController = require("../controllers/pago.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { userRateLimiter } = require("../middleware/rateLimiter");
 // =================================================================
 // 1. RUTAS ESTÁTICAS Y SEMI-DINÁMICAS (USUARIO y ADMIN)
 // =================================================================
@@ -35,6 +35,17 @@ router.post(
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   pagoController.generateAdvancePayments,
+);
+router.get(
+  "/historial/suscripcion/:suscripcionId",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.getHistorialSuscripcion,
+);
+router.get(
+  "/historial/mi-suscripcion/:suscripcionId",
+  authMiddleware.authenticate,
+  pagoController.getMySubscriptionHistory,
 );
 
 // 🆕 GET /pendientes/suscripcion/:id_suscripcion (SOLO ADMIN)

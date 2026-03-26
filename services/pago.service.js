@@ -759,68 +759,144 @@ const pagoService = {
     });
   },
   async updatePaymentStatus(pagoId, nuevoEstado, motivo = null) {
-  const t = await sequelize.transaction();
-  
-  try {
-    const estadosValidos = ["pendiente", "pagado", "vencido", "cancelado", "cubierto_por_puja"];
+    const t = await sequelize.transaction();
 
-    const pago = await Pago.findByPk(pagoId, { transaction: t });
-    if (!pago) throw new Error(`Pago ID ${pagoId} no encontrado.`);
+    try {
+      // 1. Agregar "forzado" a la lista de estados válidos
+      const estadosValidos = [
+        "pendiente",
+        "pagado",
+        "vencido",
+        "cancelado",
+        "cubierto_por_puja",
+        "forzado",
+      ];
 
-    if (!estadosValidos.includes(nuevoEstado)) {
-      throw new Error(`Estado '${nuevoEstado}' inválido.`);
-    }
+      const pago = await Pago.findByPk(pagoId, { transaction: t });
+      if (!pago) throw new Error(`Pago ID ${pagoId} no encontrado.`);
 
-    const estadoAnterior = pago.estado_pago;
+      if (!estadosValidos.includes(nuevoEstado)) {
+        throw new Error(`Estado '${nuevoEstado}' inválido.`);
+      }
 
-    // Evitar cambio innecesario
-    if (estadoAnterior === nuevoEstado) {
+      const estadoAnterior = pago.estado_pago;
+
+      if (estadoAnterior === nuevoEstado) {
+        await t.commit();
+        return pago;
+      }
+
+      // 2. Lógica de fecha: Si es pagado o forzado, se setea la fecha de hoy
+      const esEstadoDePagoExitoso = [
+        "pagado",
+        "forzado",
+        "cubierto_por_puja",
+      ].includes(nuevoEstado);
+
+      await pago.update(
+        {
+          estado_pago: nuevoEstado,
+          fecha_pago: esEstadoDePagoExitoso ? new Date() : pago.fecha_pago,
+          motivo: motivo || null, // 🆕 Persistir el motivo
+        },
+        { transaction: t },
+      );
+
+      // 3. Sincronizar ResumenCuenta
+      // Consideramos "forzado" como un estado pagado para el balance
+      const estadosQueCuentanComoPagado = [
+        "pagado",
+        "cubierto_por_puja",
+        "forzado",
+      ];
+
+      const anteriorEraPagado =
+        estadosQueCuentanComoPagado.includes(estadoAnterior);
+      const nuevoEsPagado = estadosQueCuentanComoPagado.includes(nuevoEstado);
+      const anteriorEraVencido = estadoAnterior === "vencido";
+      const nuevoEsVencido = nuevoEstado === "vencido";
+
+      const huboCambioRelevante =
+        anteriorEraPagado !== nuevoEsPagado ||
+        anteriorEraVencido !== nuevoEsVencido;
+
+      if (huboCambioRelevante) {
+        await resumenCuentaService.updateAccountSummaryOnPayment(
+          pago.id_suscripcion,
+          { transaction: t },
+        );
+      }
+
       await t.commit();
       return pago;
+    } catch (error) {
+      if (t) await t.rollback();
+      throw error;
     }
-
-    console.log(`[AUDITORÍA] Cambio de estado en Pago ID ${pagoId}:
-      Estado anterior: ${estadoAnterior}
-      Estado nuevo: ${nuevoEstado}
-      Motivo: ${motivo || "No especificado"}
-      Fecha: ${new Date().toISOString()}`);
-
-    // 1. Actualizar el estado del pago
-    await pago.update(
-      {
-        estado_pago: nuevoEstado,
-        fecha_pago: nuevoEstado === "pagado" ? new Date() : pago.fecha_pago,
+  },
+  /**
+   * @async
+   * @function findAllBySubscription
+   * @description Obtiene el historial completo de pagos de una suscripción (para administradores).
+   * @param {number} suscripcionId - ID de la suscripción.
+   * @returns {Promise<Pago[]>} Lista de todos los pagos (historial completo).
+   */
+  async findAllBySubscription(suscripcionId) {
+    return Pago.findAll({
+      where: {
+        id_suscripcion: suscripcionId,
       },
-      { transaction: t }
-    );
+      include: [
+        { model: Proyecto, as: "proyectoDirecto" }, // Útil para ver a qué proyecto pertenece en el listado
+        { model: Usuario, as: "usuarioDirecto" }, // Útil para ver los datos del titular
+      ],
+      order: [["mes", "ASC"]], // Ordenar cronológicamente por cuota
+    });
+  },
+  /**
+   * @async
+   * @function findAllBySubscriptionAndUser
+   * @description Obtiene el historial de pagos de una suscripción, validando que pertenezca al usuario.
+   * @param {number} suscripcionId - ID de la suscripción.
+   * @param {number} userId - ID del usuario autenticado.
+   * @returns {Promise<Pago[]>}
+   * @throws {Error} Si la suscripción no existe o no pertenece al usuario.
+   */
+  async findAllBySubscriptionAndUser(suscripcionId, userId) {
+    // 1. Validar propiedad antes de devolver datos
+    const suscripcion = await SuscripcionProyecto.findOne({
+      where: {
+        id: suscripcionId,
+        id_usuario: userId, // 🎯 Clave: solo la suscripción del usuario autenticado
+      },
+    });
 
-    // 2. Sincronizar el ResumenCuenta según la transición de estado
-    const estadosPagados = ["pagado", "cubierto_por_puja"];
-    const anteriorEraPagado = estadosPagados.includes(estadoAnterior);
-    const nuevoEsPagado = estadosPagados.includes(nuevoEstado);
-    const anteriorEraVencido = estadoAnterior === "vencido";
-    const nuevoEsVencido = nuevoEstado === "vencido";
-
-    const huboCambioRelevante =
-      anteriorEraPagado !== nuevoEsPagado || anteriorEraVencido !== nuevoEsVencido;
-
-    if (huboCambioRelevante) {
-      // updateAccountSummaryOnPayment hace un recálculo completo desde la BD,
-      // por lo que sirve para cualquier transición (no solo "marcar como pagado")
-      await resumenCuentaService.updateAccountSummaryOnPayment(
-        pago.id_suscripcion,
-        { transaction: t }
-      );
+    if (!suscripcion) {
+      throw new Error("Suscripción no encontrada o no te pertenece.");
     }
 
-    await t.commit();
-    return pago;
-
-  } catch (error) {
-    await t.rollback();
-    throw error;
-  }
-},
+    return Pago.findAll({
+      where: { id_suscripcion: suscripcionId },
+      attributes: [
+        "id",
+        "monto",
+        "estado_pago",
+        "mes",
+        "fecha_vencimiento",
+        "fecha_pago",
+        "motivo",
+        "createdAt",
+      ],
+      include: [
+        {
+          model: Proyecto,
+          as: "proyectoDirecto",
+          attributes: ["id", "nombre_proyecto"],
+        },
+      ],
+      order: [["mes", "ASC"]],
+    });
+  },
 };
 
 module.exports = pagoService;

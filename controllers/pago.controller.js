@@ -518,6 +518,53 @@ const pagoController = {
       });
     }
   },
+  async getHistorialSuscripcion(req, res) {
+    try {
+      const { suscripcionId } = req.params;
+      const pagos = await pagoService.findAllBySubscription(suscripcionId);
+
+      if (!pagos || pagos.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "No se encontraron pagos para esta suscripción." });
+      }
+
+      return res.status(200).json(pagos);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
+   * @function getMySubscriptionHistory
+   * @description Obtiene el historial de pagos de una suscripción propia del usuario autenticado.
+   */
+  async getMySubscriptionHistory(req, res) {
+    try {
+      const userId = req.user.id;
+      const suscripcionId = parseInt(req.params.suscripcionId);
+
+      if (isNaN(suscripcionId)) {
+        return res.status(400).json({ error: "ID de suscripción inválido." });
+      }
+
+      const pagos = await pagoService.findAllBySubscriptionAndUser(
+        suscripcionId,
+        userId,
+      );
+
+      return res.status(200).json({
+        message: `Historial de pagos para tu suscripción ID ${suscripcionId}.`,
+        data: pagos,
+      });
+    } catch (error) {
+      // Si la suscripción no le pertenece, devolvemos 403 en lugar de 500
+      if (error.message.includes("no te pertenece")) {
+        return res.status(403).json({ error: error.message });
+      }
+      return res.status(500).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = pagoController;

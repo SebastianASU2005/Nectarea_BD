@@ -160,9 +160,15 @@ const resumenCuentaService = {
           {
             model: Pago,
             as: "pagos",
-            // Filtra solo los pagos exitosos.
             where: {
-              estado_pago: { [Op.in]: ["pagado", "cubierto_por_puja"] },
+              estado_pago: {
+                // ← Agregar el nombre del campo
+                [Op.in]: [
+                  "pagado",
+                  "cubierto_por_puja",
+                  "forzado",
+                ],
+              },
             },
             required: false,
           },
@@ -170,7 +176,7 @@ const resumenCuentaService = {
           {
             model: Proyecto,
             as: "proyectoAsociado",
-            attributes: ["id", "monto_inversion"], // Necesitamos el monto para la cuota
+            attributes: ["id", "monto_inversion"],
           },
         ],
         ...options,
@@ -214,9 +220,9 @@ const resumenCuentaService = {
       const cuotasVencidas = await Pago.count({
         where: {
           id_suscripcion: suscripcionId,
-          estado_pago: "vencido", // Cuenta todos los pagos en estado 'vencido'
+          estado_pago: "vencido",
         },
-        ...options,
+        transaction: options.transaction, // 👈 Pásalo así, explícitamente.
       });
 
       // ===================================================================
