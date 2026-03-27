@@ -272,6 +272,18 @@ const loteController = {
       res.status(400).json({ error: error.message });
     }
   },
+  /**
+   * Obtiene todos los lotes ganados y pagados por el usuario autenticado.
+   */
+  async findMyLotesGanados(req, res) {
+    try {
+      const userId = req.user.id;
+      const lotes = await loteService.findLotesGanadosByUserId(userId);
+      res.status(200).json(lotes);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = loteController;

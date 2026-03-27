@@ -1346,14 +1346,10 @@ const pujaService = {
 
       await emailService.notificarImpago(usuarioIncumplidor, loteId);
 
-      await MensajeService.create({
-        id_usuario: usuarioIncumplidor.id,
-        titulo: "⚠️ Puja Ganadora Cancelada",
-        mensaje: motivoCompleto,
-        tipo_mensaje: "alerta",
-        leido: false,
-      });
-
+      await MensajeService.enviarMensajeSistema(
+        usuarioIncumplidor.id,
+        motivoCompleto,
+      );
       console.log(
         `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`,
       );

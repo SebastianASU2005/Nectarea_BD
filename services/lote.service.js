@@ -301,6 +301,9 @@ const loteService = {
           },
           { transaction: t },
         );
+      } else {
+        // ✅ Sin postores → limpiar para reingreso dentro de la misma transacción
+        await this.prepararLoteParaReingreso(lote, t);
       }
 
       await t.commit();
@@ -672,6 +675,41 @@ const loteService = {
         transaction,
       },
     );
+  },
+  /**
+   * Busca todos los lotes que el usuario ganó y pagó.
+   * @param {number} userId - ID del usuario.
+   * @returns {Promise<Lote[]>}
+   */
+  async findLotesGanadosByUserId(userId) {
+    return await Lote.findAll({
+      where: {
+        id_ganador: userId,
+        activo: true,
+      },
+      include: [
+        IMAGENES_INCLUDE,
+        GANADOR_INCLUDE,
+        PUJA_MAS_ALTA_INCLUDE,
+        {
+          model: Puja,
+          as: "pujas",
+          where: {
+            id_usuario: userId,
+            estado_puja: "ganadora_pagada",
+          },
+          required: true, // INNER JOIN: solo lotes donde haya una puja pagada del usuario
+          attributes: [
+            "id",
+            "monto_puja",
+            "estado_puja",
+            "fecha_puja",
+            "fecha_vencimiento_pago",
+          ],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
   },
 };
 

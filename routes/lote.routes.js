@@ -12,20 +12,25 @@ router.post(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.create
+  loteController.create,
+);
+router.get(
+  "/mis_lotes_ganados",
+  authMiddleware.authenticate,
+  loteController.findMyLotesGanados,
 );
 router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.findAll
+  loteController.findAll,
 ); // Obtener todos (va antes que /:id)
 
 // Rutas de lotes activos (para que los usuarios puedan verlos)
 router.get(
   "/activos",
   authMiddleware.authenticate,
-  loteController.findAllActivo
+  loteController.findAllActivo,
 ); // ✅ Va antes que /:id
 
 // 🆕 RUTA: Obtener todos los lotes que NO tienen un proyecto asociado (ADMIN)
@@ -33,7 +38,7 @@ router.get(
   "/sin_proyecto",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.findLotesNoAssociated
+  loteController.findLotesNoAssociated,
 );
 
 // ===============================================
@@ -45,27 +50,24 @@ router.post(
   "/:id/start_auction",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.startAuction
+  loteController.startAuction,
 );
 router.put(
   "/:id/end",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.endAuction
+  loteController.endAuction,
 );
 
 // Ruta de Lote Activo por ID (con ID y sufijo)
-router.get(
-  "/:id/activo",
-  loteController.findByIdActivo
-);
+router.get("/:id/activo", loteController.findByIdActivo);
 
 // 🆕 RUTA: Obtener todos los lotes de un proyecto específico (ADMIN)
 router.get(
   "/proyecto/:idProyecto",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.findLotesByProject
+  loteController.findLotesByProject,
 );
 
 // ===============================================
@@ -77,19 +79,19 @@ router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.findById
+  loteController.findById,
 );
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.update
+  loteController.update,
 );
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  loteController.softDelete
+  loteController.softDelete,
 );
 
 module.exports = router;
