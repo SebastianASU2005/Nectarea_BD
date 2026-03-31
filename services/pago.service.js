@@ -40,25 +40,11 @@ const pagoService = {
     return Pago.findAll({
       include: [
         {
-          model: Usuario,
-          as: "usuarioDirecto",
-          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
-        },
-        {
-          model: Proyecto,
-          as: "proyectoDirecto",
-          attributes: ["id", "nombre_proyecto", "estado_proyecto"],
-        },
-        {
           model: SuscripcionProyecto,
           as: "suscripcion",
-          required: false,
           include: [
-            {
-              model: Proyecto,
-              as: "proyectoAsociado",
-              attributes: ["id", "nombre_proyecto"],
-            },
+            { model: Proyecto, as: "proyectoAsociado" },
+            { model: Usuario, as: "usuario" },
           ],
         },
       ],
@@ -69,51 +55,24 @@ const pagoService = {
   /**
    * @async
    * @function findById
-   * @description Obtiene un pago por su clave primaria con toda la información relacionada
-   * (Usuario, Proyecto y Suscripción).
-   * @param {number|string} id - ID del pago a buscar.
-   * @param {object} [options] - Opciones adicionales de Sequelize (ej. transaction).
-   * @returns {Promise<Pago|null>} El objeto del pago con sus inclusiones o null si no existe.
+   * @description Obtiene un pago por su ID incluyendo toda la cadena de relaciones:
+   * Suscripción -> Proyecto y Usuario.
+   * @param {number|string} id - ID del pago.
+   * @param {object} [options] - Opciones de Sequelize (transacciones, etc).
    */
   async findById(id, options = {}) {
     try {
       return await Pago.findByPk(id, {
         include: [
           {
-            // Relación directa con el Usuario (nuevo campo id_usuario)
-            model: Usuario,
-            as: "usuarioDirecto",
-            attributes: [
-              "id",
-              "nombre",
-              "apellido",
-              "email",
-              "nombre_usuario",
-              "dni",
-            ],
-          },
-          {
-            // Relación directa con el Proyecto (nuevo campo id_proyecto)
-            model: Proyecto,
-            as: "proyectoDirecto",
-            attributes: [
-              "id",
-              "nombre_proyecto",
-              "estado_proyecto",
-              "monto_inversion",
-              "moneda",
-            ],
-          },
-          {
-            // Relación a través de la Suscripción (para compatibilidad y trazabilidad)
+            // 1. Relación principal: La suscripción que originó el pago
             model: SuscripcionProyecto,
             as: "suscripcion",
-            required: false,
             include: [
               {
                 model: Proyecto,
                 as: "proyectoAsociado",
-                attributes: ["id", "nombre_proyecto"],
+                attributes: ["id", "nombre_proyecto", "estado_proyecto"],
               },
               {
                 model: Usuario,
@@ -122,12 +81,24 @@ const pagoService = {
               },
             ],
           },
+          {
+            // 2. Relación directa con Proyecto (según tu associations.js)
+            model: Proyecto,
+            as: "proyectoDirecto",
+            attributes: ["id", "nombre_proyecto", "monto_inversion"],
+          },
+          {
+            // 3. Relación directa con Usuario (según tu associations.js)
+            model: Usuario,
+            as: "usuarioDirecto",
+            attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+          },
         ],
         ...options,
       });
     } catch (error) {
-      console.error(`Error en pagoService.findById(${id}):`, error.message);
-      throw new Error("Error al recuperar el detalle del pago.");
+      console.error("Error en pagoService.findById:", error.message);
+      throw new Error("No se pudo recuperar el detalle del pago.");
     }
   },
   /**
@@ -138,13 +109,6 @@ const pagoService = {
   async findByUserId(id_usuario) {
     return Pago.findAll({
       where: { id_usuario }, // Trae todo lo que pertenezca al ID
-      include: [
-        {
-          model: Proyecto,
-          as: "proyectoDirecto",
-          attributes: ["id", "nombre_proyecto"],
-        },
-      ],
       order: [["fecha_vencimiento", "DESC"]], // Lo más nuevo primero
     });
   },
