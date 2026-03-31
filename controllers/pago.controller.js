@@ -35,20 +35,27 @@ const pagoController = {
   /**
    * @async
    * @function findMyPayments
-   * @description Obtiene el historial COMPLETO de pagos del usuario (todos los estados).
+   * @description Trae todos los pagos (pendientes, pagados, vencidos) del usuario logueado.
    */
   async findMyPayments(req, res) {
     try {
-      const userId = req.user.id;
-      // El servicio ahora debe devolver todos los estados por defecto
+      const userId = req.user.id; // Obtenido del token por authMiddleware
+
       const pagos = await pagoService.findByUserId(userId);
 
-      res.status(200).json({
-        ok: true,
+      if (!pagos || pagos.length === 0) {
+        return res.status(200).json({
+          message: "No tienes pagos registrados hasta el momento.",
+          data: [],
+        });
+      }
+
+      return res.status(200).json({
+        total: pagos.length,
         data: pagos,
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error.message });
     }
   },
   async updatePaymentStatus(req, res) {

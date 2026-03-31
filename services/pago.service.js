@@ -57,24 +57,21 @@ const pagoService = {
   /**
    * @async
    * @function findByUserId
-   * @description Obtiene todos los pagos asociados a las suscripciones de un usuario.
-   * @param {number} id_usuario - ID del usuario.
-   * @returns {Promise<Pago[]>} Lista de pagos del usuario.
-   */ async findByUserId(id_usuario) {
+   * @description Obtiene el historial COMPLETO de todos los pagos de un usuario (todos los estados).
+   */
+  async findByUserId(id_usuario) {
     return Pago.findAll({
+      where: { id_usuario: id_usuario }, // Filtro directo por el ID del usuario en la tabla pagos
       include: [
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
-          where: {
-            id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
-          },
-          required: true, // INNER JOIN
-          include: [
-            { model: Proyecto, as: "proyectoAsociado" },
-            { model: Usuario, as: "usuario" },
-          ],
+          include: [{ model: Proyecto, as: "proyectoAsociado" }],
         },
+      ],
+      order: [
+        ["fecha_vencimiento", "ASC"], // Los más antiguos o próximos a vencer primero
+        ["mes", "ASC"],
       ],
     });
   },
@@ -876,7 +873,10 @@ const pagoService = {
     }
 
     return Pago.findAll({
-      where: { id_suscripcion: suscripcionId },
+      where: {
+        id_suscripcion: suscripcionId,
+        // ⚠️ IMPORTANTE: No debe haber un filtro de estado_pago aquí
+      },
       attributes: [
         "id",
         "monto",
@@ -886,13 +886,6 @@ const pagoService = {
         "fecha_pago",
         "motivo",
         "createdAt",
-      ],
-      include: [
-        {
-          model: Proyecto,
-          as: "proyectoDirecto",
-          attributes: ["id", "nombre_proyecto"],
-        },
       ],
       order: [["mes", "ASC"]],
     });
