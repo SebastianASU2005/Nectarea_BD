@@ -537,108 +537,179 @@ const suscripcionProyectoService = {
   },
 
   /**
-   * @async
-   * @function softDelete
-   * @description Cancela una suscripción (soft delete), actualiza el proyecto, valida la puja ganadora y registra la cancelación.
-   * @param {number} suscripcionId - ID de la suscripción a cancelar.
-   * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol).
-   * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
-   * @throws {Error} Si la suscripción no existe, ya está cancelada, no te pertenece o tiene pujas pagadas asociadas.
-   */
-  async softDelete(suscripcionId, usuarioAutenticado) {
-    const t = await sequelize.transaction();
-    try {
-      const pujaService = require("./puja.service");
-      const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
-        transaction: t,
-      });
-      if (!suscripcion) throw new Error("Suscripción no encontrada.");
+ * @async
+ * @function softDelete
+ * @description Cancela una suscripción (soft delete), actualiza el proyecto,
+ * valida la puja ganadora, registra la cancelación y limpia los pagos pendientes o vencidos.
+ * @param {number} suscripcionId - ID de la suscripción a cancelar.
+ * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol).
+ * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
+ * @throws {Error} Si la suscripción no existe, ya está cancelada, no te pertenece o tiene pujas pagadas asociadas.
+ */
+async softDelete(suscripcionId, usuarioAutenticado) {
+  const t = await sequelize.transaction();
+  try {
+    const pujaService = require("./puja.service");
+    const pagoService = require("./pago.service"); // 🆕 Importamos el servicio de pagos
 
-      const esAdministrador =
-        usuarioAutenticado && usuarioAutenticado.rol === "admin";
-      if (
-        suscripcion.id_usuario !== usuarioAutenticado.id &&
-        !esAdministrador
-      ) {
-        throw new Error(
-          "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador.",
-        );
-      }
+    // 1. Validar suscripción y permisos
+    const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
+      transaction: t,
+    });
+    
+    if (!suscripcion) throw new Error("Suscripción no encontrada.");
+    if (!suscripcion.activo) throw new Error("La suscripción ya ha sido cancelada.");
 
-      if (!suscripcion.activo)
-        throw new Error("La suscripción ya ha sido cancelada.");
-
-      const hasPaidBid = await pujaService.hasWonAndPaidBid(
-        suscripcion.id_usuario,
-        suscripcion.id_proyecto,
-        { transaction: t },
+    const esAdministrador = usuarioAutenticado?.rol === "admin";
+    if (suscripcion.id_usuario !== usuarioAutenticado.id && !esAdministrador) {
+      throw new Error(
+        "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador."
       );
-
-      if (hasPaidBid) {
-        throw new Error(
-          "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto.",
-        );
-      }
-
-      await suscripcion.update({ activo: false }, { transaction: t });
-
-      const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
-        transaction: t,
-      });
-      if (proyecto) {
-        await proyecto.decrement("suscripciones_actuales", {
-          by: 1,
-          transaction: t,
-        });
-      }
-
-      const pagosRealizados = await Pago.findAll({
-        where: {
-          id_suscripcion: suscripcion.id,
-          estado_pago: { [Op.in]: ["pagado", "cubierto_por_puja"] },
-        },
-        transaction: t,
-      });
-
-      const montoTotalPagado = pagosRealizados.reduce(
-        (sum, pago) => sum + parseFloat(pago.monto),
-        0,
-      );
-
-      const registroCancelacion = await SuscripcionCancelada.create(
-        {
-          id_suscripcion_original: suscripcion.id,
-          id_usuario: suscripcion.id_usuario,
-          id_proyecto: suscripcion.id_proyecto,
-          meses_pagados: pagosRealizados.length,
-          monto_pagado_total: montoTotalPagado,
-          fecha_cancelacion: new Date(),
-        },
-        { transaction: t },
-      );
-
-      await resumenCuentaService.registrarEventoCancelacion(
-        {
-          id_usuario: suscripcion.id_usuario,
-          descripcion: `Suscripción ${suscripcion.id} al Proyecto ${
-            suscripcion.id_proyecto
-          } cancelada. Monto total pagado a liquidar: $${montoTotalPagado.toFixed(
-            2,
-          )}.`,
-          monto: montoTotalPagado,
-          referencia_id: registroCancelacion.id,
-        },
-        t,
-      );
-
-      await t.commit();
-      return suscripcion;
-    } catch (error) {
-      await t.rollback();
-      throw error;
     }
-  },
 
+    // 2. Validar que no tenga pujas ganadas y pagadas
+    const hasPaidBid = await pujaService.hasWonAndPaidBid(
+      suscripcion.id_usuario,
+      suscripcion.id_proyecto,
+      { transaction: t }
+    );
+
+    if (hasPaidBid) {
+      throw new Error(
+        "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto."
+      );
+    }
+
+    // ============================================================
+    // 🆕 LIMPIEZA DE PAGOS: Usar la función helper del servicio de pagos
+    // ============================================================
+    
+    // 3. Cancelar todos los pagos pendientes o vencidos
+    const pagosCancelados = await pagoService.cancelPendingPaymentsBySubscription(
+      suscripcion.id,
+      "Cancelación de suscripción",
+      { transaction: t }
+    );
+
+    // 4. Obtener pagos ya realizados (para el registro)
+    const pagosRealizados = await Pago.findAll({
+      where: {
+        id_suscripcion: suscripcion.id,
+        estado_pago: { [Op.in]: ["pagado", "cubierto_por_puja", "forzado"] },
+      },
+      transaction: t,
+    });
+
+    const montoTotalPagado = pagosRealizados.reduce(
+      (sum, pago) => sum + parseFloat(pago.monto),
+      0
+    );
+
+    // ============================================================
+    // FIN DE LIMPIEZA
+    // ============================================================
+
+    // 5. Marcar suscripción como inactiva
+    await suscripcion.update({ activo: false }, { transaction: t });
+
+    // 6. Actualizar contador del proyecto
+    const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
+      transaction: t,
+    });
+    
+    if (proyecto) {
+      await proyecto.decrement("suscripciones_actuales", {
+        by: 1,
+        transaction: t,
+      });
+    }
+
+    // 7. Registrar la cancelación
+    const registroCancelacion = await SuscripcionCancelada.create(
+      {
+        id_suscripcion_original: suscripcion.id,
+        id_usuario: suscripcion.id_usuario,
+        id_proyecto: suscripcion.id_proyecto,
+        meses_pagados: pagosRealizados.length,
+        monto_pagado_total: montoTotalPagado,
+        fecha_cancelacion: new Date(),
+        pagos_cancelados: pagosCancelados, // 🆕 Registrar cuántos pagos se cancelaron
+      },
+      { transaction: t }
+    );
+
+    // 8. Registrar evento en resumen de cuenta
+    await resumenCuentaService.registrarEventoCancelacion(
+      {
+        id_usuario: suscripcion.id_usuario,
+        descripcion: `Suscripción ${suscripcion.id} al Proyecto ${suscripcion.id_proyecto} cancelada. 
+        Pagos realizados: ${pagosRealizados.length} ($${montoTotalPagado.toFixed(2)})
+        Pagos cancelados: ${pagosCancelados}
+        Motivo: Cancelación voluntaria.`,
+        monto: montoTotalPagado,
+        referencia_id: registroCancelacion.id,
+      },
+      t
+    );
+
+    await t.commit();
+
+    // 9. Notificaciones (fuera de la transacción)
+    this._sendCancellationNotifications(suscripcion, proyecto, {
+      pagosCancelados,
+      pagosRealizados: pagosRealizados.length,
+      montoTotalPagado,
+    });
+
+    return suscripcion;
+  } catch (error) {
+    await t.rollback();
+    throw error;
+  }
+},
+
+/**
+ * @async
+ * @private
+ * @function _sendCancellationNotifications
+ * @description Envía notificaciones (email y mensaje) después de cancelar una suscripción.
+ * @param {SuscripcionProyecto} suscripcion - La suscripción cancelada.
+ * @param {Proyecto} proyecto - El proyecto asociado.
+ * @param {Object} metrics - Métricas de la cancelación.
+ */
+async _sendCancellationNotifications(suscripcion, proyecto, metrics) {
+  try {
+    const usuario = await UsuarioService.findById(suscripcion.id_usuario);
+    if (!usuario?.email) return;
+
+    // Email de notificación
+    await emailService.notificarCancelacionSuscripcion(
+      usuario.email,
+      proyecto,
+      {
+        pagos_cancelados: metrics.pagosCancelados,
+        pagos_realizados: metrics.pagosRealizados,
+        monto_total_pagado: metrics.montoTotalPagado,
+      }
+    );
+
+    // Mensaje interno
+    const contenido = `Tu suscripción al proyecto "${proyecto.nombre_proyecto}" ha sido cancelada exitosamente. 
+    Pagos realizados: ${metrics.pagosRealizados} ($${metrics.montoTotalPagado.toFixed(2)})
+    Pagos pendientes cancelados: ${metrics.pagosCancelados}`;
+    
+    await MensajeService.crear({
+      id_remitente: 1,
+      id_receptor: usuario.id,
+      contenido: contenido,
+    });
+  } catch (error) {
+    console.error(
+      `Error al enviar notificaciones de cancelación al usuario ${suscripcion.id_usuario}:`,
+      error.message
+    );
+  }
+},
   /**
    * @async
    * @function findAllCanceladas

@@ -1079,6 +1079,108 @@ El Equipo de Loteplan.com
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+  /**
+   * @async
+   * @function notificarCancelacionSuscripcion
+   * @description Notifica al usuario que su suscripción ha sido cancelada exitosamente.
+   * @param {string} userEmail - Correo del usuario.
+   * @param {object} proyecto - Objeto del proyecto asociado.
+   * @param {object} metrics - Métricas de la cancelación (pagos_cancelados, pagos_realizados, monto_total_pagado).
+   */
+  async notificarCancelacionSuscripcion(userEmail, proyecto, metrics) {
+    if (!userEmail) return;
+
+    const subject = `✅ Confirmación: Tu suscripción a "${proyecto.nombre_proyecto}" ha sido cancelada`;
+    const fechaCancelacion = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const {
+      pagos_cancelados = 0,
+      pagos_realizados = 0,
+      monto_total_pagado = 0,
+    } = metrics;
+    const montoTexto = parseFloat(monto_total_pagado).toFixed(2);
+
+    const contenidoInterno = `
+    <h2 style="color: #0b1b36; margin-top: 0;">Confirmación de Cancelación de Suscripción</h2>
+    <p>Estimado/a usuario,</p>
+    <p>Te confirmamos que tu suscripción al proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha sido <strong>cancelada exitosamente</strong> el <strong>${fechaCancelacion}</strong>.</p>
+
+    <div style="border-left: 4px solid #ffc107; padding: 15px; background-color: #fff9e6; margin: 20px 0;">
+      <h3 style="color: #856404; margin-top: 0; font-size: 16px;">📊 Resumen de tu Cancelación</h3>
+      <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8; color: #856404;">
+        <li><strong>Pagos realizados:</strong> ${pagos_realizados} cuota(s)</li>
+        <li><strong>Monto total pagado:</strong> <strong style="color: #4CAF50;">$${montoTexto}</strong></li>
+        <li><strong>Pagos cancelados (pendientes/vencidos):</strong> ${pagos_cancelados} cuota(s)</li>
+      </ul>
+    </div>
+
+    <h3 style="color: #0b1b36;">📋 Detalles de la Cancelación</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Proyecto:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.nombre_proyecto}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Fecha de Cancelación:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${fechaCancelacion}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Estado:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><span style="color: #d9534f; font-weight: bold;">Cancelada</span></td>
+      </tr>
+    </table>
+
+    <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
+      <h3 style="color: #2e7d32; margin-top: 0; font-size: 16px;">💰 Información Importante sobre Devoluciones</h3>
+      <p style="margin: 5px 0; color: #2e7d32;">El equipo de Loteplan revisará tu caso para determinar si corresponde alguna devolución del monto pagado, según las políticas de cancelación del proyecto.</p>
+      <p style="margin: 10px 0; color: #2e7d32;">Si tienes alguna duda sobre este proceso, por favor contáctanos a <strong>soporte@loteplan.com</strong>.</p>
+    </div>
+
+    <h3 style="color: #0b1b36;">🔐 Recordatorios Importantes</h3>
+    <ul style="line-height: 1.8; padding-left: 20px;">
+      <li>Si tenías <strong>pujas activas</strong> en este proyecto, han sido desactivadas automáticamente.</li>
+      <li>No se generarán más pagos mensuales para este proyecto.</li>
+      <li>Puedes suscribirte nuevamente al proyecto si está disponible, siempre que haya cupos disponibles.</li>
+    </ul>
+
+    <p style="margin-top: 30px; color: #555;">Lamentamos verte partir de este proyecto. Si hay algo que podamos mejorar, no dudes en compartir tu opinión con nosotros.</p>
+    
+    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ver Mis Suscripciones
+    </a>
+
+    <p style="margin-top: 20px;">Saludos cordiales,</p>
+    <p style="font-weight: bold; margin: 5px 0;">El Equipo de Loteplan.com</p>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+
+    const textPlain = `
+Confirmación de Cancelación de Suscripción
+
+Tu suscripción al proyecto "${proyecto.nombre_proyecto}" ha sido cancelada exitosamente el ${fechaCancelacion}.
+
+Resumen:
+- Pagos realizados: ${pagos_realizados} cuota(s)
+- Monto total pagado: $${montoTexto}
+- Pagos cancelados (pendientes/vencidos): ${pagos_cancelados} cuota(s)
+
+El equipo de Loteplan revisará tu caso para determinar si corresponde alguna devolución.
+
+Si tienes dudas, contáctanos en: soporte@loteplan.com
+
+Saludos,
+El Equipo de Loteplan.com
+  `.trim();
+
+    await this.sendEmail(userEmail, subject, textPlain, html);
+  }
 };
 
 module.exports = emailService;

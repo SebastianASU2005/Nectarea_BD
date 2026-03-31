@@ -149,12 +149,13 @@ const resumenCuentaService = {
    * @function updateAccountSummaryOnPayment
    * @description Recalcula y actualiza el estado de un resumen de cuenta (cuotas pagadas, vencidas y porcentaje)
    * basándose en todos los pagos completados de la suscripción y el saldo a favor.
+   * **EXCLUYE pagos CANCELADOS del cálculo.**
    * @param {number} suscripcionId - ID de la suscripción.
    * @param {object} [options={}] - Opciones de Sequelize (ej. { transaction: t }).
    */
   async updateAccountSummaryOnPayment(suscripcionId, options = {}) {
     try {
-      // 1. Busca la suscripción y su resumen, incluyendo los pagos completados y la información del proyecto.
+      // 1. Busca la suscripción y su resumen
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         include: [
           {
@@ -162,15 +163,15 @@ const resumenCuentaService = {
             as: "pagos",
             where: {
               estado_pago: {
-                // ← Agregar el nombre del campo
                 [Op.in]: [
                   "pagado",
                   "cubierto_por_puja",
                   "forzado",
+                  // 🆕 EXCLUIMOS "cancelado" explícitamente
                 ],
               },
             },
-            required: false,
+            required: false, // LEFT JOIN para que traiga aunque no haya pagos
           },
           { model: ResumenCuenta, as: "resumen_cuenta" },
           {
@@ -199,48 +200,49 @@ const resumenCuentaService = {
       );
       const saldoAFavor = parseFloat(suscripcion.saldo_a_favor || 0);
 
-      // ===================================================================
-      // 1. CÁLCULO DE CUOTAS PAGADAS REALES (PAGOS + SALDO)
-      // ===================================================================
+      // ============================================================
+      // 1. CÁLCULO DE CUOTAS PAGADAS (SOLO PAGOS EFECTIVOS, NO CANCELADOS)
+      // ============================================================
 
-      // Pagos directos o cubiertos por puja
-      const pagosEfectivos = suscripcion.pagos.length;
-
-      // Cuotas adicionales cubiertas por el saldo a favor
-      const cuotasPagadasTotal = pagosEfectivos;
+      // 🆕 Filtro: Solo contamos pagos que NO están cancelados
+      const pagosEfectivos = suscripcion.pagos.filter(
+        (pago) => !["cancelado"].includes(pago.estado_pago),
+      ).length;
 
       const totalCuotasProyecto = resumen.meses_proyecto;
-      const porcentajePagado = (cuotasPagadasTotal / totalCuotasProyecto) * 100;
+      const porcentajePagado =
+        totalCuotasProyecto > 0
+          ? (pagosEfectivos / totalCuotasProyecto) * 100
+          : 0;
 
-      // ===================================================================
-      // 2. CÁLCULO DE CUOTAS VENCIDAS (DEUDA) 🚀 MODIFICACIÓN CLAVE
-      // ===================================================================
+      // ============================================================
+      // 2. CÁLCULO DE CUOTAS VENCIDAS (SOLO LAS QUE SIGUEN VENCIDAS)
+      // ============================================================
 
-      // 🚨 CAMBIO DE LÓGICA: Contamos cuántos pagos están EXPLÍCITAMENTE marcados como 'vencido'.
+      // Contar pagos explícitamente marcados como 'vencido' que NO han sido pagados
       const cuotasVencidas = await Pago.count({
         where: {
           id_suscripcion: suscripcionId,
           estado_pago: "vencido",
         },
-        transaction: options.transaction, // 👈 Pásalo así, explícitamente.
+        transaction: options.transaction,
       });
 
-      // ===================================================================
+      // ============================================================
       // 3. ACTUALIZACIÓN FINAL
-      // ===================================================================
+      // ============================================================
 
-      // Actualiza el resumen en la base de datos (pasando options para la atomicidad).
       await resumen.update(
         {
-          cuotas_pagadas: cuotasPagadasTotal, // 👈 Se usa el total (Pagos + Saldo)
+          cuotas_pagadas: pagosEfectivos,
           porcentaje_pagado: parseFloat(porcentajePagado.toFixed(2)),
-          cuotas_vencidas: cuotasVencidas, // 👈 USAMOS EL CONTEO EXPLÍCITO DE VENCIDOS
+          cuotas_vencidas: cuotasVencidas,
         },
         options,
       );
 
       console.log(
-        `Resumen de cuenta actualizado para suscripción ID: ${suscripcionId}. Pagadas (Efectivo+Saldo): ${cuotasPagadasTotal}. Vencidas: ${cuotasVencidas}.`,
+        `✅ Resumen actualizado para suscripción ${suscripcionId}. Pagadas: ${pagosEfectivos}/${totalCuotasProyecto} (${porcentajePagado.toFixed(2)}%). Vencidas: ${cuotasVencidas}.`,
       );
     } catch (error) {
       console.error("Error al actualizar el resumen de cuenta:", error);

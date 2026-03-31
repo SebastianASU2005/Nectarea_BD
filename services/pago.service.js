@@ -897,6 +897,49 @@ const pagoService = {
       order: [["mes", "ASC"]],
     });
   },
+  /**
+   * @async
+   * @function cancelPendingPaymentsBySubscription
+   * @description Marca como CANCELADOS todos los pagos pendientes o vencidos de una suscripción.
+   * @param {number} suscripcionId - ID de la suscripción.
+   * @param {string} motivo - Motivo de la cancelación.
+   * @param {object} [options] - Opciones de Sequelize (ej. transaction).
+   * @returns {Promise<number>} Número de pagos cancelados.
+   */
+  async cancelPendingPaymentsBySubscription(
+    suscripcionId,
+    motivo,
+    options = {},
+  ) {
+    const t = options.transaction || (await sequelize.transaction());
+
+    try {
+      const [affectedCount] = await Pago.update(
+        {
+          estado_pago: "cancelado",
+          motivo: motivo || "Cancelación de suscripción",
+          fecha_pago: null,
+        },
+        {
+          where: {
+            id_suscripcion: suscripcionId,
+            estado_pago: { [Op.in]: ["pendiente", "vencido"] },
+          },
+          transaction: t,
+        },
+      );
+
+      if (!options.transaction) await t.commit();
+
+      console.log(
+        `✅ ${affectedCount} pagos cancelados para la suscripción ${suscripcionId}`,
+      );
+      return affectedCount;
+    } catch (error) {
+      if (!options.transaction) await t.rollback();
+      throw error;
+    }
+  },
 };
 
 module.exports = pagoService;
