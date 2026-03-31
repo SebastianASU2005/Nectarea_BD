@@ -35,15 +35,18 @@ const pagoController = {
   /**
    * @async
    * @function findMyPayments
-   * @description Obtiene todos los pagos asociados al usuario autenticado.
-   * @param {object} req - Objeto de solicitud de Express (contiene `req.user.id`).
-   * @param {object} res - Objeto de respuesta de Express.
+   * @description Obtiene el historial COMPLETO de pagos del usuario (todos los estados).
    */
   async findMyPayments(req, res) {
     try {
       const userId = req.user.id;
+      // El servicio ahora debe devolver todos los estados por defecto
       const pagos = await pagoService.findByUserId(userId);
-      res.status(200).json(pagos);
+
+      res.status(200).json({
+        ok: true,
+        data: pagos,
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -234,14 +237,27 @@ const pagoController = {
   /**
    * @async
    * @function findById
-   * @description Obtiene un pago por ID (para administradores).
+   * @description Obtiene un pago por ID con validación de autoría para no-admins.
    */
   async findById(req, res) {
     try {
-      const pago = await pagoService.findById(req.params.id);
+      const { id } = req.params;
+      const userId = req.user.id;
+      const isAdmin = req.user.role === "admin"; // Ajusta según cómo manejes los roles
+
+      const pago = await pagoService.findById(id);
+
       if (!pago) {
         return res.status(404).json({ error: "Pago no encontrado." });
       }
+
+      // SEGURIDAD: Si no es admin y el id_usuario del pago no coincide con el del token
+      if (!isAdmin && pago.id_usuario !== userId) {
+        return res
+          .status(403)
+          .json({ error: "No tienes permiso para ver este pago." });
+      }
+
       res.status(200).json(pago);
     } catch (error) {
       res.status(500).json({ error: error.message });

@@ -36,46 +36,116 @@ const pagoService = {
   async create(data, options = {}) {
     return Pago.create(data, options);
   },
-  /**
-   * @async
-   * @function findAll
-   * @description Obtiene todos los registros de Pagos.
-   * @returns {Promise<Pago[]>} Lista de todos los pagos.
-   */ async findAll() {
-    return Pago.findAll();
+  async findAll() {
+    return Pago.findAll({
+      include: [
+        {
+          model: Usuario,
+          as: "usuarioDirecto",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoDirecto",
+          attributes: ["id", "nombre_proyecto", "estado_proyecto"],
+        },
+        {
+          model: SuscripcionProyecto,
+          as: "suscripcion",
+          required: false,
+          include: [
+            {
+              model: Proyecto,
+              as: "proyectoAsociado",
+              attributes: ["id", "nombre_proyecto"],
+            },
+          ],
+        },
+      ],
+      // Eliminamos cualquier filtro 'where' restrictivo que pudiera existir por defecto
+      order: [["createdAt", "DESC"]],
+    });
   },
   /**
    * @async
    * @function findById
-   * @description Obtiene un pago por su clave primaria.
-   * @param {number} id - ID del pago.
-   * @param {object} [options] - Opciones de Sequelize (ej. include).
-   * @returns {Promise<Pago|null>} El pago encontrado.
-   */ async findById(id, options = {}) {
-    return Pago.findByPk(id, options);
+   * @description Obtiene un pago por su clave primaria con toda la información relacionada
+   * (Usuario, Proyecto y Suscripción).
+   * @param {number|string} id - ID del pago a buscar.
+   * @param {object} [options] - Opciones adicionales de Sequelize (ej. transaction).
+   * @returns {Promise<Pago|null>} El objeto del pago con sus inclusiones o null si no existe.
+   */
+  async findById(id, options = {}) {
+    try {
+      return await Pago.findByPk(id, {
+        include: [
+          {
+            // Relación directa con el Usuario (nuevo campo id_usuario)
+            model: Usuario,
+            as: "usuarioDirecto",
+            attributes: [
+              "id",
+              "nombre",
+              "apellido",
+              "email",
+              "nombre_usuario",
+              "dni",
+            ],
+          },
+          {
+            // Relación directa con el Proyecto (nuevo campo id_proyecto)
+            model: Proyecto,
+            as: "proyectoDirecto",
+            attributes: [
+              "id",
+              "nombre_proyecto",
+              "estado_proyecto",
+              "monto_inversion",
+              "moneda",
+            ],
+          },
+          {
+            // Relación a través de la Suscripción (para compatibilidad y trazabilidad)
+            model: SuscripcionProyecto,
+            as: "suscripcion",
+            required: false,
+            include: [
+              {
+                model: Proyecto,
+                as: "proyectoAsociado",
+                attributes: ["id", "nombre_proyecto"],
+              },
+              {
+                model: Usuario,
+                as: "usuario",
+                attributes: ["id", "nombre", "apellido", "email"],
+              },
+            ],
+          },
+        ],
+        ...options,
+      });
+    } catch (error) {
+      console.error(`Error en pagoService.findById(${id}):`, error.message);
+      throw new Error("Error al recuperar el detalle del pago.");
+    }
   },
   /**
    * @async
    * @function findByUserId
-   * @description Obtiene todos los pagos asociados a las suscripciones de un usuario.
-   * @param {number} id_usuario - ID del usuario.
-   * @returns {Promise<Pago[]>} Lista de pagos del usuario.
-   */ async findByUserId(id_usuario) {
+   * @description Trae todos los pagos de un usuario usando el nuevo campo id_usuario.
+   */
+  async findByUserId(id_usuario) {
     return Pago.findAll({
+      where: { id_usuario }, // Trae todo lo que pertenezca al ID
       include: [
         {
-          model: SuscripcionProyecto,
-          as: "suscripcion",
-          where: {
-            id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
-          },
-          required: true, // INNER JOIN
-          include: [
-            { model: Proyecto, as: "proyectoAsociado" },
-            { model: Usuario, as: "usuario" },
-          ],
+          model: Proyecto,
+          as: "proyectoDirecto",
+          attributes: ["id", "nombre_proyecto"],
         },
       ],
+      order: [["fecha_vencimiento", "DESC"]], // Lo más nuevo primero
     });
   },
   /**
