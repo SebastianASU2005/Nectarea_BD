@@ -36,80 +36,46 @@ const pagoService = {
   async create(data, options = {}) {
     return Pago.create(data, options);
   },
-  async findAll() {
+  /**
+   * @async
+   * @function findAll
+   * @description Obtiene todos los registros de Pagos.
+   * @returns {Promise<Pago[]>} Lista de todos los pagos.
+   */ async findAll() {
+    return Pago.findAll();
+  },
+  /**
+   * @async
+   * @function findById
+   * @description Obtiene un pago por su clave primaria.
+   * @param {number} id - ID del pago.
+   * @param {object} [options] - Opciones de Sequelize (ej. include).
+   * @returns {Promise<Pago|null>} El pago encontrado.
+   */ async findById(id, options = {}) {
+    return Pago.findByPk(id, options);
+  },
+  /**
+   * @async
+   * @function findByUserId
+   * @description Obtiene todos los pagos asociados a las suscripciones de un usuario.
+   * @param {number} id_usuario - ID del usuario.
+   * @returns {Promise<Pago[]>} Lista de pagos del usuario.
+   */ async findByUserId(id_usuario) {
     return Pago.findAll({
       include: [
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
+          where: {
+            id_usuario: id_usuario, // Filtra solo las suscripciones del usuario
+          },
+          required: true, // INNER JOIN
           include: [
             { model: Proyecto, as: "proyectoAsociado" },
             { model: Usuario, as: "usuario" },
           ],
         },
       ],
-      // Eliminamos cualquier filtro 'where' restrictivo que pudiera existir por defecto
-      order: [["createdAt", "DESC"]],
-    });
-  },
-  /**
-   * @async
-   * @function findById
-   * @description Obtiene un pago por su ID incluyendo toda la cadena de relaciones:
-   * Suscripción -> Proyecto y Usuario.
-   * @param {number|string} id - ID del pago.
-   * @param {object} [options] - Opciones de Sequelize (transacciones, etc).
-   */
-  async findById(id, options = {}) {
-    try {
-      return await Pago.findByPk(id, {
-        include: [
-          {
-            // 1. Relación principal: La suscripción que originó el pago
-            model: SuscripcionProyecto,
-            as: "suscripcion",
-            include: [
-              {
-                model: Proyecto,
-                as: "proyectoAsociado",
-                attributes: ["id", "nombre_proyecto", "estado_proyecto"],
-              },
-              {
-                model: Usuario,
-                as: "usuario",
-                attributes: ["id", "nombre", "apellido", "email"],
-              },
-            ],
-          },
-          {
-            // 2. Relación directa con Proyecto (según tu associations.js)
-            model: Proyecto,
-            as: "proyectoDirecto",
-            attributes: ["id", "nombre_proyecto", "monto_inversion"],
-          },
-          {
-            // 3. Relación directa con Usuario (según tu associations.js)
-            model: Usuario,
-            as: "usuarioDirecto",
-            attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
-          },
-        ],
-        ...options,
-      });
-    } catch (error) {
-      console.error("Error en pagoService.findById:", error.message);
-      throw new Error("No se pudo recuperar el detalle del pago.");
-    }
-  },
-  /**
-   * @async
-   * @function findByUserId
-   * @description Trae todos los pagos de un usuario usando el nuevo campo id_usuario.
-   */
-  async findByUserId(id_usuario) {
-    return Pago.findAll({
-      where: { id_usuario }, // Trae todo lo que pertenezca al ID
-      order: [["fecha_vencimiento", "DESC"]], // Lo más nuevo primero
     });
   },
   /**
@@ -930,49 +896,6 @@ const pagoService = {
       ],
       order: [["mes", "ASC"]],
     });
-  },
-  /**
-   * @async
-   * @function cancelPendingPaymentsBySubscription
-   * @description Marca como CANCELADOS todos los pagos pendientes o vencidos de una suscripción.
-   * @param {number} suscripcionId - ID de la suscripción.
-   * @param {string} motivo - Motivo de la cancelación.
-   * @param {object} [options] - Opciones de Sequelize (ej. transaction).
-   * @returns {Promise<number>} Número de pagos cancelados.
-   */
-  async cancelPendingPaymentsBySubscription(
-    suscripcionId,
-    motivo,
-    options = {},
-  ) {
-    const t = options.transaction || (await sequelize.transaction());
-
-    try {
-      const [affectedCount] = await Pago.update(
-        {
-          estado_pago: "cancelado",
-          motivo: motivo || "Cancelación de suscripción",
-          fecha_pago: null,
-        },
-        {
-          where: {
-            id_suscripcion: suscripcionId,
-            estado_pago: { [Op.in]: ["pendiente", "vencido"] },
-          },
-          transaction: t,
-        },
-      );
-
-      if (!options.transaction) await t.commit();
-
-      console.log(
-        `✅ ${affectedCount} pagos cancelados para la suscripción ${suscripcionId}`,
-      );
-      return affectedCount;
-    } catch (error) {
-      if (!options.transaction) await t.rollback();
-      throw error;
-    }
   },
 };
 
