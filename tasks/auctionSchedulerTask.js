@@ -34,7 +34,7 @@ const initAuctionScheduler = () => {
 
   // Tarea 2: FINALIZAR SUBASTAS
   // Se ejecutará una vez al día a medianoche (00:00).
-  cron.schedule("0 0 * * *", async () => {
+  cron.schedule("5 0 * * *", async () => {
     console.log("🤖 CRON: Buscando lotes para finalizar subasta...");
     try {
       const lotesToEnd = await loteService.findLotesToEnd();
