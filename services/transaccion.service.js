@@ -857,6 +857,7 @@ const transaccionService = {
               "id_suscripcion",
               "id_usuario",
               "id_proyecto",
+               "mes",
             ],
             required: false,
           },
