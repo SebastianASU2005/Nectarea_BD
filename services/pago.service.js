@@ -890,6 +890,50 @@ const pagoService = {
       order: [["mes", "ASC"]],
     });
   },
+  /**
+   * @async
+   * @function cancelPendingPaymentsBySubscription
+   * @description Cancela todos los pagos en estado 'pendiente' o 'vencido' de una suscripción.
+   * Se usa principalmente al cancelar una suscripción para limpiar los pagos no ejecutados.
+   * @param {number} suscripcionId - ID de la suscripción cuyos pagos se van a cancelar.
+   * @param {string} [motivo] - Motivo de la cancelación (para auditoría).
+   * @param {object} [options] - Opciones de Sequelize (ej. transaction).
+   * @returns {Promise<number>} Cantidad de pagos cancelados.
+   * @throws {Error} Si ocurre un error de base de datos.
+   */
+  async cancelPendingPaymentsBySubscription(
+    suscripcionId,
+    motivo = null,
+    options = {},
+  ) {
+    try {
+      const [cantidadActualizada] = await Pago.update(
+        {
+          estado_pago: "cancelado",
+          motivo: motivo || "Cancelación por baja de suscripción",
+        },
+        {
+          where: {
+            id_suscripcion: suscripcionId,
+            estado_pago: {
+              [Op.in]: ["pendiente", "vencido"],
+            },
+          },
+          ...options, // Propaga la transaction si viene
+        },
+      );
+
+      console.log(
+        `[cancelPendingPaymentsBySubscription] Suscripción ID ${suscripcionId}: ${cantidadActualizada} pago(s) cancelado(s). Motivo: ${motivo}`,
+      );
+
+      return cantidadActualizada;
+    } catch (error) {
+      throw new Error(
+        `Error al cancelar pagos de la suscripción ${suscripcionId}: ${error.message}`,
+      );
+    }
+  },
 };
 
 module.exports = pagoService;
