@@ -1530,6 +1530,21 @@ const pujaService = {
       throw error;
     }
   },
+  /**
+   * @async
+   * @function findOne
+   * @description Busca una puja con criterios de búsqueda arbitrarios.
+   * @param {object} options - Opciones de Sequelize ({ where, transaction, ... }).
+   * @returns {Promise<Puja|null>}
+   */
+  async findOne(options = {}) {
+    const { where, transaction, ...rest } = options;
+    return Puja.findOne({
+      where,
+      transaction,
+      ...rest,
+    });
+  },
 };
 
 module.exports = pujaService;
