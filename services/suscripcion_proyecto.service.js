@@ -596,7 +596,11 @@ const suscripcionProyectoService = {
         },
         transaction: t,
       });
-
+      console.log("PUJA PENDIENTE ENCONTRADA:", pujaPendiente?.id ?? "NINGUNA");
+      console.log("BUSCANDO:", {
+        id_usuario: suscripcion.id_usuario,
+        id_proyecto: suscripcion.id_proyecto,
+      });
       if (pujaPendiente) {
         // Marcar la puja como incumplimiento dentro de la misma transacción
         await pujaPendiente.update(
