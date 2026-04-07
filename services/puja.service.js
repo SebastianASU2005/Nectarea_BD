@@ -286,6 +286,24 @@ const pujaService = {
         throw new Error(`La puja ID ${pujaId} no tiene lote asociado.`);
       }
 
+      // 🆕 VALIDACIÓN CLAVE: Verificar que el usuario sigue suscrito al proyecto del lote
+      if (puja.lote.id_proyecto) {
+        const suscripcionActiva = await SuscripcionProyecto.findOne({
+          where: {
+            id_usuario: userId,
+            id_proyecto: puja.lote.id_proyecto,
+            activo: true,
+          },
+          ...options, // propaga la transaction si viene
+        });
+
+        if (!suscripcionActiva) {
+          throw new Error(
+            "❌ No puedes pagar esta puja. Tu suscripción al proyecto asociado ha sido cancelada.",
+          );
+        }
+      }
+
       return puja;
     } catch (error) {
       throw error;
