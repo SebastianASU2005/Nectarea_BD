@@ -101,6 +101,7 @@ const pujaService = {
             tokens_disponibles: { [Op.gt]: 0 },
           },
           transaction: t,
+          lock: t.LOCK.UPDATE,
         });
 
         if (!suscripcion)
