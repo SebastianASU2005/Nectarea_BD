@@ -267,7 +267,7 @@ const loteService = {
     let fechaVencimiento = null;
 
     try {
-      const lote = await Lote.findByPk(id, { transaction: t });
+      const lote = await Lote.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE,});
       if (!lote) throw new Error("Lote no encontrado.");
       if (lote.estado_subasta !== "activa")
         throw new Error("La subasta no está activa.");

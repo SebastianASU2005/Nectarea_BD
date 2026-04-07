@@ -558,6 +558,7 @@ const suscripcionProyectoService = {
       // 1. Validar suscripción y permisos
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
+        lock: t.LOCK.UPDATE,
       });
 
       if (!suscripcion) throw new Error("Suscripción no encontrada.");

@@ -1,3 +1,6 @@
+// Archivo: services/transaccion.service.js
+// VERSIÓN COMPLETA
+
 const { sequelize } = require("../config/database");
 const { Op } = require("sequelize");
 const Transaccion = require("../models/transaccion");
@@ -5,23 +8,20 @@ const Pago = require("../models/pago");
 const PagoMercado = require("../models/pagoMercado");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
-
-// Servicios externos necesarios para la lógica de negocio
-const paymentService = require("./pagoMercado.service");
 const Inversion = require("../models/inversion");
+const Puja = require("../models/puja");
+
+// Servicios externos
+const paymentService = require("./pagoMercado.service");
 const inversionService = require("./inversion.service");
-const pagoService = require("../services/pago.service");
+const pagoService = require("./pago.service");
 const suscripcionService = require("./suscripcion_proyecto.service");
 const resumenCuentaService = require("./resumen_cuenta.service");
 
 // Helper para asegurar el tipo de dato numérico
 const toFloat = (value) => parseFloat(value);
-const TRANSACTION_TIMEOUT_MINUTES = 30; // ⏱️ Transacciones expiran en 30 min
+const TRANSACTION_TIMEOUT_MINUTES = 30;
 
-/**
- * Servicio de lógica de negocio para la gestión de Transacciones y su integración
- * con pasarelas de pago y lógica de negocio principal (Inversiones, Pagos, Pujas).
- */
 const transaccionService = {
   // =========================================================================
   // NUEVO FLUJO: Generar Checkout para una Transacción YA CREADA
@@ -39,7 +39,6 @@ const transaccionService = {
       );
     }
 
-    // Validación de estado: permite regenerar solo si está pendiente o fallida.
     if (
       transaccion.estado_transaccion !== "pendiente" &&
       transaccion.estado_transaccion !== "fallido"
@@ -49,13 +48,11 @@ const transaccionService = {
       );
     }
 
-    // 1. Generar preferencia de pago en la pasarela.
     const { preferenceId, redirectUrl } = await this._generarPreferenciaPago(
       transaccion,
       metodo,
     );
 
-    // 2. Crear o actualizar el registro de PagoMercado.
     const [pagoMercado, created] = await PagoMercado.findOrCreate({
       where: { id_transaccion: transaccion.id, metodo_pasarela: metodo },
       defaults: {
@@ -67,7 +64,6 @@ const transaccionService = {
       transaction: t,
     });
 
-    // Si el registro ya existía, se actualiza la preferencia y se resetea el estado a pendiente.
     if (!created) {
       await pagoMercado.update(
         {
@@ -79,7 +75,6 @@ const transaccionService = {
       );
     }
 
-    // 3. Vincular el PagoMercado a la Transacción y asegurar el estado 'pendiente'.
     await transaccion.update(
       { id_pago_pasarela: pagoMercado.id, estado_transaccion: "pendiente" },
       { transaction: t },
@@ -91,6 +86,7 @@ const transaccionService = {
       redirectUrl,
     };
   },
+
   // =========================================================================
   // FLUJO ORIGINAL: Crea Transacción y luego su Checkout
   // =========================================================================
@@ -109,7 +105,6 @@ const transaccionService = {
 
     this._validarDatosTransaccion(data);
 
-    // 1. Crear la transacción (Estado inicial: pendiente)
     const transaccion = await Transaccion.create(
       {
         tipo_transaccion: data.tipo_transaccion,
@@ -125,8 +120,6 @@ const transaccionService = {
       { transaction: t },
     );
 
-    // 2. Llama al flujo para generar la preferencia y PagoMercado,
-    //    y lo vincula a la transacción recién creada.
     return this.generarCheckoutParaTransaccionExistente(
       transaccion,
       "mercadopago",
@@ -135,7 +128,7 @@ const transaccionService = {
   },
 
   // =========================================================================
-  // LÓGICA DE CONFIRMACIÓN Y REVERSIÓN (Webhook/Operaciones Manuales)
+  // LÓGICA DE CONFIRMACIÓN Y REVERSIÓN
   // =========================================================================
 
   async procesarFalloTransaccion(
@@ -153,14 +146,12 @@ const transaccionService = {
       transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
-        // ✅ Sin includes: FOR UPDATE no puede aplicarse a LEFT JOINs nulables
       });
 
       if (!transaccion) {
         throw new Error("Transacción no encontrada.");
       }
 
-      // Idempotencia: Si ya está en un estado terminal (ej. pagado/revertido), retornar.
       if (
         transaccion.estado_transaccion === "pagado" ||
         transaccion.estado_transaccion === "revertido"
@@ -169,7 +160,6 @@ const transaccionService = {
         return transaccion;
       }
 
-      // 2. Manejo de lógica de negocio (solo para fallos/reembolsos relevantes)
       if (targetStatus === "fallido" || targetStatus === "reembolsado") {
         if (
           transaccion.tipo_transaccion === "pago_suscripcion_inicial" ||
@@ -182,7 +172,6 @@ const transaccionService = {
         }
       }
 
-      // 3. Actualizar estado final de la Transacción.
       await transaccion.update(
         {
           estado_transaccion: targetStatus,
@@ -213,14 +202,12 @@ const transaccionService = {
       const transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
-        // ✅ Sin includes
       });
 
       if (!transaccion) {
         throw new Error(`Transacción ID ${transaccionId} no encontrada.`);
       }
 
-      // Solo actualiza si el estado es 'pendiente'.
       if (transaccion.estado_transaccion === "pendiente") {
         await transaccion.update(
           {
@@ -250,7 +237,7 @@ const transaccionService = {
   },
 
   // =========================================================================
-  // FUNCIÓN DE INICIO
+  // FUNCIÓN DE INICIO (CON VALIDACIONES ANTI-DUPLICACIÓN)
   // =========================================================================
 
   async iniciarTransaccionYCheckout(modelo, modeloId, userId) {
@@ -259,7 +246,6 @@ const transaccionService = {
       let entidadBase;
       let datosTransaccion = { id_usuario: userId, monto: 0 };
 
-      // 1. Buscar la entidad base pendiente y preparar los datos de la transacción.
       switch (modelo.toLowerCase()) {
         case "inversion":
           entidadBase = await Inversion.findOne({
@@ -271,6 +257,22 @@ const transaccionService = {
               `Inversión ${modeloId} no encontrada, no te pertenece o ya está pagada.`,
             );
           }
+
+          const transaccionInversionExistente = await Transaccion.findOne({
+            where: {
+              id_inversion: modeloId,
+              tipo_transaccion: "directo",
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+            },
+            transaction: t
+          });
+
+          if (transaccionInversionExistente) {
+            throw new Error(
+              `❌ La inversión ID ${modeloId} ya tiene una transacción en estado '${transaccionInversionExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+            );
+          }
+
           datosTransaccion = {
             ...datosTransaccion,
             tipo_transaccion: "directo",
@@ -288,6 +290,27 @@ const transaccionService = {
             { transaction: t },
           );
           const montoPujaPagar = toFloat(entidadBase.monto_puja);
+
+          const transaccionPujaExistente = await Transaccion.findOne({
+            where: {
+              id_puja: modeloId,
+              tipo_transaccion: "Puja",
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+            },
+            transaction: t
+          });
+
+          if (transaccionPujaExistente) {
+            throw new Error(
+              `❌ La puja ID ${modeloId} ya tiene una transacción en estado '${transaccionPujaExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+            );
+          }
+
+          if (entidadBase.estado_puja === "ganadora_pagada") {
+            throw new Error(
+              `❌ La puja ID ${modeloId} ya está marcada como 'ganadora_pagada'. No se puede pagar nuevamente.`
+            );
+          }
 
           datosTransaccion = {
             ...datosTransaccion,
@@ -321,23 +344,39 @@ const transaccionService = {
             );
           }
 
+          const transaccionPagoExistente = await Transaccion.findOne({
+            where: {
+              id_pago_mensual: modeloId,
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+            },
+            transaction: t
+          });
+
+          if (transaccionPagoExistente) {
+            throw new Error(
+              `❌ El pago mensual ID ${modeloId} ya tiene una transacción en estado '${transaccionPagoExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+            );
+          }
+
+          if (entidadBase.estado_pago === "pagado" || entidadBase.estado_pago === "cubierto_por_puja") {
+            throw new Error(
+              `❌ El pago mensual ID ${modeloId} ya está marcado como '${entidadBase.estado_pago}'. No se puede pagar nuevamente.`
+            );
+          }
+
           let idProyecto = entidadBase.id_proyecto;
 
           if (!idProyecto && entidadBase.suscripcion) {
             idProyecto = entidadBase.suscripcion.id_proyecto;
-
             await entidadBase.update(
               { id_proyecto: idProyecto },
               { transaction: t },
-            );
-            console.log(
-              `✅ Pago ${modeloId} actualizado con id_proyecto: ${idProyecto}`,
             );
           }
 
           if (!idProyecto) {
             throw new Error(
-              `Pago ${modeloId} no tiene id_proyecto asociado. Datos inconsistentes.`,
+              `Pago ${modeloId} no tiene id_proyecto asociado.`,
             );
           }
 
@@ -360,7 +399,6 @@ const transaccionService = {
           throw new Error(`Modelo de pago no soportado: ${modelo}`);
       }
 
-      // 2. LÓGICA DE REINTENTO
       let resultadoCheckout;
 
       if (modelo.toLowerCase() === "puja") {
@@ -539,6 +577,339 @@ const transaccionService = {
   },
 
   // =========================================================================
+  // FUNCIÓN PRINCIPAL DE CONFIRMACIÓN (CON VALIDACIÓN ANTI-DUPLICACIÓN)
+  // =========================================================================
+
+  async confirmarTransaccion(transaccionId, options = {}) {
+    const t = options.transaction;
+
+    if (!t) {
+      throw new Error(
+        "Se requiere una transacción (t) activa para confirmarTransaccion.",
+      );
+    }
+
+    let transaccion;
+
+    try {
+      transaccion = await Transaccion.findByPk(transaccionId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+
+      if (!transaccion) {
+        throw new Error("Transacción no encontrada.");
+      }
+
+      if (transaccion.estado_transaccion === "pagado") {
+        console.log(`✅ Transacción ${transaccionId} ya está pagada. Retornando.`);
+        return transaccion;
+      }
+
+      if (transaccion.estado_transaccion === "revertido") {
+        throw new Error(
+          `Transacción ${transaccionId} ya fue revertida. No se puede confirmar.`,
+        );
+      }
+
+      if (
+        transaccion.tipo_transaccion === "directo" &&
+        transaccion.id_proyecto
+      ) {
+        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
+          transaction: t,
+        });
+
+        if (!proyecto) {
+          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
+        }
+
+        if (
+          proyecto.estado_proyecto === "Finalizado" ||
+          proyecto.estado_proyecto === "Cancelado"
+        ) {
+          await transaccion.update(
+            {
+              estado_transaccion: "rechazado_proyecto_cerrado",
+              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
+            },
+            { transaction: t },
+          );
+
+          throw new Error(
+            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión.`,
+          );
+        }
+      }
+
+      const haExpirado = await this.verificarYExpirarTransaccionAntigua(
+        transaccion,
+        t,
+      );
+
+      if (haExpirado) {
+        throw new Error(
+          `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
+        );
+      }
+
+      // 🔥 VALIDACIÓN ANTI-DUPLICACIÓN
+      await this._validarEntidadSinPagoPrevisto(transaccion, t);
+
+      if (
+        transaccion.tipo_transaccion === "pago_suscripcion_inicial" &&
+        transaccion.id_proyecto
+      ) {
+        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
+          transaction: t,
+        });
+
+        if (!proyecto) {
+          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
+        }
+
+        if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
+          await transaccion.update(
+            {
+              estado_transaccion: "rechazado_por_capacidad",
+              error_detalle: `El proyecto "${proyecto.nombre_proyecto}" ya alcanzó su capacidad máxima`,
+            },
+            { transaction: t },
+          );
+
+          throw new Error(
+            `El proyecto "${proyecto.nombre_proyecto}" ya no tiene cupos disponibles.`,
+          );
+        }
+
+        if (
+          proyecto.estado_proyecto === "Finalizado" ||
+          proyecto.estado_proyecto === "Cancelado"
+        ) {
+          await transaccion.update(
+            {
+              estado_transaccion: "rechazado_proyecto_cerrado",
+              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
+            },
+            { transaction: t },
+          );
+
+          throw new Error(
+            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible.`,
+          );
+        }
+      }
+
+      if (transaccion.estado_transaccion === "fallido") {
+        console.log(
+          `⚠️ Recuperando transacción ${transaccionId} desde estado 'fallido'.`,
+        );
+      }
+
+      const montoTransaccion = toFloat(transaccion.monto);
+
+      switch (transaccion.tipo_transaccion) {
+        case "pago_suscripcion_inicial":
+          await this.manejarPagoSuscripcionInicial(
+            transaccion,
+            montoTransaccion,
+            t,
+          );
+          break;
+
+        case "mensual":
+          await this.manejarPagoMensual(transaccion, montoTransaccion, t);
+          break;
+
+        case "directo":
+          if (!transaccion.id_inversion) {
+            throw new Error("Transacción 'directo' sin ID de inversión.");
+          }
+          await inversionService.confirmarInversion(
+            transaccion.id_inversion,
+            t,
+          );
+          await resumenCuentaService.actualizarSaldoGeneral(
+            transaccion.id_usuario,
+            -montoTransaccion,
+            t,
+          );
+          break;
+
+        case "Puja":
+          if (!transaccion.id_puja) {
+            throw new Error("Transacción 'Puja' sin ID de puja.");
+          }
+          const pujaService = require("./puja.service");
+          await pujaService.procesarPujaGanadora(transaccion.id_puja, t);
+          await resumenCuentaService.actualizarSaldoGeneral(
+            transaccion.id_usuario,
+            -montoTransaccion,
+            t,
+          );
+          break;
+
+        default:
+          throw new Error(
+            `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`,
+          );
+      }
+
+      await transaccion.update(
+        {
+          estado_transaccion: "pagado",
+          fecha_transaccion: new Date(),
+        },
+        { transaction: t },
+      );
+
+      console.log(`✅ Transacción ${transaccionId} confirmada exitosamente.`);
+      return transaccion;
+    } catch (error) {
+      console.error(
+        `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`,
+      );
+
+      if (error.message.includes("ya tiene una transacción pagada") ||
+          error.message.includes("ya está marcada como")) {
+        try {
+          await transaccion.update(
+            {
+              estado_transaccion: "fallido",
+              error_detalle: error.message,
+            },
+            { transaction: t },
+          );
+        } catch (updateError) {
+          console.error("Error al marcar transacción como fallida:", updateError.message);
+        }
+      }
+
+      throw new Error(
+        `Error en el procesamiento de confirmación: ${error.message}`,
+      );
+    }
+  },
+
+  async _validarEntidadSinPagoPrevisto(transaccion, t) {
+    const { tipo_transaccion, id_inversion, id_puja, id_pago_mensual, id } = transaccion;
+    
+    let whereCondition = null;
+    let entidadNombre = "";
+    let entidadId = null;
+
+    switch (tipo_transaccion) {
+      case "directo":
+        if (!id_inversion) return;
+        whereCondition = { id_inversion, tipo_transaccion: "directo" };
+        entidadNombre = "inversión";
+        entidadId = id_inversion;
+        break;
+        
+      case "Puja":
+        if (!id_puja) return;
+        whereCondition = { id_puja, tipo_transaccion: "Puja" };
+        entidadNombre = "puja";
+        entidadId = id_puja;
+        break;
+        
+      case "pago_suscripcion_inicial":
+      case "mensual":
+        if (!id_pago_mensual) return;
+        whereCondition = { id_pago_mensual };
+        entidadNombre = "pago mensual";
+        entidadId = id_pago_mensual;
+        break;
+        
+      default:
+        return;
+    }
+
+    const transaccionExistente = await Transaccion.findOne({
+      where: {
+        ...whereCondition,
+        id: { [Op.ne]: id },
+        estado_transaccion: {
+          [Op.in]: ["pagado", "en_proceso"]
+        }
+      },
+      transaction: t,
+      lock: t.LOCK.UPDATE
+    });
+
+    if (transaccionExistente) {
+      const errorMsg = `❌ La ${entidadNombre} ID ${entidadId} ya tiene una transacción pagada (ID: ${transaccionExistente.id}). No se puede procesar un segundo pago.`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (tipo_transaccion === "Puja" && id_puja) {
+      const puja = await Puja.findByPk(id_puja, {
+        transaction: t,
+        attributes: ["estado_puja", "id"]
+      });
+      
+      if (puja && puja.estado_puja === "ganadora_pagada") {
+        const errorMsg = `❌ La puja ID ${id_puja} ya está marcada como 'ganadora_pagada'. No se puede procesar un segundo pago.`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+    }
+
+    if (tipo_transaccion === "directo" && id_inversion) {
+      const inversion = await Inversion.findByPk(id_inversion, {
+        transaction: t,
+        attributes: ["estado", "id"]
+      });
+      
+      if (inversion && inversion.estado === "pagado") {
+        const errorMsg = `❌ La inversión ID ${id_inversion} ya está marcada como 'pagado'. No se puede procesar un segundo pago.`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+    }
+
+    if ((tipo_transaccion === "pago_suscripcion_inicial" || tipo_transaccion === "mensual") && id_pago_mensual) {
+      const pago = await Pago.findByPk(id_pago_mensual, {
+        transaction: t,
+        attributes: ["estado_pago", "id"]
+      });
+      
+      if (pago && (pago.estado_pago === "pagado" || pago.estado_pago === "cubierto_por_puja")) {
+        const errorMsg = `❌ El pago mensual ID ${id_pago_mensual} ya está marcado como '${pago.estado_pago}'. No se puede procesar un segundo pago.`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+    }
+
+    console.log(`✅ Validación superada: La ${entidadNombre} ID ${entidadId} no tiene pagos previos.`);
+  },
+
+  async verificarYExpirarTransaccionAntigua(transaccion, t) {
+    const ahora = new Date();
+    const fechaCreacion = new Date(transaccion.createdAt);
+    const minutosTranscurridos = (ahora - fechaCreacion) / (1000 * 60);
+
+    if (minutosTranscurridos > TRANSACTION_TIMEOUT_MINUTES) {
+      console.warn(
+        `⏰ Transacción ${transaccion.id} ha expirada (${minutosTranscurridos.toFixed(1)} min)`,
+      );
+
+      await transaccion.update(
+        {
+          estado_transaccion: "expirado",
+          error_detalle: `Transacción expirada tras ${TRANSACTION_TIMEOUT_MINUTES} minutos sin confirmación`,
+        },
+        { transaction: t },
+      );
+
+      return true;
+    }
+
+    return false;
+  },
+
+  // =========================================================================
   // FUNCIONES PRIVADAS
   // =========================================================================
 
@@ -547,10 +918,8 @@ const transaccionService = {
       throw new Error("Solo mercadopago está soportado actualmente");
     }
 
-    // ✅ CRÍTICO: Construir datos de preferencia ANTES de llamar al servicio
     const datosPreferencia = await this._construirDatosPreferencia(transaccion);
 
-    // ✅ Log para depuración
     console.log("📋 Datos de preferencia construidos:", {
       monto: datosPreferencia.monto,
       titulo: datosPreferencia.titulo,
@@ -584,12 +953,10 @@ const transaccionService = {
         titulo = `Transacción #${id}`;
     }
 
-    // ✅ CRÍTICO: Validar que transaccion.monto existe
     if (!transaccion.monto) {
       throw new Error(`Transacción ${id} no tiene monto definido`);
     }
 
-    // ✅ Convertir monto a número inmediatamente
     const montoNumerico = parseFloat(transaccion.monto);
 
     if (isNaN(montoNumerico) || montoNumerico <= 0) {
@@ -598,7 +965,6 @@ const transaccionService = {
       );
     }
 
-    // Obtener datos del usuario
     const User = require("../models/usuario");
     const usuario = await User.findByPk(transaccion.id_usuario, {
       attributes: ["nombre", "apellido", "email", "numero_telefono", "dni"],
@@ -610,10 +976,10 @@ const transaccionService = {
       );
     }
 
-    const datosPreferencia = {
+    return {
       id: id,
       id_usuario: transaccion.id_usuario,
-      monto: montoNumerico, // ✅ Ya es número
+      monto: montoNumerico,
       id_proyecto: transaccion.id_proyecto,
       titulo: titulo,
       tipo_transaccion: tipo_transaccion,
@@ -623,15 +989,6 @@ const transaccionService = {
       telefono: usuario?.numero_telefono,
       documento: usuario?.dni,
     };
-
-    // ✅ Log para verificar que todo está correcto
-    console.log("✅ Datos de preferencia construidos:", {
-      monto: datosPreferencia.monto,
-      tipo: typeof datosPreferencia.monto,
-      titulo: datosPreferencia.titulo,
-    });
-
-    return datosPreferencia;
   },
 
   _validarDatosTransaccion(data) {
@@ -857,7 +1214,7 @@ const transaccionService = {
               "id_suscripcion",
               "id_usuario",
               "id_proyecto",
-               "mes",
+              "mes",
             ],
             required: false,
           },
@@ -1040,260 +1397,6 @@ const transaccionService = {
       return transaccion;
     } catch (error) {
       throw new Error("Error al eliminar transacción.");
-    }
-  },
-
-  /**
-   * @async
-   * @function verificarYExpirarTransaccionAntigua
-   * @description Verifica si una transacción pendiente/fallida es muy antigua y la marca como expirada
-   * @param {Transaccion} transaccion - Instancia de la transacción
-   * @param {Object} t - Transacción de Sequelize
-   * @returns {Promise<boolean>} true si la transacción fue expirada, false si aún es válida
-   */
-  async verificarYExpirarTransaccionAntigua(transaccion, t) {
-    const ahora = new Date();
-    const fechaCreacion = new Date(transaccion.createdAt);
-    const minutosTranscurridos = (ahora - fechaCreacion) / (1000 * 60);
-
-    if (minutosTranscurridos > TRANSACTION_TIMEOUT_MINUTES) {
-      console.warn(
-        `⏰ Transacción ${
-          transaccion.id
-        } ha expirado (${minutosTranscurridos.toFixed(1)} min)`,
-      );
-
-      await transaccion.update(
-        {
-          estado_transaccion: "expirado",
-          error_detalle: `Transacción expirada tras ${TRANSACTION_TIMEOUT_MINUTES} minutos sin confirmación`,
-        },
-        { transaction: t },
-      );
-
-      return true; // Transacción expirada
-    }
-
-    return false; // Transacción aún válida
-  },
-
-  /**
-   * @async
-   * @function confirmarTransaccion
-   * @description Confirma una transacción CON VALIDACIÓN DE TIMEOUT.
-   *
-   * CORRECCIÓN CRÍTICA: La búsqueda con lock: t.LOCK.UPDATE se hace SIN includes.
-   * PostgreSQL no permite FOR UPDATE en el lado nulable de un outer join (LEFT JOIN).
-   * Se hace findByPk limpio para el lock y luego se accede a los campos escalares
-   * directamente desde la fila bloqueada, sin necesidad de joins adicionales.
-   */
-  async confirmarTransaccion(transaccionId, options = {}) {
-    const t = options.transaction;
-
-    if (!t) {
-      throw new Error(
-        "Se requiere una transacción (t) activa para confirmarTransaccion.",
-      );
-    }
-
-    let transaccion;
-
-    try {
-      // ✅ FIX: findByPk SIN includes para que el FOR UPDATE funcione correctamente
-      // en PostgreSQL. Todos los campos que necesitamos (tipo_transaccion, id_proyecto,
-      // id_inversion, id_puja, id_pago_mensual, id_suscripcion, id_usuario, monto)
-      // son columnas escalares de la propia tabla — no necesitan joins para leerse.
-      transaccion = await Transaccion.findByPk(transaccionId, {
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
-
-      if (!transaccion) {
-        throw new Error("Transacción no encontrada.");
-      }
-
-      // ✅ IDEMPOTENCIA: Si ya está pagada, retornar
-      if (transaccion.estado_transaccion === "pagado") {
-        console.log(
-          `✅ Transacción ${transaccionId} ya está pagada. Retornando.`,
-        );
-        return transaccion;
-      }
-
-      // 🚫 BLOQUEAR transacciones revertidas
-      if (transaccion.estado_transaccion === "revertido") {
-        throw new Error(
-          `Transacción ${transaccionId} ya fue revertida. No se puede confirmar.`,
-        );
-      }
-
-      // Verificación de proyecto para inversiones directas
-      // El id_proyecto es una columna escalar, no requiere join
-      if (
-        transaccion.tipo_transaccion === "directo" &&
-        transaccion.id_proyecto
-      ) {
-        // Consulta separada SIN lock para el proyecto (no es la fila que queremos lockear)
-        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
-          transaction: t,
-        });
-
-        if (!proyecto) {
-          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
-        }
-
-        if (
-          proyecto.estado_proyecto === "Finalizado" ||
-          proyecto.estado_proyecto === "Cancelado"
-        ) {
-          await transaccion.update(
-            {
-              estado_transaccion: "rechazado_proyecto_cerrado",
-              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
-            },
-            { transaction: t },
-          );
-
-          throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión (${proyecto.estado_proyecto}). Pago rechazado.`,
-          );
-        }
-      }
-
-      // ⏰ VALIDACIÓN CRÍTICA: Verificar si la transacción expiró
-      const haExpirado = await this.verificarYExpirarTransaccionAntigua(
-        transaccion,
-        t,
-      );
-
-      if (haExpirado) {
-        throw new Error(
-          `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
-        );
-      }
-
-      // 🔍 VALIDACIÓN ADICIONAL: Para suscripciones, verificar capacidad del proyecto
-      if (
-        transaccion.tipo_transaccion === "pago_suscripcion_inicial" &&
-        transaccion.id_proyecto
-      ) {
-        // Consulta separada SIN lock para el proyecto
-        const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
-          transaction: t,
-        });
-
-        if (!proyecto) {
-          throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
-        }
-
-        if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
-          await transaccion.update(
-            {
-              estado_transaccion: "rechazado_por_capacidad",
-              error_detalle: `El proyecto "${proyecto.nombre_proyecto}" ya alcanzó su capacidad máxima (${proyecto.obj_suscripciones}/${proyecto.obj_suscripciones})`,
-            },
-            { transaction: t },
-          );
-
-          throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no tiene cupos disponibles. Pago rechazado.`,
-          );
-        }
-
-        if (
-          proyecto.estado_proyecto === "Finalizado" ||
-          proyecto.estado_proyecto === "Cancelado"
-        ) {
-          await transaccion.update(
-            {
-              estado_transaccion: "rechazado_proyecto_cerrado",
-              error_detalle: `El proyecto está en estado: ${proyecto.estado_proyecto}`,
-            },
-            { transaction: t },
-          );
-
-          throw new Error(
-            `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible (${proyecto.estado_proyecto}). Pago rechazado.`,
-          );
-        }
-      }
-
-      // Log si estamos recuperando una transacción fallida
-      if (transaccion.estado_transaccion === "fallido") {
-        console.log(
-          `⚠️ Recuperando transacción ${transaccionId} desde estado 'fallido' debido a aprobación de MP.`,
-        );
-      }
-
-      const montoTransaccion = toFloat(transaccion.monto);
-
-      // Switch de lógica de negocio según el tipo de transacción
-      switch (transaccion.tipo_transaccion) {
-        case "pago_suscripcion_inicial":
-          await this.manejarPagoSuscripcionInicial(
-            transaccion,
-            montoTransaccion,
-            t,
-          );
-          break;
-
-        case "mensual":
-          await this.manejarPagoMensual(transaccion, montoTransaccion, t);
-          break;
-
-        case "directo":
-          if (!transaccion.id_inversion) {
-            throw new Error("Transacción 'directo' sin ID de inversión.");
-          }
-          await inversionService.confirmarInversion(
-            transaccion.id_inversion,
-            t,
-          );
-          await resumenCuentaService.actualizarSaldoGeneral(
-            transaccion.id_usuario,
-            -montoTransaccion,
-            t,
-          );
-          break;
-
-        case "Puja":
-          if (!transaccion.id_puja) {
-            throw new Error("Transacción 'Puja' sin ID de puja.");
-          }
-          const pujaService = require("./puja.service");
-          await pujaService.procesarPujaGanadora(transaccion.id_puja, t);
-          await resumenCuentaService.actualizarSaldoGeneral(
-            transaccion.id_usuario,
-            -montoTransaccion,
-            t,
-          );
-          break;
-
-        default:
-          throw new Error(
-            `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`,
-          );
-      }
-
-      // Si toda la lógica de negocio fue exitosa, actualiza el estado final
-      await transaccion.update(
-        {
-          estado_transaccion: "pagado",
-          fecha_transaccion: new Date(),
-        },
-        { transaction: t },
-      );
-
-      console.log(`✅ Transacción ${transaccionId} confirmada exitosamente.`);
-      return transaccion;
-    } catch (error) {
-      console.error(
-        `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`,
-      );
-
-      throw new Error(
-        `Error en el procesamiento de confirmación: ${error.message}`,
-      );
     }
   },
 };

@@ -97,6 +97,7 @@ const inversionService = {
   async confirmarInversion(inversionId, t) {
     const inversion = await Inversion.findByPk(inversionId, {
       transaction: t,
+      lock: t.LOCK.UPDATE,
     });
     if (!inversion) {
       throw new Error("Inversión asociada a la transacción no encontrada.");

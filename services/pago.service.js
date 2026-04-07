@@ -260,6 +260,7 @@ const pagoService = {
     try {
       const pago = await Pago.findByPk(pagoId, {
         transaction: t,
+        lock: t.LOCK.UPDATE,
         include: [
           {
             model: SuscripcionProyecto,
