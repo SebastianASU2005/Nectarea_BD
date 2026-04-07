@@ -588,21 +588,29 @@ const suscripcionProyectoService = {
       }
 
       // 3. Verificar si tiene una puja ganadora PENDIENTE de pago
-      const pujaPendiente = await pujaService.findOne({
-        where: {
-          id_usuario: suscripcion.id_usuario,
-          id_proyecto: suscripcion.id_proyecto,
-          estado_puja: "ganadora_pendiente",
-        },
+      const Lote = require("../models/lote");
+
+      const lotesDelProyecto = await Lote.findAll({
+        where: { id_proyecto: suscripcion.id_proyecto },
+        attributes: ["id"],
         transaction: t,
       });
-      console.log("PUJA PENDIENTE ENCONTRADA:", pujaPendiente?.id ?? "NINGUNA");
-      console.log("BUSCANDO:", {
-        id_usuario: suscripcion.id_usuario,
-        id_proyecto: suscripcion.id_proyecto,
-      });
+
+      const loteIds = lotesDelProyecto.map((l) => l.id);
+      let pujaPendiente = null;
+
+      if (loteIds.length > 0) {
+        pujaPendiente = await pujaService.findOne({
+          where: {
+            id_usuario: suscripcion.id_usuario,
+            id_lote: { [Op.in]: loteIds },
+            estado_puja: "ganadora_pendiente",
+          },
+          transaction: t,
+        });
+      }
+
       if (pujaPendiente) {
-        // Marcar la puja como incumplimiento dentro de la misma transacción
         await pujaPendiente.update(
           {
             estado_puja: "ganadora_incumplimiento",
@@ -611,7 +619,6 @@ const suscripcionProyectoService = {
           { transaction: t },
         );
 
-        // Procesar el lote (siguiente postor o limpieza) — atómico con el resto
         await loteService.procesarImpagoLote(pujaPendiente.id_lote, t);
       }
 
