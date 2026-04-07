@@ -588,7 +588,7 @@ const suscripcionProyectoService = {
       }
 
       // 3. Verificar si tiene una puja ganadora PENDIENTE de pago
-      const pujaPendiente = await Puja.findOne({
+      const pujaPendiente = await pujaService.findOne({
         where: {
           id_usuario: suscripcion.id_usuario,
           id_proyecto: suscripcion.id_proyecto,
