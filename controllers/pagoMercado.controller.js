@@ -144,10 +144,7 @@ const paymentController = {
    */
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
-    const {
-      id_transaccion,
-      metodo = "mercadopago",
-    } = req.body;
+    const { id_transaccion, metodo = "mercadopago" } = req.body;
 
     if (metodo !== "mercadopago") {
       return res.status(400).json({
@@ -282,9 +279,7 @@ const paymentController = {
       }
     }
 
-    // ⚠️ VALIDACIÓN CRÍTICA DE LA FIRMA
     const isValid = verifySignature(req);
-
     if (!isValid) {
       console.error("🚫 FIRMA INVÁLIDA - RECHAZANDO WEBHOOK");
       return res.status(401).send("Unauthorized");
@@ -295,20 +290,18 @@ const paymentController = {
     const topic =
       req.query.topic || req.body?.topic || req.query.type || req.body?.type;
     const id = req.query.id || req.query["data.id"] || req.body?.data?.id;
-
     const { metodo } = req.params;
     let transaccionId = null;
-
     let transaccion = null;
     let pagoMercado = null;
 
-    // 🚫 IGNORAR el formato antiguo de merchant_order
     if (topic === "merchant_order") {
-      console.log(`⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`);
+      console.log(
+        `⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`,
+      );
       return res.status(200).send("OK - Formato antiguo ignorado");
     }
 
-    // Flujo para merchant_order (formato nuevo)
     if (topic === "topic_merchant_order_wh" && id) {
       try {
         console.log(`🔄 Merchant Order ${id} recibida. Procesando...`);
@@ -316,13 +309,17 @@ const paymentController = {
         console.log(`✅ Merchant Order ${id} procesada.`);
         return res.status(200).send("OK - Merchant Order procesada");
       } catch (error) {
-        console.error(`❌ Error al procesar Merchant Order ${id}: ${error.message}`);
+        console.error(
+          `❌ Error al procesar Merchant Order ${id}: ${error.message}`,
+        );
         return res.status(200).send("OK - Error en procesamiento de MO");
       }
     }
 
-    // Flujo de payment individual
-    const paymentResult = await pagoMercadoService.verifyAndFetchPayment(req, metodo);
+    const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
+      req,
+      metodo,
+    );
 
     if (!paymentResult || !paymentResult.transaccionId) {
       console.log("Webhook: Sin datos de pago válidos o topic irrelevante.");
@@ -344,7 +341,6 @@ const paymentController = {
     });
 
     try {
-      // 1. Bloquear la Transacción
       transaccion = await Transaccion.findByPk(transaccionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -356,14 +352,14 @@ const paymentController = {
         return res.status(404).send("Transacción no encontrada");
       }
 
-      // 2. IDEMPOTENCIA: Si ya está pagada, ignorar
       if (transaccion.estado_transaccion === "pagado") {
         await t.commit();
-        console.log(`Transacción ${transaccionId} ya procesada. Webhook ignorado.`);
+        console.log(
+          `Transacción ${transaccionId} ya procesada. Webhook ignorado.`,
+        );
         return res.status(200).send("OK - Ya procesado");
       }
 
-      // 3. Actualizar/Crear registro de PagoMercado
       pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         transaction: t,
@@ -395,11 +391,10 @@ const paymentController = {
         await pagoMercado.update(pagoData, { transaction: t });
       }
 
-      // 4. Ejecutar Lógica de Negocio según el Estado
       if (internalStatus === "aprobado") {
-        console.log(`✅ Pago ${transactionId} APROBADO. Ejecutando lógica de negocio...`);
-        
-        // 🔥 Esta llamada puede lanzar error de duplicado desde _validarEntidadSinPagoPrevisto
+        console.log(
+          `✅ Pago ${transactionId} APROBADO. Ejecutando lógica de negocio...`,
+        );
         await transaccionService.confirmarTransaccion(transaccion.id, {
           transaction: t,
         });
@@ -429,39 +424,41 @@ const paymentController = {
       }
 
       await t.commit();
-      console.log(`✅ Webhook procesado: Transacción ${transaccionId} (MP Estado: ${internalStatus})`);
-
+      console.log(
+        `✅ Webhook procesado: Transacción ${transaccionId} (MP Estado: ${internalStatus})`,
+      );
       return res.status(200).send("OK");
-      
     } catch (error) {
-      // 🛑 MANEJO DE ERRORES - INCLUYE DETECCIÓN DE DUPLICADOS
       const errorMsg = error.message;
-      
-      // 🔥 DETECTAR ERRORES DE DUPLICACIÓN (vienen de _validarEntidadSinPagoPrevisto)
-      const esErrorDuplicado = 
+
+      const esErrorDuplicado =
         errorMsg.includes("ya tiene una transacción pagada") ||
         errorMsg.includes("ya está marcada como") ||
         errorMsg.includes("segundo pago") ||
         errorMsg.includes("No se puede procesar un segundo pago");
 
-      // Lista de errores que requieren reembolso automático
       const requiereReembolso =
-        !esErrorDuplicado && (
-          errorMsg.includes("ya no tiene cupos disponibles") ||
+        !esErrorDuplicado &&
+        (errorMsg.includes("ya no tiene cupos disponibles") ||
           errorMsg.includes("capacidad máxima") ||
           errorMsg.includes("no está disponible") ||
           errorMsg.includes("ya alcanzó su objetivo de fondeo") ||
           errorMsg.includes("rechazado_por_capacidad") ||
           errorMsg.includes("rechazado_proyecto_cerrado") ||
-          errorMsg.includes("expiró")
-        );
+          errorMsg.includes("expiró"));
 
-      // 🔥 CASO 1: ERROR POR DUPLICADO - No hacemos reembolso
+      // ─────────────────────────────────────────────────────────────────
+      // CASO 1: PAGO DUPLICADO — reembolso automático + notificaciones
+      // ─────────────────────────────────────────────────────────────────
       if (esErrorDuplicado) {
         console.warn(`⚠️ WEBHOOK DUPLICADO DETECTADO: ${errorMsg}`);
-        console.warn(`   Transacción ID: ${transaccionId}, Pago MP ID: ${transactionId}`);
-        
-        // Marcar esta transacción como fallida (fuera de la transacción actual)
+        console.warn(
+          `   Transacción ID: ${transaccionId}, Pago MP ID: ${transactionId}`,
+        );
+
+        await t.rollback();
+
+        // Marcar la transacción duplicada como fallida
         if (transaccionId) {
           try {
             await Transaccion.update(
@@ -469,24 +466,142 @@ const paymentController = {
                 estado_transaccion: "fallido",
                 error_detalle: `Pago duplicado rechazado: ${errorMsg}`,
               },
-              { where: { id: transaccionId } }
+              { where: { id: transaccionId } },
             );
           } catch (updateError) {
-            console.error("Error al marcar transacción duplicada como fallida:", updateError.message);
+            console.error(
+              "Error al marcar transacción duplicada como fallida:",
+              updateError.message,
+            );
           }
         }
-        
-        // Rollback de la transacción actual
-        await t.rollback();
-        
-        // Respondemos OK a MP para que no reintente
-        return res.status(200).send("OK - Pago duplicado rechazado");
+
+        // Intentar reembolso automático si tenemos los datos necesarios
+        if (
+          pagoMercado &&
+          pagoMercado.id_transaccion_pasarela &&
+          transaccion &&
+          parseFloat(transaccion.monto) > 0
+        ) {
+          let reembolsoExitoso = false;
+          let errorReembolso = null;
+
+          try {
+            const resultadoReembolso =
+              await pagoMercadoService.realizarReembolso(
+                pagoMercado.id_transaccion_pasarela,
+                parseFloat(transaccion.monto),
+              );
+            reembolsoExitoso = resultadoReembolso?.success === true;
+
+            if (reembolsoExitoso) {
+              console.log(
+                `✅ Reembolso automático procesado para pago duplicado ${pagoMercado.id_transaccion_pasarela}`,
+              );
+            } else {
+              errorReembolso =
+                resultadoReembolso?.message || "Reembolso falló sin detalles";
+              console.warn(
+                `⚠️ Fallo en reembolso de duplicado: ${errorReembolso}`,
+              );
+            }
+          } catch (refundError) {
+            errorReembolso = refundError.message;
+            console.error(
+              `❌ Error crítico al reembolsar duplicado: ${errorReembolso}`,
+            );
+          }
+
+          // Notificar al usuario
+          const user = await User.findByPk(transaccion.id_usuario).catch(
+            () => null,
+          );
+          if (user) {
+            try {
+              await emailService.notificarReembolsoUsuario(
+                user,
+                transaccion,
+                "Cobro duplicado detectado: ya existe un pago confirmado para esta operación.",
+                reembolsoExitoso,
+              );
+            } catch (e) {
+              console.error(
+                `Error al notificar usuario por duplicado: ${e.message}`,
+              );
+            }
+
+            // Notificar a administradores
+            try {
+              const admins = await usuarioService.findAllAdmins();
+              for (const admin of admins) {
+                if (!admin.email) continue;
+                await emailService
+                  .notificarReembolsoAdminMejorada(
+                    admin.email,
+                    user,
+                    transaccion,
+                    `PAGO DUPLICADO: ${errorMsg}`,
+                    {
+                      reembolsoExitoso,
+                      errorReembolso,
+                      idPagoMP: pagoMercado.id_transaccion_pasarela,
+                    },
+                  )
+                  .catch((e) =>
+                    console.error(
+                      `Error al notificar admin ${admin.id}: ${e.message}`,
+                    ),
+                  );
+              }
+            } catch (e) {
+              console.error(
+                `Error al obtener admins para notificar duplicado: ${e.message}`,
+              );
+            }
+          }
+        } else {
+          // Sin datos suficientes para reembolsar — avisar a admins igual
+          console.warn(
+            `⚠️ Pago duplicado sin datos suficientes para reembolso. Transacción: ${transaccionId}`,
+          );
+          try {
+            const admins = await usuarioService.findAllAdmins();
+            for (const admin of admins) {
+              if (!admin.email) continue;
+              await emailService
+                .sendEmail(
+                  admin.email,
+                  `🚨 PAGO DUPLICADO SIN REEMBOLSO AUTOMÁTICO - Transacción #${transaccionId}`,
+                  `Pago duplicado detectado para transacción #${transaccionId}. No se pudo reembolsar automáticamente. Revisión manual requerida. Error: ${errorMsg}`,
+                  `<p>Se detectó un <strong>pago duplicado</strong> para la Transacción <strong>#${transaccionId}</strong>.</p>
+                   <p>No fue posible procesar el reembolso automático por falta de datos del pago en pasarela.</p>
+                   <p><strong>Revisión manual requerida.</strong></p>
+                   <p><strong>Error:</strong> ${errorMsg}</p>`,
+                )
+                .catch((e) =>
+                  console.error(
+                    `Error al notificar admin sin datos: ${e.message}`,
+                  ),
+                );
+            }
+          } catch (e) {
+            console.error(
+              `Error buscando admins para duplicado sin datos: ${e.message}`,
+            );
+          }
+        }
+
+        return res
+          .status(200)
+          .send("OK - Pago duplicado rechazado y reembolso procesado");
       }
 
-      // 🔥 CASO 2: ERROR QUE REQUIERE REEMBOLSO (capacidad, proyecto cerrado, etc.)
+      // ─────────────────────────────────────────────────────────────────
+      // CASO 2: ERROR QUE REQUIERE REEMBOLSO (capacidad, proyecto cerrado…)
+      // ─────────────────────────────────────────────────────────────────
       if (requiereReembolso) {
         console.log(
-          `💰 Iniciando flujo de reembolso automático para Transacción ${transaccionId} por error de negocio: ${errorMsg}`,
+          `💰 Iniciando flujo de reembolso automático para Transacción ${transaccionId} por: ${errorMsg}`,
         );
 
         try {
@@ -505,7 +620,6 @@ const paymentController = {
                   pagoMercado.id_transaccion_pasarela,
                   parseFloat(transaccion.monto),
                 );
-
               reembolsoExitoso = resultadoReembolso?.success === true;
 
               if (reembolsoExitoso) {
@@ -515,14 +629,15 @@ const paymentController = {
               } else {
                 errorReembolso =
                   resultadoReembolso?.message || "Reembolso falló sin detalles";
-                console.warn(`⚠️ Fallo en el reembolso de MP: ${errorReembolso}`);
+                console.warn(
+                  `⚠️ Fallo en el reembolso de MP: ${errorReembolso}`,
+                );
               }
             } catch (refundError) {
               errorReembolso = refundError.message;
               console.error(`❌ ERROR CRÍTICO DE REEMBOLSO: ${errorReembolso}`);
             }
 
-            // Notificaciones al usuario
             const user = await User.findByPk(transaccion.id_usuario);
             if (user) {
               try {
@@ -536,33 +651,37 @@ const paymentController = {
                 console.error(`Error al enviar email al usuario: ${e.message}`);
               }
 
-              // Notificar a administradores
               try {
                 const admins = await usuarioService.findAllAdmins();
                 for (const admin of admins) {
-                  if (admin.email) {
-                    try {
-                      await emailService.notificarReembolsoAdminMejorada(
-                        admin.email,
-                        user,
-                        transaccion,
-                        errorMsg,
-                        {
-                          reembolsoExitoso,
-                          errorReembolso,
-                          idPagoMP: pagoMercado.id_transaccion_pasarela,
-                        },
-                      );
-                    } catch (e) {
-                      console.error(`Error al enviar email al admin ${admin.id}: ${e.message}`);
-                    }
-                  }
+                  if (!admin.email) continue;
+                  await emailService
+                    .notificarReembolsoAdminMejorada(
+                      admin.email,
+                      user,
+                      transaccion,
+                      errorMsg,
+                      {
+                        reembolsoExitoso,
+                        errorReembolso,
+                        idPagoMP: pagoMercado.id_transaccion_pasarela,
+                      },
+                    )
+                    .catch((e) =>
+                      console.error(
+                        `Error al enviar email al admin ${admin.id}: ${e.message}`,
+                      ),
+                    );
                 }
               } catch (adminError) {
-                console.error(`Error al notificar a administradores: ${adminError.message}`);
+                console.error(
+                  `Error al notificar a administradores: ${adminError.message}`,
+                );
               }
             } else {
-              console.error(`Usuario ${transaccion.id_usuario} no encontrado para notificar reembolso.`);
+              console.error(
+                `Usuario ${transaccion.id_usuario} no encontrado para notificar reembolso.`,
+              );
             }
           } else {
             console.warn(
@@ -570,16 +689,23 @@ const paymentController = {
             );
           }
         } catch (reembolsoError) {
-          console.error(`❌ ERROR GENERAL EN FLUJO DE REEMBOLSO:`, reembolsoError.message);
+          console.error(
+            `❌ ERROR GENERAL EN FLUJO DE REEMBOLSO:`,
+            reembolsoError.message,
+          );
         }
       }
 
-      // Rollback de la transacción actual
+      // ─────────────────────────────────────────────────────────────────
+      // CASO 3: CUALQUIER OTRO ERROR — rollback + marcar como fallido
+      // ─────────────────────────────────────────────────────────────────
       await t.rollback();
-      console.error(`❌ Error CRÍTICO en webhook (Transacción ${transaccionId}):`, errorMsg);
+      console.error(
+        `❌ Error CRÍTICO en webhook (Transacción ${transaccionId}):`,
+        errorMsg,
+      );
 
-      // Marcar como fallido fuera de la transacción (solo si no es duplicado, ya lo marcamos arriba)
-      if (transaccionId && !esErrorDuplicado) {
+      if (transaccionId) {
         try {
           const detalleError = requiereReembolso
             ? `Error fatal en webhook (ROLLBACK + REEMBOLSO SOLICITADO): ${errorMsg}`
@@ -593,11 +719,13 @@ const paymentController = {
             { where: { id: transaccionId } },
           );
         } catch (updateError) {
-          console.error("ERROR GRAVE al marcar como fallido:", updateError.message);
+          console.error(
+            "ERROR GRAVE al marcar como fallido:",
+            updateError.message,
+          );
         }
       }
 
-      // Siempre responder 200 a MP para que no reintente
       return res.status(200).send("OK - Error procesado");
     }
   },
@@ -618,7 +746,8 @@ const paymentController = {
 
       if (!modelo || isNaN(idNumerico) || idNumerico <= 0) {
         return res.status(400).json({
-          error: "Ruta de pago inválida. Se requiere /:modelo/:modeloId, donde :modeloId es un número válido.",
+          error:
+            "Ruta de pago inválida. Se requiere /:modelo/:modeloId, donde :modeloId es un número válido.",
         });
       }
 
@@ -638,7 +767,10 @@ const paymentController = {
         redirectUrl: redirectUrl,
       });
     } catch (error) {
-      console.error(`Error en el checkout genérico para ${req.params.modelo}:`, error.message);
+      console.error(
+        `Error en el checkout genérico para ${req.params.modelo}:`,
+        error.message,
+      );
       res.status(400).json({
         error: error.message,
       });
@@ -655,7 +787,9 @@ const paymentController = {
   async handleCheckoutRedirect(req, res) {
     const { id_transaccion, collection_status, status } = req.query;
     if (!id_transaccion) {
-      return res.status(400).send("ID de Transacción requerido para la redirección.");
+      return res
+        .status(400)
+        .send("ID de Transacción requerido para la redirección.");
     }
     try {
       const finalStatus = collection_status || status;
@@ -664,7 +798,9 @@ const paymentController = {
         finalStatus === "cancelled" ||
         finalStatus === "failure"
       ) {
-        console.log(`Usuario canceló o pago rechazado para Transacción ${id_transaccion}.`);
+        console.log(
+          `Usuario canceló o pago rechazado para Transacción ${id_transaccion}.`,
+        );
         await transaccionService.cancelarTransaccionPorUsuario(id_transaccion);
         return res.redirect(
           `${process.env.FRONTEND_URL}/pago-fallido?transaccion=${id_transaccion}`,
@@ -716,7 +852,9 @@ const paymentController = {
       });
 
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
-        console.log(`Forzando actualización de estado para transacción ${id_transaccion}`);
+        console.log(
+          `Forzando actualización de estado para transacción ${id_transaccion}`,
+        );
         const updatedData = await pagoMercadoService.refreshPaymentStatus(
           transaccion.id,
           pagoMercado.id_transaccion_pasarela,

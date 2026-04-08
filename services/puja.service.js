@@ -151,7 +151,10 @@ const pujaService = {
    */
   async findHighestBidForLote(loteId) {
     return Puja.findOne({
-      where: { id_lote: loteId },
+      where: {
+        id_lote: loteId,
+        estado_puja: "activa", 
+      },
       include: [
         {
           model: Usuario,

@@ -267,27 +267,32 @@ const loteService = {
     let fechaVencimiento = null;
 
     try {
-      const lote = await Lote.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE,});
+      const lote = await Lote.findByPk(id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
       if (!lote) throw new Error("Lote no encontrado.");
       if (lote.estado_subasta !== "activa")
         throw new Error("La subasta no está activa.");
 
+      // ✅ findHighestBidForLote ya filtra estado_puja: "activa"
       pujaGanadora = await PujaService.findHighestBidForLote(id);
 
       await lote.update(
-        {
-          estado_subasta: "finalizada",
-          fecha_fin: new Date(),
-        },
+        { estado_subasta: "finalizada", fecha_fin: new Date() },
         { transaction: t },
       );
 
       if (pujaGanadora) {
+        // ✅ Verificación defensiva: la puja encontrada debe estar activa
+        if (pujaGanadora.estado_puja !== "activa") {
+          throw new Error(
+            `Estado inválido para puja ganadora: ${pujaGanadora.estado_puja}`,
+          );
+        }
+
         await lote.update(
-          {
-            id_ganador: pujaGanadora.id_usuario,
-            intentos_fallidos_pago: 1,
-          },
+          { id_ganador: pujaGanadora.id_usuario, intentos_fallidos_pago: 1 },
           { transaction: t },
         );
 
@@ -302,7 +307,6 @@ const loteService = {
           { transaction: t },
         );
       } else {
-        // ✅ Sin postores → limpiar para reingreso dentro de la misma transacción
         await this.prepararLoteParaReingreso(lote, t);
       }
 
