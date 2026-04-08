@@ -256,11 +256,21 @@ const pagoService = {
    * @param {object} t - Objeto de transacción de Sequelize.
    * @returns {Promise<Pago>} El pago confirmado.
    * @throws {Error} Si el pago, usuario o proyecto no son encontrados.
-   */ async markAsPaid(pagoId, t) {
+   */
+  async markAsPaid(pagoId, t) {
     try {
-      const pago = await Pago.findByPk(pagoId, {
+      // ✅ PASO 1: Lock sin includes → sin outer joins → PostgreSQL feliz
+      const pagoLock = await Pago.findByPk(pagoId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+      });
+
+      if (!pagoLock) throw new Error("Pago no encontrado.");
+      if (pagoLock.estado_pago === "pagado") return pagoLock;
+
+      // ✅ PASO 2: Cargar relaciones por separado, sin lock
+      const pago = await Pago.findByPk(pagoId, {
+        transaction: t,
         include: [
           {
             model: SuscripcionProyecto,
@@ -273,9 +283,6 @@ const pagoService = {
         ],
       });
 
-      if (!pago) throw new Error("Pago no encontrado.");
-      if (pago.estado_pago === "pagado") return pago;
-
       const usuario = pago.suscripcion?.usuario;
       const proyecto = pago.suscripcion?.proyectoAsociado;
 
@@ -283,31 +290,33 @@ const pagoService = {
         throw new Error(
           "No se pudo determinar el Usuario o Proyecto asociado al pago para enviar notificaciones.",
         );
-      } // 1. Actualizar el estado del Pago
+      }
 
-      await pago.update(
+      // Usar pagoLock para el update (es la instancia bloqueada)
+      await pagoLock.update(
         { estado_pago: "pagado", fecha_pago: new Date() },
         { transaction: t },
-      ); // 2. 🚨 CRÍTICO: Actualizar el resumen de cuenta (disminuir cuotas vencidas, actualizar saldo)
+      );
 
       await resumenCuentaService.updateAccountSummaryOnPayment(
-        pago.id_suscripcion,
+        pagoLock.id_suscripcion,
         { transaction: t },
-      ); // 3. Notificaciones
+      );
 
       await emailService.notificarPagoRecibido(
         usuario,
         proyecto,
-        pago.monto,
-        pago.mes,
+        pagoLock.monto,
+        pagoLock.mes,
       );
-      const contenido = `Tu pago de $${pago.monto} para la cuota #${pago.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
+
+      const contenido = `Tu pago de $${pagoLock.monto} para la cuota #${pagoLock.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
       await mensajeService.crear(
         { id_remitente: 1, id_receptor: usuario.id, contenido: contenido },
         { transaction: t },
       );
 
-      return pago;
+      return pagoLock;
     } catch (error) {
       throw error;
     }

@@ -262,14 +262,14 @@ const transaccionService = {
             where: {
               id_inversion: modeloId,
               tipo_transaccion: "directo",
-              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] },
             },
-            transaction: t
+            transaction: t,
           });
 
           if (transaccionInversionExistente) {
             throw new Error(
-              `❌ La inversión ID ${modeloId} ya tiene una transacción en estado '${transaccionInversionExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+              `❌ La inversión ID ${modeloId} ya tiene una transacción en estado '${transaccionInversionExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`,
             );
           }
 
@@ -295,20 +295,20 @@ const transaccionService = {
             where: {
               id_puja: modeloId,
               tipo_transaccion: "Puja",
-              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] },
             },
-            transaction: t
+            transaction: t,
           });
 
           if (transaccionPujaExistente) {
             throw new Error(
-              `❌ La puja ID ${modeloId} ya tiene una transacción en estado '${transaccionPujaExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+              `❌ La puja ID ${modeloId} ya tiene una transacción en estado '${transaccionPujaExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`,
             );
           }
 
           if (entidadBase.estado_puja === "ganadora_pagada") {
             throw new Error(
-              `❌ La puja ID ${modeloId} ya está marcada como 'ganadora_pagada'. No se puede pagar nuevamente.`
+              `❌ La puja ID ${modeloId} ya está marcada como 'ganadora_pagada'. No se puede pagar nuevamente.`,
             );
           }
 
@@ -347,20 +347,23 @@ const transaccionService = {
           const transaccionPagoExistente = await Transaccion.findOne({
             where: {
               id_pago_mensual: modeloId,
-              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] }
+              estado_transaccion: { [Op.in]: ["pagado", "en_proceso"] },
             },
-            transaction: t
+            transaction: t,
           });
 
           if (transaccionPagoExistente) {
             throw new Error(
-              `❌ El pago mensual ID ${modeloId} ya tiene una transacción en estado '${transaccionPagoExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`
+              `❌ El pago mensual ID ${modeloId} ya tiene una transacción en estado '${transaccionPagoExistente.estado_transaccion}'. No se puede iniciar un nuevo pago.`,
             );
           }
 
-          if (entidadBase.estado_pago === "pagado" || entidadBase.estado_pago === "cubierto_por_puja") {
+          if (
+            entidadBase.estado_pago === "pagado" ||
+            entidadBase.estado_pago === "cubierto_por_puja"
+          ) {
             throw new Error(
-              `❌ El pago mensual ID ${modeloId} ya está marcado como '${entidadBase.estado_pago}'. No se puede pagar nuevamente.`
+              `❌ El pago mensual ID ${modeloId} ya está marcado como '${entidadBase.estado_pago}'. No se puede pagar nuevamente.`,
             );
           }
 
@@ -375,9 +378,7 @@ const transaccionService = {
           }
 
           if (!idProyecto) {
-            throw new Error(
-              `Pago ${modeloId} no tiene id_proyecto asociado.`,
-            );
+            throw new Error(`Pago ${modeloId} no tiene id_proyecto asociado.`);
           }
 
           const esPagoMensual = !!entidadBase.id_suscripcion;
@@ -602,7 +603,9 @@ const transaccionService = {
       }
 
       if (transaccion.estado_transaccion === "pagado") {
-        console.log(`✅ Transacción ${transaccionId} ya está pagada. Retornando.`);
+        console.log(
+          `✅ Transacción ${transaccionId} ya está pagada. Retornando.`,
+        );
         return transaccion;
       }
 
@@ -770,8 +773,10 @@ const transaccionService = {
         `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`,
       );
 
-      if (error.message.includes("ya tiene una transacción pagada") ||
-          error.message.includes("ya está marcada como")) {
+      if (
+        error.message.includes("ya tiene una transacción pagada") ||
+        error.message.includes("ya está marcada como")
+      ) {
         try {
           await transaccion.update(
             {
@@ -781,7 +786,10 @@ const transaccionService = {
             { transaction: t },
           );
         } catch (updateError) {
-          console.error("Error al marcar transacción como fallida:", updateError.message);
+          console.error(
+            "Error al marcar transacción como fallida:",
+            updateError.message,
+          );
         }
       }
 
@@ -792,8 +800,9 @@ const transaccionService = {
   },
 
   async _validarEntidadSinPagoPrevisto(transaccion, t) {
-    const { tipo_transaccion, id_inversion, id_puja, id_pago_mensual, id } = transaccion;
-    
+    const { tipo_transaccion, id_inversion, id_puja, id_pago_mensual, id } =
+      transaccion;
+
     let whereCondition = null;
     let entidadNombre = "";
     let entidadId = null;
@@ -805,14 +814,14 @@ const transaccionService = {
         entidadNombre = "inversión";
         entidadId = id_inversion;
         break;
-        
+
       case "Puja":
         if (!id_puja) return;
         whereCondition = { id_puja, tipo_transaccion: "Puja" };
         entidadNombre = "puja";
         entidadId = id_puja;
         break;
-        
+
       case "pago_suscripcion_inicial":
       case "mensual":
         if (!id_pago_mensual) return;
@@ -820,21 +829,23 @@ const transaccionService = {
         entidadNombre = "pago mensual";
         entidadId = id_pago_mensual;
         break;
-        
+
       default:
         return;
     }
 
+    // ✅ Sin includes → sin outer joins → lock seguro
     const transaccionExistente = await Transaccion.findOne({
       where: {
         ...whereCondition,
         id: { [Op.ne]: id },
         estado_transaccion: {
-          [Op.in]: ["pagado", "en_proceso"]
-        }
+          [Op.in]: ["pagado", "en_proceso"],
+        },
       },
       transaction: t,
-      lock: t.LOCK.UPDATE
+      lock: t.LOCK.UPDATE,
+      // ✅ CLAVE: sin include aquí
     });
 
     if (transaccionExistente) {
@@ -843,12 +854,15 @@ const transaccionService = {
       throw new Error(errorMsg);
     }
 
+    // ✅ Para verificar estado de entidades, usá findByPk SIN lock
+    // ya que solo es lectura de validación y no necesita bloquear esas filas
     if (tipo_transaccion === "Puja" && id_puja) {
       const puja = await Puja.findByPk(id_puja, {
         transaction: t,
-        attributes: ["estado_puja", "id"]
+        // ✅ Sin lock → sin problema de outer join
+        attributes: ["estado_puja", "id"],
       });
-      
+
       if (puja && puja.estado_puja === "ganadora_pagada") {
         const errorMsg = `❌ La puja ID ${id_puja} ya está marcada como 'ganadora_pagada'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
@@ -859,9 +873,10 @@ const transaccionService = {
     if (tipo_transaccion === "directo" && id_inversion) {
       const inversion = await Inversion.findByPk(id_inversion, {
         transaction: t,
-        attributes: ["estado", "id"]
+        // ✅ Sin lock
+        attributes: ["estado", "id"],
       });
-      
+
       if (inversion && inversion.estado === "pagado") {
         const errorMsg = `❌ La inversión ID ${id_inversion} ya está marcada como 'pagado'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
@@ -869,20 +884,31 @@ const transaccionService = {
       }
     }
 
-    if ((tipo_transaccion === "pago_suscripcion_inicial" || tipo_transaccion === "mensual") && id_pago_mensual) {
+    if (
+      (tipo_transaccion === "pago_suscripcion_inicial" ||
+        tipo_transaccion === "mensual") &&
+      id_pago_mensual
+    ) {
       const pago = await Pago.findByPk(id_pago_mensual, {
         transaction: t,
-        attributes: ["estado_pago", "id"]
+        // ✅ Sin lock
+        attributes: ["estado_pago", "id"],
       });
-      
-      if (pago && (pago.estado_pago === "pagado" || pago.estado_pago === "cubierto_por_puja")) {
+
+      if (
+        pago &&
+        (pago.estado_pago === "pagado" ||
+          pago.estado_pago === "cubierto_por_puja")
+      ) {
         const errorMsg = `❌ El pago mensual ID ${id_pago_mensual} ya está marcado como '${pago.estado_pago}'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
         throw new Error(errorMsg);
       }
     }
 
-    console.log(`✅ Validación superada: La ${entidadNombre} ID ${entidadId} no tiene pagos previos.`);
+    console.log(
+      `✅ Validación superada: La ${entidadNombre} ID ${entidadId} no tiene pagos previos.`,
+    );
   },
 
   async verificarYExpirarTransaccionAntigua(transaccion, t) {
