@@ -121,7 +121,6 @@ const loteController = {
     try {
       const { id } = req.params;
 
-      // 1. Validar Lote y Proyecto
       const lote = await loteService.findById(id);
       if (!lote) {
         return res.status(404).json({ error: "Lote no encontrado." });
@@ -133,22 +132,20 @@ const loteController = {
           .json({ error: "Proyecto asociado no encontrado." });
       }
 
-      // 2. Actualizar estado de la subasta del lote
       await loteService.update(id, {
         estado_subasta: "activa",
         fecha_inicio: new Date(),
+        // Preservar fecha_fin si ya fue configurada al crear/editar el lote
+        ...(lote.fecha_fin && { fecha_fin: lote.fecha_fin }),
       });
 
-      // 3. Obtener usuarios suscritos al proyecto
       const suscriptores =
         await SuscripcionProyectoService.findUsersByProjectId(proyecto.id);
 
-      // 4. Enviar notificación a cada suscriptor
-      const remitente_id = 1; // ID de un usuario del sistema (ej. administrador)
+      const remitente_id = 1;
       const contenido = `¡La subasta del lote "${lote.nombre_lote}" del proyecto "${proyecto.nombre_proyecto}" ha comenzado!`;
 
       for (const suscriptor of suscriptores) {
-        // Se asume que el servicio de mensajes maneja la creación de la notificación
         await mensajeService.crear({
           id_remitente: remitente_id,
           id_receptor: suscriptor.id,
