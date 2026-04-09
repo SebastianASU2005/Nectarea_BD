@@ -324,15 +324,12 @@ const pujaService = {
    * @returns {Promise<{message: string}>}
    */
   async procesarPujaGanadora(pujaId, externalTransaction = null) {
-    // ✅ Require dinámico para evitar ciclo circular
     const ResumenCuentaService = require("./resumen_cuenta.service");
 
     const t = externalTransaction || (await sequelize.transaction());
     const shouldCommit = !externalTransaction;
 
     try {
-      // 1️⃣ PASO CLAVE: Bloqueo quirúrgico.
-      // Buscamos la puja SOLA para poner el lock sin que los JOINs nulables rompan Postgres.
       const pujaBase = await Puja.findByPk(pujaId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -342,9 +339,6 @@ const pujaService = {
         throw new Error("Puja no encontrada.");
       }
 
-      // 2️⃣ CARGA DE DATOS: Ahora que la fila está bloqueada, traemos toda tu estructura de includes.
-      // Como ya tenemos el lock en la fila de la puja dentro de la misma transacción 't',
-      // esta lectura es segura y no necesitamos poner 'lock: true' aquí, evitando el error.
       const puja = await Puja.findByPk(pujaId, {
         transaction: t,
         include: [
@@ -395,8 +389,6 @@ const pujaService = {
         );
       }
 
-      // --- INICIO DE TU LÓGICA DE NEGOCIO ORIGINAL ---
-
       if (puja.estado_puja === "ganadora_pagada") {
         if (shouldCommit) await t.commit();
         return puja;
@@ -424,7 +416,7 @@ const pujaService = {
         toFloat(puja.monto_puja) - toFloat(lote.precio_base),
       );
 
-      // Procesar pagos pendientes con el excedente
+      // ── 1. Cubrir pagos pendientes existentes con el excedente ──────────
       const pagosPendientes = await Pago.findAll({
         where: { id_suscripcion: suscripcion.id, estado_pago: "pendiente" },
         order: [["fecha_vencimiento", "ASC"]],
@@ -452,24 +444,56 @@ const pujaService = {
         }
       }
 
-      // Cubrir cuotas futuras si sobra excedente
+      // ── 2. Cubrir cuotas futuras creando Pagos reales ───────────────────
       if (excedente > 0 && cuotaMensual > 0 && suscripcion.meses_a_pagar > 0) {
         const mesesAdicionales = Math.min(
           Math.floor(excedente / cuotaMensual),
           suscripcion.meses_a_pagar,
         );
+
         if (mesesAdicionales > 0) {
+          const ultimoPago = await Pago.findOne({
+            where: { id_suscripcion: suscripcion.id },
+            order: [["mes", "DESC"]],
+            transaction: t,
+          });
+          const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
+
+          for (let i = 0; i < mesesAdicionales; i++) {
+            const fechaVencimiento = new Date();
+            fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i);
+            fechaVencimiento.setDate(10);
+            fechaVencimiento.setHours(0, 0, 0, 0);
+
+            await Pago.create(
+              {
+                id_suscripcion: suscripcion.id,
+                id_usuario: suscripcion.id_usuario,
+                id_proyecto: suscripcion.id_proyecto,
+                monto: 0,
+                fecha_vencimiento: fechaVencimiento,
+                fecha_pago: new Date(),
+                estado_pago: "cubierto_por_puja",
+                mes: proximoMes + i,
+                motivo: `Cuota cubierta por excedente de puja (Lote #${lote.id})`,
+              },
+              { transaction: t },
+            );
+          }
+
+          // Decrement fuera del loop para evitar lecturas inconsistentes
           await suscripcion.decrement("meses_a_pagar", {
             by: mesesAdicionales,
             transaction: t,
           });
+
           excedente = calculateFloat(
             excedente - mesesAdicionales * cuotaMensual,
           );
         }
       }
 
-      // Saldo a favor remanente
+      // ── 3. Excedente parcial que no alcanza para una cuota ──────────────
       if (excedente > 0 && suscripcion.meses_a_pagar > 0) {
         const nuevoSaldo = calculateFloat(
           toFloat(suscripcion.saldo_a_favor) + excedente,
@@ -481,7 +505,7 @@ const pujaService = {
         excedente = 0;
       }
 
-      // Excedente visual si ya pagó todo
+      // ── 4. Excedente visual si ya no quedan meses por pagar ────────────
       if (suscripcion.meses_a_pagar <= 0 && excedente > 0) {
         await lote.update(
           { excedente_visualizacion: calculateFloat(excedente) },
@@ -490,22 +514,21 @@ const pujaService = {
         excedente = 0;
       }
 
-      // Actualizar estado de la puja
+      // ── 5. Marcar puja como pagada ──────────────────────────────────────
       await puja.update({ estado_puja: "ganadora_pagada" }, { transaction: t });
 
-      // Marcar el token como consumido permanentemente.
-      // Esto impide que devolverTokenPorImpago lo restaure en el futuro.
+      // ── 6. Consumir token de forma permanente ───────────────────────────
       await suscripcion.update(
         { tokens_disponibles: 0, token_consumido: true },
         { transaction: t },
       );
 
-      // Actualizar resumen
+      // ── 7. Actualizar ResumenCuenta (ahora sí encuentra los Pagos reales) ─
       await ResumenCuentaService.updateAccountSummaryOnPayment(suscripcion.id, {
         transaction: t,
       });
 
-      // Liberar tokens de otros usuarios
+      // ── 8. Liberar tokens de perdedores ─────────────────────────────────
       const usuariosGanadoresActuales = [puja.id_usuario];
       const pujasActivasPendientes = await Puja.findAll({
         where: {
@@ -532,8 +555,6 @@ const pujaService = {
           transaction: t,
         });
       }
-
-      // --- FIN DE TU LÓGICA DE NEGOCIO ORIGINAL ---
 
       if (shouldCommit) await t.commit();
       return { message: "Puja procesada y pagos actualizados exitosamente." };
@@ -594,10 +615,11 @@ const pujaService = {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
+      // DESPUÉS (fix):
       const pujasNoLiberar = await Puja.findAll({
         where: {
           id_lote: id_lote,
-          estado_puja: "activa",
+          estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] }, // ← incluye al ganador
         },
         order: [["monto_puja", "DESC"]],
         limit: 3,
