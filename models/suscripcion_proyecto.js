@@ -34,10 +34,17 @@ const SuscripcionProyecto = sequelize.define(
       allowNull: false,
       defaultValue: 0.0,
     },
+    token_consumido: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment:
+        "true si el usuario ganó y pagó una subasta. Bloquea cualquier devolución futura del token.",
+    },
   },
   {
     tableName: "suscripcion_proyecto",
-  }
+  },
 );
 
 module.exports = SuscripcionProyecto;

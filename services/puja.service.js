@@ -153,7 +153,7 @@ const pujaService = {
     return Puja.findOne({
       where: {
         id_lote: loteId,
-        estado_puja: "activa", 
+        estado_puja: "activa",
       },
       include: [
         {
@@ -493,6 +493,13 @@ const pujaService = {
       // Actualizar estado de la puja
       await puja.update({ estado_puja: "ganadora_pagada" }, { transaction: t });
 
+      // Marcar el token como consumido permanentemente.
+      // Esto impide que devolverTokenPorImpago lo restaure en el futuro.
+      await suscripcion.update(
+        { tokens_disponibles: 0, token_consumido: true },
+        { transaction: t },
+      );
+
       // Actualizar resumen
       await ResumenCuentaService.updateAccountSummaryOnPayment(suscripcion.id, {
         transaction: t,
@@ -520,6 +527,7 @@ const pujaService = {
           where: {
             id: { [Op.in]: suscripcionesALiberar },
             tokens_disponibles: { [Op.lt]: 1 },
+            token_consumido: false,
           },
           transaction: t,
         });
@@ -605,6 +613,7 @@ const pujaService = {
           id_proyecto: lote.id_proyecto,
           id_usuario: { [Op.notIn]: usuariosNoLiberar },
           tokens_disponibles: { [Op.lt]: 1 },
+          token_consumido: false,
         },
         transaction: t,
       });
@@ -653,15 +662,22 @@ const pujaService = {
         return { message: "Token no devuelto (suscripción no encontrada)." };
       }
 
+      // DESPUÉS (con fix):
+      if (suscripcion.token_consumido) {
+        console.warn(
+          `Token no devuelto: suscripción ${suscripcion.id} ya consumió su token en una subasta ganada y pagada.`,
+        );
+        if (shouldCommit) await t.commit();
+        return {
+          message: "Token no devuelto (ya consumido por subasta ganada).",
+        };
+      }
+
       if (suscripcion.tokens_disponibles < 1) {
         await suscripcion.increment("tokens_disponibles", {
           by: 1,
           transaction: t,
         });
-      } else {
-        console.warn(
-          `Advertencia: Usuario ${userId} ya tenía el token. No se incrementó para evitar duplicación.`,
-        );
       }
 
       if (shouldCommit) {
