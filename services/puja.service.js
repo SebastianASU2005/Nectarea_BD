@@ -1519,7 +1519,10 @@ const pujaService = {
       }
 
       // ── 5. Marcar la puja como cancelada ──────────────────────────────────
-      await puja.update({ estado_puja: "cancelada" }, { transaction: t });
+      await puja.update(
+        { estado_puja: "cancelada", activo: false },
+        { transaction: t },
+      );
 
       // ── 6. Devolver el token a la suscripción ─────────────────────────────
       let tokenDevuelto = false;
