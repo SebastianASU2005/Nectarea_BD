@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const mensajeController = require("../controllers/mensaje.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { userRateLimiter } = require("../middleware/rateLimiter");
 // ===============================================
 // 1. RUTAS ESTÁTICAS Y CON PREFIJO (DEBEN IR PRIMERO)
 // ===============================================
@@ -11,7 +11,8 @@ const { userRateLimiter } = require("../middleware/rateLimiter")
 router.get(
   "/",
   authMiddleware.authenticate,
-  mensajeController.obtenerMisMensajes
+  mensajeController.obtenerMisMensajes,
+  authMiddleware.authorizeAdmin,
 );
 
 // Ruta para enviar un nuevo mensaje (Ruta estática POST)
@@ -21,14 +22,16 @@ router.post("/", authMiddleware.authenticate, mensajeController.enviarMensaje);
 router.get(
   "/no_leidos",
   authMiddleware.authenticate,
-  mensajeController.obtenerConteoNoLeidos
+  mensajeController.obtenerConteoNoLeidos,
+  authMiddleware.authorizeAdmin,
 );
 
 // Ruta para marcar un mensaje como leído (Ruta semi-dinámica con prefijo fijo 'leido')
 router.put(
   "/leido/:id",
   authMiddleware.authenticate,
-  mensajeController.marcarComoLeido
+  mensajeController.marcarComoLeido,
+  authMiddleware.authorizeAdmin,
 );
 
 // ===============================================
@@ -40,7 +43,8 @@ router.get(
   "/:id_receptor",
   authMiddleware.authenticate,
   userRateLimiter,
-  mensajeController.obtenerConversacion
+  mensajeController.obtenerConversacion,
+  authMiddleware.authorizeAdmin,
 );
 
 module.exports = router;

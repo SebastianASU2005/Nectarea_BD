@@ -2,7 +2,7 @@ const Mensaje = require("../models/mensaje");
 const Usuario = require("../models/usuario");
 const { Op } = require("sequelize");
 
-const SYSTEM_USER_ID = 2; // ID reservado para el Usuario Sistema (mensajes automáticos).
+const SYSTEM_USER_ID = 1; // ID reservado para el Usuario Sistema (mensajes automáticos).
 
 /**
  * @typedef {object} MensajeData
