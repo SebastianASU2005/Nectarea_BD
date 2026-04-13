@@ -459,25 +459,39 @@ const loteService = {
   async prepararLoteParaReingreso(lote, transaction) {
     const PujaService = require("./puja.service");
 
-    const ultimaPujaActiva = await Puja.findOne({
+    // ── 1. Buscar TODAS las pujas del lote que retienen token ──────────────
+    // Incluye: activa, ganadora_pendiente y ganadora_incumplimiento
+    // (los postores 1 y 2 que fallaron quedan en ganadora_incumplimiento)
+    const pujasConTokenRetenido = await Puja.findAll({
       where: {
         id_lote: lote.id,
-        estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
+        estado_puja: {
+          [Op.in]: ["activa", "ganadora_pendiente", "ganadora_incumplimiento"],
+        },
       },
-      order: [["monto_puja", "DESC"]],
+      attributes: [
+        "id",
+        "id_usuario",
+        "id_suscripcion",
+        "monto_puja",
+        "estado_puja",
+      ],
       transaction,
     });
 
-    if (ultimaPujaActiva) {
+    // ── 2. Devolver token a CADA postor retenido ───────────────────────────
+    for (const puja of pujasConTokenRetenido) {
       await PujaService.devolverTokenPorImpago(
-        ultimaPujaActiva.id_usuario,
+        puja.id_usuario,
         lote.id,
         transaction,
       );
     }
 
+    // ── 3. Limpiar todas las pujas del lote ────────────────────────────────
     await PujaService.clearBidsByLoteId(lote.id, transaction);
 
+    // ── 4. Resetear el lote a estado inicial ───────────────────────────────
     await lote.update(
       {
         estado_subasta: "pendiente",
@@ -536,6 +550,29 @@ const loteService = {
         };
       }
 
+      // ── 1. Marcar la puja ganadora fallida como incumplimiento ────────────
+      const pujaGanadoraFallida = await Puja.findOne({
+        where: {
+          id_lote: loteId,
+          estado_puja: "ganadora_pendiente",
+        },
+        transaction: t,
+      });
+
+      if (pujaGanadoraFallida) {
+        await pujaGanadoraFallida.update(
+          {
+            estado_puja: "ganadora_incumplimiento",
+            fecha_vencimiento_pago: null,
+          },
+          { transaction: t },
+        );
+        console.log(
+          `[${SERVICE_NAME}] ✅ Puja ID ${pujaGanadoraFallida.id} marcada como 'ganadora_incumplimiento'.`,
+        );
+      }
+
+      // ── 2. Registrar intento fallido ──────────────────────────────────────
       await lote.update(
         { intentos_fallidos_pago: intentoActual + 1 },
         { transaction: t },
@@ -545,6 +582,7 @@ const loteService = {
         `[${SERVICE_NAME}] ⚠️ Intento fallido #${intentoActual + 1} registrado.`,
       );
 
+      // ── 3. Buscar siguiente postor activo ─────────────────────────────────
       const siguientePuja = await Puja.findOne({
         where: {
           id_lote: loteId,
@@ -588,9 +626,7 @@ const loteService = {
 
         await mensajeService.enviarMensajeSistema(
           siguientePuja.id_usuario,
-          `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString(
-            "es-ES",
-          )}).`,
+          `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString("es-ES")}).`,
         );
 
         console.log(
@@ -607,6 +643,7 @@ const loteService = {
         };
       }
 
+      // ── 4. No hay más postores — limpiar lote ─────────────────────────────
       console.log(
         `[${SERVICE_NAME}] ⚠️ No hay más postores válidos. Limpiando lote ${loteId}...`,
       );
@@ -626,7 +663,6 @@ const loteService = {
       throw error;
     }
   },
-
   /**
    * @async
    * @function findLotesToStart
