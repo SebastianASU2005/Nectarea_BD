@@ -122,20 +122,15 @@ const usuarioController = {
 
   async update(req, res) {
     try {
-      // 🛑 Definimos los campos que *un administrador* PUEDE cambiar.
-      // Se asume que un administrador puede cambiar más cosas que un usuario normal,
-      // PERO aún queremos evitar que campos como DNI o ID se modifiquen accidentalmente.
-      // Si el administrador necesita cambiar el DNI o rol, debería ser a través de una ruta más específica y controlada.
-      // Por defecto, permitimos cambiar nombre, email, teléfono y el estado `activo`.
       const allowedAdminFields = [
         "nombre",
         "apellido",
         "email",
-        "numero_telefono", // ✅ Debe coincidir con el modelo (antes decía 'telefono')
+        "numero_telefono",
         "activo",
         "rol",
         "nombre_usuario",
-        "dni", // ✅ Debe coincidir con el modelo (antes decía 'DNI')
+        "dni", 
       ];
 
       // Creamos un nuevo objeto solo con las propiedades permitidas.
