@@ -533,7 +533,13 @@ const pujaService = {
       const pujasActivasPendientes = await Puja.findAll({
         where: {
           id_lote: lote.id,
-          estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
+          estado_puja: {
+            [Op.in]: [
+              "activa",
+              "ganadora_pendiente",
+              "ganadora_incumplimiento",
+            ],
+          },
           id_usuario: { [Op.notIn]: usuariosGanadoresActuales },
         },
         attributes: ["id_suscripcion"],
@@ -678,16 +684,15 @@ const pujaService = {
 
       if (!suscripcion) {
         console.warn(
-          `Advertencia: Suscripción para usuario ${userId} en proyecto ${lote.id_proyecto} no encontrada. No se pudo devolver el token.`,
+          `[devolverTokenPorImpago] ⚠️ Suscripción no encontrada para usuario ${userId} en proyecto ${lote.id_proyecto}. Token no devuelto.`,
         );
         if (shouldCommit) await t.commit();
         return { message: "Token no devuelto (suscripción no encontrada)." };
       }
 
-      // DESPUÉS (con fix):
       if (suscripcion.token_consumido) {
         console.warn(
-          `Token no devuelto: suscripción ${suscripcion.id} ya consumió su token en una subasta ganada y pagada.`,
+          `[devolverTokenPorImpago] 🔒 Token NO devuelto: suscripción ${suscripcion.id} del usuario ${userId} ya consumió su token en una subasta ganada y pagada.`,
         );
         if (shouldCommit) await t.commit();
         return {
@@ -700,6 +705,13 @@ const pujaService = {
           by: 1,
           transaction: t,
         });
+        console.log(
+          `[devolverTokenPorImpago] ✅ Token devuelto exitosamente — usuario ${userId}, suscripción ${suscripcion.id}, lote ${loteId}, proyecto ${lote.id_proyecto}.`,
+        );
+      } else {
+        console.log(
+          `[devolverTokenPorImpago] ℹ️ Usuario ${userId} (suscripción ${suscripcion.id}) ya tenía token disponible (tokens_disponibles=${suscripcion.tokens_disponibles}). No se realizó ningún cambio.`,
+        );
       }
 
       if (shouldCommit) {
@@ -711,10 +723,13 @@ const pujaService = {
       if (shouldCommit) {
         await t.rollback();
       }
+      console.error(
+        `[devolverTokenPorImpago] ❌ ERROR al devolver token — usuario ${userId}, lote ${loteId}:`,
+        error.message,
+      );
       throw error;
     }
   },
-
   // -------------------------------------------------------------------
   // FUNCIONES DE CONSULTA (CRON JOB Y ADMINISTRACIÓN)
   // -------------------------------------------------------------------
