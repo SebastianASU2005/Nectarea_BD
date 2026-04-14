@@ -559,7 +559,9 @@ const loteService = {
       if (pujaGanadoraFallida) {
         await pujaGanadoraFallida.update(
           {
-            estado_puja: "ganadora_incumplimiento",
+            estado_puja: {
+              [Op.in]: ["ganadora_pendiente", "ganadora_incumplimiento"], // ← AMBOS ESTADOS
+            },
             fecha_vencimiento_pago: null,
           },
           { transaction: t },
@@ -669,7 +671,7 @@ const loteService = {
       console.error(`[${SERVICE_NAME}] ❌ ERROR:`, error.message);
       throw error;
     }
-  },  
+  },
   /**
    * @async
    * @function findLotesToStart
