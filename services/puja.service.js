@@ -1332,7 +1332,6 @@ const pujaService = {
     pujaId,
     motivoCancelacion = "Cancelación administrativa",
   ) {
-    // ✅ Requires dinámicos para evitar ciclos circulares
     const emailService = require("./email.service");
     const MensajeService = require("./mensaje.service");
     const LoteService = require("./lote.service");
@@ -1408,24 +1407,27 @@ const pujaService = {
         `[${SERVICE_NAME}] ✅ Puja ${pujaId} marcada como 'ganadora_incumplimiento'.`,
       );
 
-      await this.devolverTokenPorImpago(pujaGanadora.id_usuario, loteId, t);
-
-      console.log(
-        `[${SERVICE_NAME}] ✅ Token devuelto a suscripción ID: ${pujaGanadora.id_suscripcion}`,
-      );
+      // ✅ FIX: Se eliminó la llamada a devolverTokenPorImpago de aquí.
+      // La devolución del token ahora ocurre dentro de procesarImpagoLote,
+      // evitando el doble incremento y centralizando la lógica.
 
       const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
 
       await emailService.notificarImpago(usuarioIncumplidor, loteId);
-
       await MensajeService.enviarMensajeSistema(
         usuarioIncumplidor.id,
         motivoCompleto,
       );
+
       console.log(
         `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`,
       );
 
+      // procesarImpagoLote se encarga de: marcar la puja como incumplimiento
+      // (ya hecho arriba), devolver el token y reasignar al siguiente postor.
+      // IMPORTANTE: como la puja ya está en 'ganadora_incumplimiento',
+      // procesarImpagoLote no encontrará ninguna 'ganadora_pendiente' para ese lote
+      // y pasará directo a buscar el siguiente postor activo.
       await LoteService.procesarImpagoLote(loteId, t);
 
       console.log(

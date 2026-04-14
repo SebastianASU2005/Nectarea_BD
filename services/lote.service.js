@@ -530,10 +530,7 @@ const loteService = {
       );
 
       const lote = await Lote.findByPk(loteId, { transaction: t });
-
-      if (!lote) {
-        throw new Error(`Lote ${loteId} no encontrado.`);
-      }
+      if (!lote) throw new Error(`Lote ${loteId} no encontrado.`);
 
       const intentoActual = lote.intentos_fallidos_pago || 0;
 
@@ -569,6 +566,17 @@ const loteService = {
         );
         console.log(
           `[${SERVICE_NAME}] ✅ Puja ID ${pujaGanadoraFallida.id} marcada como 'ganadora_incumplimiento'.`,
+        );
+
+        // ✅ FIX: Devolver token al incumplidor en un único lugar centralizado
+        const PujaService = require("./puja.service");
+        await PujaService.devolverTokenPorImpago(
+          pujaGanadoraFallida.id_usuario,
+          loteId,
+          t,
+        );
+        console.log(
+          `[${SERVICE_NAME}] ✅ Token devuelto al usuario ${pujaGanadoraFallida.id_usuario}.`,
         );
       }
 
@@ -647,7 +655,6 @@ const loteService = {
       console.log(
         `[${SERVICE_NAME}] ⚠️ No hay más postores válidos. Limpiando lote ${loteId}...`,
       );
-
       await this.prepararLoteParaReingreso(lote, t);
 
       if (shouldCommit) await t.commit();
@@ -662,7 +669,7 @@ const loteService = {
       console.error(`[${SERVICE_NAME}] ❌ ERROR:`, error.message);
       throw error;
     }
-  },
+  },  
   /**
    * @async
    * @function findLotesToStart
