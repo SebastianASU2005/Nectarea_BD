@@ -131,7 +131,7 @@ const suscripcionProyectoController = {
             estado_pago: "pendiente",
             mes: 1,
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         const transaccionPendiente = await TransaccionService.create(
@@ -143,7 +143,7 @@ const suscripcionProyectoController = {
             id_pago_mensual: pagoPendiente.id,
             estado_transaccion: "pendiente", // El pago está pendiente del 2FA
           },
-          { transaction: t }
+          { transaction: t },
         );
 
         await t.commit(); // Confirmamos los registros pendientes
@@ -173,7 +173,7 @@ const suscripcionProyectoController = {
           estado_pago: "pendiente",
           mes: 1,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       let transaccionPendiente = await TransaccionService.create(
@@ -185,7 +185,7 @@ const suscripcionProyectoController = {
           id_pago_mensual: pagoPendiente.id,
           estado_transaccion: "pendiente",
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       // 2. Generar la URL de redirección llamando al servicio de Transacciones
@@ -193,7 +193,7 @@ const suscripcionProyectoController = {
         await TransaccionService.generarCheckoutParaTransaccionExistente(
           transaccionPendiente,
           "mercadopago",
-          { transaction: t }
+          { transaction: t },
         );
 
       await t.commit(); // Confirmamos todos los registros
@@ -210,6 +210,58 @@ const suscripcionProyectoController = {
       // Devuelve 400 si el error es de negocio (tus validaciones), 500 para errores inesperados
       const statusCode = error.message.startsWith("❌") ? 400 : 500;
       res.status(statusCode).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
+   * @function adminUpdate
+   * @description Permite a un administrador corregir campos de una suscripción.
+   * Campos permitidos: tokens_disponibles, saldo_a_favor, monto_total_pagado,
+   *                    meses_a_pagar, token_consumido, pago_generado, activo.
+   */
+  async adminUpdate(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Whitelist de campos editables — evita que se sobreescriban FK u otros campos sensibles
+      const CAMPOS_PERMITIDOS = [
+        "tokens_disponibles",
+        "saldo_a_favor",
+        "monto_total_pagado",
+        "meses_a_pagar",
+        "token_consumido",
+        "pago_generado",
+        "activo",
+      ];
+
+      const datosActualizacion = Object.fromEntries(
+        Object.entries(req.body).filter(([key]) =>
+          CAMPOS_PERMITIDOS.includes(key),
+        ),
+      );
+
+      if (Object.keys(datosActualizacion).length === 0) {
+        return res.status(400).json({
+          error: `No se enviaron campos válidos. Campos permitidos: ${CAMPOS_PERMITIDOS.join(", ")}`,
+        });
+      }
+
+      const suscripcion = await suscripcionProyectoService.update(
+        id,
+        datosActualizacion,
+      );
+
+      if (!suscripcion) {
+        return res.status(404).json({ error: "Suscripción no encontrada." });
+      }
+
+      res.status(200).json({
+        message: "Suscripción actualizada correctamente.",
+        suscripcion,
+      });
+    } catch (error) {
+      console.error("Error al actualizar suscripción (admin):", error.message);
+      res.status(500).json({ error: error.message });
     }
   },
 
@@ -255,7 +307,7 @@ const suscripcionProyectoController = {
 
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
-        codigo_2fa
+        codigo_2fa,
       );
 
       if (!isVerified) {
@@ -271,7 +323,7 @@ const suscripcionProyectoController = {
         await TransaccionService.generarCheckoutParaTransaccionExistente(
           transaccionPendiente,
           "mercadopago",
-          { transaction: t }
+          { transaction: t },
         );
 
       await t.commit();
@@ -327,9 +379,8 @@ const suscripcionProyectoController = {
   async findMySubscriptions(req, res) {
     try {
       const userId = req.user.id;
-      const suscripciones = await suscripcionProyectoService.findByUserId(
-        userId
-      );
+      const suscripciones =
+        await suscripcionProyectoService.findByUserId(userId);
       res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -372,7 +423,7 @@ const suscripcionProyectoController = {
   async findById(req, res) {
     try {
       const suscripcion = await suscripcionProyectoService.findById(
-        req.params.id
+        req.params.id,
       );
       if (!suscripcion) {
         return res.status(404).json({ error: "Suscripción no encontrada" });
@@ -394,7 +445,7 @@ const suscripcionProyectoController = {
       const userId = req.user.id;
       const suscripcion = await suscripcionProyectoService.findByIdAndUserId(
         id,
-        userId
+        userId,
       );
       if (!suscripcion) {
         return res
@@ -424,7 +475,7 @@ const suscripcionProyectoController = {
 
       const suscripcionCancelada = await suscripcionProyectoService.softDelete(
         id,
-        usuarioAutenticado // 👈 Se pasa el objeto completo (ID y rol)
+        usuarioAutenticado, // 👈 Se pasa el objeto completo (ID y rol)
       );
 
       res.status(200).json({
@@ -456,7 +507,7 @@ const suscripcionProyectoController = {
 
       const suscripcionEliminada = await suscripcionProyectoService.softDelete(
         req.params.id,
-        usuarioAutenticado // 👈 Se pasa el objeto completo (req.user)
+        usuarioAutenticado, // 👈 Se pasa el objeto completo (req.user)
       );
 
       if (!suscripcionEliminada) {
@@ -500,9 +551,8 @@ const suscripcionProyectoController = {
   async findAllByProjectId(req, res) {
     try {
       const { id_proyecto } = req.params;
-      const suscripciones = await suscripcionProyectoService.findAllByProjectId(
-        id_proyecto
-      );
+      const suscripciones =
+        await suscripcionProyectoService.findAllByProjectId(id_proyecto);
       res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });

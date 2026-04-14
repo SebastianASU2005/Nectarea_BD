@@ -6,7 +6,7 @@ const suscripcionProyectoController = require("../controllers/suscripcion_proyec
 const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { userRateLimiter } = require("../middleware/rateLimiter");
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas y Semidinámicas Primero)
 // =======================================================
@@ -19,7 +19,7 @@ router.post(
   blockAdminTransactions, // ✅ YA TIENE
   checkKYCandTwoFA,
   userRateLimiter,
-  suscripcionProyectoController.iniciarSuscripcion
+  suscripcionProyectoController.iniciarSuscripcion,
 );
 
 // POST /confirmar-2fa
@@ -29,28 +29,28 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions, // ✅ YA TIENE
   checkKYCandTwoFA,
-  suscripcionProyectoController.confirmarSuscripcionCon2FA
+  suscripcionProyectoController.confirmarSuscripcionCon2FA,
 );
 
 // GET /activas
 router.get(
   "/activas",
   authMiddleware.authenticate,
-  suscripcionProyectoController.findAllActivo
+  suscripcionProyectoController.findAllActivo,
 );
 
 // GET /mis_suscripciones
 router.get(
   "/mis_suscripciones",
   authMiddleware.authenticate,
-  suscripcionProyectoController.findMySubscriptions
+  suscripcionProyectoController.findMySubscriptions,
 );
 
 // GET /mis_suscripciones/:id
 router.get(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
-  suscripcionProyectoController.findMySubscriptionById
+  suscripcionProyectoController.findMySubscriptionById,
 );
 
 // DELETE /mis_suscripciones/:id
@@ -59,7 +59,7 @@ router.delete(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
   checkKYCandTwoFA,
-  suscripcionProyectoController.softDeleteMySubscription
+  suscripcionProyectoController.softDeleteMySubscription,
 );
 
 // POST /confirmar-pago (Webhook - puede ser llamado sin autenticación desde MP)
@@ -72,7 +72,7 @@ router.post(
   // Si es por tu frontend: descomentar las siguientes líneas:
   // authMiddleware.authenticate,
   // blockAdminTransactions,
-  suscripcionProyectoController.confirmarSuscripcion
+  suscripcionProyectoController.confirmarSuscripcion,
 );
 
 // =======================================================
@@ -84,7 +84,7 @@ router.get(
   "/metrics/morosidad",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.getMorosityMetrics
+  suscripcionProyectoController.getMorosityMetrics,
 );
 
 // GET /metrics/cancelacion (KPI 5)
@@ -92,7 +92,7 @@ router.get(
   "/metrics/cancelacion",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.getCancellationRate
+  suscripcionProyectoController.getCancellationRate,
 );
 
 // GET /
@@ -100,7 +100,7 @@ router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.findAll
+  suscripcionProyectoController.findAll,
 );
 
 // GET /proyecto/:id_proyecto/all
@@ -108,7 +108,7 @@ router.get(
   "/proyecto/:id_proyecto/all",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.findAllByProjectId
+  suscripcionProyectoController.findAllByProjectId,
 );
 
 // GET /proyecto/:id_proyecto (Solo activas)
@@ -116,7 +116,7 @@ router.get(
   "/proyecto/:id_proyecto",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.findActiveByProjectId
+  suscripcionProyectoController.findActiveByProjectId,
 );
 
 // 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final)
@@ -124,14 +124,20 @@ router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.findById
+  suscripcionProyectoController.findById,
+);
+router.patch(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.adminUpdate,
 );
 
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  suscripcionProyectoController.softDelete
+  suscripcionProyectoController.softDelete,
 );
 
 module.exports = router;
