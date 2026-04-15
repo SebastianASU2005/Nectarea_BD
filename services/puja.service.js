@@ -481,7 +481,6 @@ const pujaService = {
             );
           }
 
-          // Decrement fuera del loop para evitar lecturas inconsistentes
           await suscripcion.decrement("meses_a_pagar", {
             by: mesesAdicionales,
             transaction: t,
@@ -523,14 +522,16 @@ const pujaService = {
         { transaction: t },
       );
 
-      // ── 7. Actualizar ResumenCuenta (ahora sí encuentra los Pagos reales) ─
+      // ── 7. Actualizar ResumenCuenta ─────────────────────────────────────
       await ResumenCuentaService.updateAccountSummaryOnPayment(suscripcion.id, {
         transaction: t,
       });
 
-      // ── 8. Liberar tokens de perdedores ─────────────────────────────────
-      const usuariosGanadoresActuales = [puja.id_usuario];
-      const pujasActivasPendientes = await Puja.findAll({
+      // ── 8. Devolver token a los otros postores retenidos (top 3 minus ganador) ──
+      // ✅ FIX 2: usar devolverTokenPorImpago individualmente en lugar del
+      // increment masivo condicional, garantizando que postores en
+      // "ganadora_incumplimiento" también recuperen su token.
+      const pujasALiberar = await Puja.findAll({
         where: {
           id_lote: lote.id,
           estado_puja: {
@@ -540,26 +541,14 @@ const pujaService = {
               "ganadora_incumplimiento",
             ],
           },
-          id_usuario: { [Op.notIn]: usuariosGanadoresActuales },
+          id_usuario: { [Op.ne]: puja.id_usuario },
         },
-        attributes: ["id_suscripcion"],
+        attributes: ["id_usuario"],
         transaction: t,
       });
 
-      const suscripcionesALiberar = pujasActivasPendientes.map(
-        (p) => p.id_suscripcion,
-      );
-
-      if (suscripcionesALiberar.length > 0) {
-        await SuscripcionProyecto.increment("tokens_disponibles", {
-          by: 1,
-          where: {
-            id: { [Op.in]: suscripcionesALiberar },
-            tokens_disponibles: { [Op.lt]: 1 },
-            token_consumido: false,
-          },
-          transaction: t,
-        });
+      for (const pujaALiberar of pujasALiberar) {
+        await this.devolverTokenPorImpago(pujaALiberar.id_usuario, lote.id, t);
       }
 
       if (shouldCommit) await t.commit();

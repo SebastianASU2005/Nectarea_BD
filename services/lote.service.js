@@ -557,11 +557,10 @@ const loteService = {
       });
 
       if (pujaGanadoraFallida) {
+        // ✅ FIX 1: asignar el string directamente, no un objeto Op.in
         await pujaGanadoraFallida.update(
           {
-            estado_puja: {
-              [Op.in]: ["ganadora_pendiente", "ganadora_incumplimiento"], // ← AMBOS ESTADOS
-            },
+            estado_puja: "ganadora_incumplimiento",
             fecha_vencimiento_pago: null,
           },
           { transaction: t },
@@ -570,7 +569,6 @@ const loteService = {
           `[${SERVICE_NAME}] ✅ Puja ID ${pujaGanadoraFallida.id} marcada como 'ganadora_incumplimiento'.`,
         );
 
-        // ✅ FIX: Devolver token al incumplidor en un único lugar centralizado
         const PujaService = require("./puja.service");
         await PujaService.devolverTokenPorImpago(
           pujaGanadoraFallida.id_usuario,
