@@ -624,6 +624,20 @@ const loteService = {
           },
           { transaction: t },
         );
+        const PujaService = require("./puja.service");
+        const pujasRestantesActivas = await Puja.findAll({
+          where: {
+            id_lote: loteId,
+            estado_puja: "activa",
+            id: { [Op.ne]: siguientePuja.id },
+          },
+          attributes: ["id_usuario"],
+          transaction: t,
+        });
+
+        for (const p of pujasRestantesActivas) {
+          await PujaService.devolverTokenPorImpago(p.id_usuario, loteId, t);
+        }
 
         await emailService.notificarGanadorPuja(
           siguientePuja.usuario,

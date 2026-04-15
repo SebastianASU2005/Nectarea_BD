@@ -610,20 +610,21 @@ const pujaService = {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
-      // DESPUÉS (fix):
       const pujasNoLiberar = await Puja.findAll({
         where: {
           id_lote: id_lote,
-          estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] }, // ← incluye al ganador
+          estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
         },
         order: [["monto_puja", "DESC"]],
         limit: 3,
-        attributes: ["id_usuario"],
+        attributes: ["id_usuario", "id"],
         transaction: t,
       });
 
       const usuariosNoLiberar = pujasNoLiberar.map((p) => p.id_usuario);
+      const idsNoLiberar = pujasNoLiberar.map((p) => p.id);
 
+      // Devolver tokens a P4+
       await SuscripcionProyecto.increment("tokens_disponibles", {
         by: 1,
         where: {
@@ -634,6 +635,19 @@ const pujaService = {
         },
         transaction: t,
       });
+
+      // ✅ FIX 1: Marcar pujas P4+ como "perdedora" para que no queden en "activa"
+      await Puja.update(
+        { estado_puja: "perdedora" },
+        {
+          where: {
+            id_lote: id_lote,
+            estado_puja: "activa",
+            id: { [Op.notIn]: idsNoLiberar },
+          },
+          transaction: t,
+        },
+      );
 
       await t.commit();
     } catch (error) {
