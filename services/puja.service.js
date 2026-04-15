@@ -543,12 +543,12 @@ const pujaService = {
           },
           id_usuario: { [Op.ne]: puja.id_usuario },
         },
-        attributes: ["id_usuario"],
+        attributes: ["id_usuario", "id_suscripcion"],
         transaction: t,
       });
 
       for (const pujaALiberar of pujasALiberar) {
-        await this.devolverTokenPorImpago(pujaALiberar.id_usuario, lote.id, t);
+        await this.devolverTokenPorImpago(pujaALiberar.id_usuario, lote.id, t,pujaALiberar.id_suscripcion);
       }
 
       if (shouldCommit) await t.commit();
@@ -657,82 +657,86 @@ const pujaService = {
     }
   },
   /**
-   * @async
-   * @function devolverTokenPorImpago
-   * @description Devuelve el token comprometido a un usuario después de un impago.
-   * @param {number} userId - ID del usuario que incumplió el pago.
-   * @param {number} loteId - ID del lote (para determinar el proyecto).
-   * @param {object} [externalTransaction] - Transacción de Sequelize opcional.
-   * @returns {Promise<object>} Mensaje de resultado.
-   */
-  async devolverTokenPorImpago(userId, loteId, externalTransaction = null) {
-    const t = externalTransaction || (await sequelize.transaction());
-    const shouldCommit = !externalTransaction;
+ * @async
+ * @function devolverTokenPorImpago
+ * @description Devuelve el token a la suscripción específica que se usó en la puja.
+ * @param {number} userId - ID del usuario (para logging).
+ * @param {number} loteId - ID del lote.
+ * @param {object} [externalTransaction] - Transacción de Sequelize opcional.
+ * @param {number} [suscripcionId] - ID de la suscripción a la que devolver el token (OBLIGATORIO si se conoce).
+ * @returns {Promise<object>}
+ */
+async devolverTokenPorImpago(userId, loteId, externalTransaction = null, suscripcionId = null) {
+  const t = externalTransaction || (await sequelize.transaction());
+  const shouldCommit = !externalTransaction;
 
-    try {
-      const lote = await Lote.findByPk(loteId, {
-        attributes: ["id_proyecto"],
-        transaction: t,
-      });
-      if (!lote) throw new Error(`Lote ID ${loteId} no encontrado.`);
+  try {
+    const lote = await Lote.findByPk(loteId, {
+      attributes: ["id_proyecto"],
+      transaction: t,
+    });
+    if (!lote) throw new Error(`Lote ID ${loteId} no encontrado.`);
 
-      const suscripcion = await SuscripcionProyecto.findOne({
-        where: {
-          id_usuario: userId,
-          id_proyecto: lote.id_proyecto,
-        },
+    let suscripcion = null;
+
+    if (suscripcionId) {
+      // ✅ Usar la suscripción exacta de la puja
+      suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
-
       if (!suscripcion) {
-        console.warn(
-          `[devolverTokenPorImpago] ⚠️ Suscripción no encontrada para usuario ${userId} en proyecto ${lote.id_proyecto}. Token no devuelto.`,
-        );
+        console.warn(`[devolverTokenPorImpago] ⚠️ No se encontró la suscripción ID ${suscripcionId} para usuario ${userId}.`);
+        if (shouldCommit) await t.commit();
+        return { message: "Suscripción no encontrada." };
+      }
+      // Validar que pertenezca al usuario correcto (seguridad)
+      if (suscripcion.id_usuario !== userId) {
+        console.error(`[devolverTokenPorImpago] ❌ Suscripción ${suscripcionId} no pertenece al usuario ${userId}.`);
+        if (shouldCommit) await t.commit();
+        return { message: "Suscripción no válida para este usuario." };
+      }
+    } else {
+      // Fallback (solo por compatibilidad, pero se recomienda siempre pasar suscripcionId)
+      suscripcion = await SuscripcionProyecto.findOne({
+        where: { id_usuario: userId, id_proyecto: lote.id_proyecto },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!suscripcion) {
+        console.warn(`[devolverTokenPorImpago] ⚠️ Suscripción no encontrada para usuario ${userId} en proyecto ${lote.id_proyecto}.`);
         if (shouldCommit) await t.commit();
         return { message: "Token no devuelto (suscripción no encontrada)." };
       }
-
-      if (suscripcion.token_consumido) {
-        console.warn(
-          `[devolverTokenPorImpago] 🔒 Token NO devuelto: suscripción ${suscripcion.id} del usuario ${userId} ya consumió su token en una subasta ganada y pagada.`,
-        );
-        if (shouldCommit) await t.commit();
-        return {
-          message: "Token no devuelto (ya consumido por subasta ganada).",
-        };
-      }
-
-      if (suscripcion.tokens_disponibles < 1) {
-        await suscripcion.increment("tokens_disponibles", {
-          by: 1,
-          transaction: t,
-        });
-        console.log(
-          `[devolverTokenPorImpago] ✅ Token devuelto exitosamente — usuario ${userId}, suscripción ${suscripcion.id}, lote ${loteId}, proyecto ${lote.id_proyecto}.`,
-        );
-      } else {
-        console.log(
-          `[devolverTokenPorImpago] ℹ️ Usuario ${userId} (suscripción ${suscripcion.id}) ya tenía token disponible (tokens_disponibles=${suscripcion.tokens_disponibles}). No se realizó ningún cambio.`,
-        );
-      }
-
-      if (shouldCommit) {
-        await t.commit();
-      }
-
-      return { message: "Token devuelto exitosamente por impago." };
-    } catch (error) {
-      if (shouldCommit) {
-        await t.rollback();
-      }
-      console.error(
-        `[devolverTokenPorImpago] ❌ ERROR al devolver token — usuario ${userId}, lote ${loteId}:`,
-        error.message,
-      );
-      throw error;
     }
-  },
+
+    if (suscripcion.token_consumido) {
+      console.warn(
+        `[devolverTokenPorImpago] 🔒 Token NO devuelto: suscripción ${suscripcion.id} del usuario ${userId} ya consumió su token en una subasta ganada y pagada.`
+      );
+      if (shouldCommit) await t.commit();
+      return { message: "Token no devuelto (ya consumido por subasta ganada)." };
+    }
+
+    if (suscripcion.tokens_disponibles < 1) {
+      await suscripcion.increment("tokens_disponibles", { by: 1, transaction: t });
+      console.log(
+        `[devolverTokenPorImpago] ✅ Token devuelto exitosamente — usuario ${userId}, suscripción ${suscripcion.id}, lote ${loteId}, proyecto ${lote.id_proyecto}.`
+      );
+    } else {
+      console.log(
+        `[devolverTokenPorImpago] ℹ️ Usuario ${userId} (suscripción ${suscripcion.id}) ya tenía token disponible (tokens_disponibles=${suscripcion.tokens_disponibles}). No se realizó ningún cambio.`
+      );
+    }
+
+    if (shouldCommit) await t.commit();
+    return { message: "Token devuelto exitosamente por impago." };
+  } catch (error) {
+    if (shouldCommit) await t.rollback();
+    console.error(`[devolverTokenPorImpago] ❌ ERROR al devolver token — usuario ${userId}, lote ${loteId}:`, error.message);
+    throw error;
+  }
+},
   // -------------------------------------------------------------------
   // FUNCIONES DE CONSULTA (CRON JOB Y ADMINISTRACIÓN)
   // -------------------------------------------------------------------

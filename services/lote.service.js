@@ -485,6 +485,7 @@ const loteService = {
         puja.id_usuario,
         lote.id,
         transaction,
+        puja.id_suscripcion,
       );
     }
 
@@ -557,7 +558,6 @@ const loteService = {
       });
 
       if (pujaGanadoraFallida) {
-        // ✅ FIX 1: asignar el string directamente, no un objeto Op.in
         await pujaGanadoraFallida.update(
           {
             estado_puja: "ganadora_incumplimiento",
@@ -574,12 +574,12 @@ const loteService = {
           pujaGanadoraFallida.id_usuario,
           loteId,
           t,
+          pujaGanadoraFallida.id_suscripcion, // ✅ añadido
         );
         console.log(
           `[${SERVICE_NAME}] ✅ Token devuelto al usuario ${pujaGanadoraFallida.id_usuario}.`,
         );
       }
-
       // ── 2. Registrar intento fallido ──────────────────────────────────────
       await lote.update(
         { intentos_fallidos_pago: intentoActual + 1 },
@@ -631,7 +631,7 @@ const loteService = {
             estado_puja: "activa",
             id: { [Op.ne]: siguientePuja.id },
           },
-          attributes: ["id_usuario"],
+          attributes: ["id_usuario", "id_suscripcion"],
           transaction: t,
         });
 
