@@ -624,28 +624,10 @@ const loteService = {
           },
           { transaction: t },
         );
-        const PujaService = require("./puja.service");
-        const pujasRestantesActivas = await Puja.findAll({
-          where: {
-            id_lote: loteId,
-            estado_puja: "activa",
-            id: { [Op.ne]: siguientePuja.id },
-          },
-          attributes: ["id_usuario", "id_suscripcion"],
-          transaction: t,
-        });
-        console.log(
-          `[${SERVICE_NAME}] 📦 Se devolverán tokens a ${pujasRestantesActivas.length} postores restantes (IDs de suscripción: ${pujasRestantesActivas.map((p) => p.id_suscripcion).join(", ")})`,
-        );
 
-        for (const p of pujasRestantesActivas) {
-          await PujaService.devolverTokenPorImpago(
-            p.id_usuario,
-            loteId,
-            t,
-            p.id_suscripcion,
-          );
-        }
+        // ✅ CORRECCIÓN: NO devolver tokens a los demás postores activos.
+        // Solo se devuelve el token del fallido (ya se hizo arriba).
+        // Los demás mantienen su token retenido hasta que el nuevo ganador pague o falle.
 
         await emailService.notificarGanadorPuja(
           siguientePuja.usuario,
@@ -671,7 +653,7 @@ const loteService = {
           message: `Lote reasignado al siguiente postor (Puja ID: ${siguientePuja.id}).`,
           nuevoGanador: siguientePuja.id_usuario,
         };
-      }
+      } 
 
       // ── 4. No hay más postores — limpiar lote ─────────────────────────────
       console.log(
