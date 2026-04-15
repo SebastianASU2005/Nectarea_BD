@@ -634,9 +634,17 @@ const loteService = {
           attributes: ["id_usuario", "id_suscripcion"],
           transaction: t,
         });
+        console.log(
+          `[${SERVICE_NAME}] 📦 Se devolverán tokens a ${pujasRestantesActivas.length} postores restantes (IDs de suscripción: ${pujasRestantesActivas.map((p) => p.id_suscripcion).join(", ")})`,
+        );
 
         for (const p of pujasRestantesActivas) {
-          await PujaService.devolverTokenPorImpago(p.id_usuario, loteId, t);
+          await PujaService.devolverTokenPorImpago(
+            p.id_usuario,
+            loteId,
+            t,
+            p.id_suscripcion,
+          );
         }
 
         await emailService.notificarGanadorPuja(
