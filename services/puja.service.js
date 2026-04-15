@@ -610,7 +610,8 @@ const pujaService = {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
-      const pujasNoLiberar = await Puja.findAll({
+      // Obtener el TOP 3 (activas + ganadora_pendiente, por si ya se finalizó manual)
+      const pujasTop3 = await Puja.findAll({
         where: {
           id_lote: id_lote,
           estado_puja: { [Op.in]: ["activa", "ganadora_pendiente"] },
@@ -621,29 +622,29 @@ const pujaService = {
         transaction: t,
       });
 
-      const usuariosNoLiberar = pujasNoLiberar.map((p) => p.id_usuario);
-      const idsNoLiberar = pujasNoLiberar.map((p) => p.id);
+      const usuariosTop3 = pujasTop3.map((p) => p.id_usuario);
+      const idsTop3 = pujasTop3.map((p) => p.id);
 
-      // Devolver tokens a P4+
+      // Devolver tokens a P4+ (los que no están en el top 3)
       await SuscripcionProyecto.increment("tokens_disponibles", {
         by: 1,
         where: {
           id_proyecto: lote.id_proyecto,
-          id_usuario: { [Op.notIn]: usuariosNoLiberar },
+          id_usuario: { [Op.notIn]: usuariosTop3 },
           tokens_disponibles: { [Op.lt]: 1 },
           token_consumido: false,
         },
         transaction: t,
       });
 
-      // ✅ FIX 1: Marcar pujas P4+ como "perdedora" para que no queden en "activa"
+      // ✅ MARcar P4+ como "perdedora" (ya no están en carrera)
       await Puja.update(
         { estado_puja: "perdedora" },
         {
           where: {
             id_lote: id_lote,
             estado_puja: "activa",
-            id: { [Op.notIn]: idsNoLiberar },
+            id: { [Op.notIn]: idsTop3 },
           },
           transaction: t,
         },
@@ -655,7 +656,6 @@ const pujaService = {
       throw error;
     }
   },
-
   /**
    * @async
    * @function devolverTokenPorImpago
