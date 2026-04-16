@@ -34,6 +34,7 @@ router.get(
   pujaController.findMyPujaById,
 );
 
+
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
