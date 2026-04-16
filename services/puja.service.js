@@ -7,6 +7,7 @@ const { sequelize } = require("../config/database");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
 const emailService = require("./email.service");
+const usuarioService = require("./usuario.service");
 
 // ✅ NOTA: ProyectoService, PagoService, ResumenCuentaService, emailService,
 // MensajeService, SuscripcionService y LoteService se cargan dinámicamente
@@ -1679,7 +1680,7 @@ const pujaService = {
       motivo_cancelacion: motivo || null,
     });
     try {
-      const admins = await UsuarioService.findAllAdmins();
+      const admins = await usuarioService.findAllAdmins();
       for (const admin of admins) {
         if (admin.email) {
           await emailService.notificarSolicitudCancelacionPuja(admin.email, {
