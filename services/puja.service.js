@@ -6,6 +6,7 @@ const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
+const emailService = require("./email.service");
 
 // ✅ NOTA: ProyectoService, PagoService, ResumenCuentaService, emailService,
 // MensajeService, SuscripcionService y LoteService se cargan dinámicamente
@@ -1462,7 +1463,6 @@ const pujaService = {
         `[${SERVICE_NAME}] ✅ Token devuelto al usuario incumplidor ${usuarioIncumplidor.id}.`,
       );
 
-
       const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
 
       await emailService.notificarImpago(usuarioIncumplidor, loteId);
@@ -1650,6 +1650,56 @@ const pujaService = {
       transaction,
       ...rest,
     });
+  },
+  async solicitarCancelacion(pujaId, userId, motivo) {
+    const puja = await Puja.findByPk(pujaId);
+
+    if (!puja) throw new Error("Puja no encontrada.");
+
+    if (puja.id_usuario !== userId) {
+      throw { statusCode: 403, message: "Esta puja no te pertenece." };
+    }
+
+    if (puja.estado_puja !== "ganadora_pendiente") {
+      throw {
+        statusCode: 409,
+        message: `Solo podés solicitar cancelación en estado 'ganadora_pendiente'. Estado actual: '${puja.estado_puja}'.`,
+      };
+    }
+
+    if (puja.solicitud_cancelacion) {
+      throw {
+        statusCode: 409,
+        message: "Ya existe una solicitud de cancelación para esta puja.",
+      };
+    }
+
+    await puja.update({
+      solicitud_cancelacion: true,
+      motivo_cancelacion: motivo || null,
+    });
+    try {
+      const admins = await UsuarioService.findAllAdmins();
+      for (const admin of admins) {
+        if (admin.email) {
+          await emailService.notificarSolicitudCancelacionPuja(admin.email, {
+            puja,
+            usuario: puja.usuario,
+            motivo: motivo || "No especificado",
+          });
+        }
+      }
+    } catch (err) {
+      console.error(
+        `Error al notificar admins sobre solicitud de cancelación (puja ${pujaId}):`,
+        err.message,
+      );
+    }
+
+    return {
+      success: true,
+      message: "Solicitud enviada. Un administrador revisará tu caso.",
+    };
   },
 };
 

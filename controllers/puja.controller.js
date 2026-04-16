@@ -268,6 +268,32 @@ const pujaController = {
       res.status(500).json({ error: error.message });
     }
   },
+  async solicitarCancelacion(req, res) {
+    const CONTROLLER_NAME = "PujaController.solicitarCancelacion";
+    try {
+      const pujaId = parseInt(req.params.id);
+      const userId = req.user.id;
+      const { motivo } = req.body;
+
+      if (!pujaId || isNaN(pujaId)) {
+        return res.status(400).json({ error: "ID de puja inválido." });
+      }
+
+      const resultado = await pujaService.solicitarCancelacion(
+        pujaId,
+        userId,
+        motivo,
+      );
+
+      return res.status(200).json(resultado);
+    } catch (error) {
+      console.error(`[${CONTROLLER_NAME}] ERROR:`, error.message);
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || "Error al procesar la solicitud.",
+      });
+    }
+  },
 
   /**
    * @async

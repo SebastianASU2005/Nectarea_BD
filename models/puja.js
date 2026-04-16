@@ -36,7 +36,7 @@ const Puja = sequelize.define(
         "perdedora",
         "cancelada",
         "cubierto_por_puja",
-        "ganadora_incumplimiento"
+        "ganadora_incumplimiento",
       ),
       allowNull: false,
       defaultValue: "activa",
@@ -55,10 +55,22 @@ const Puja = sequelize.define(
         key: "id",
       },
     },
+    solicitud_cancelacion: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
+      comment:
+        "El usuario ganador solicitó cancelar su puja ganadora pendiente.",
+    },
+    motivo_cancelacion: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Motivo ingresado por el usuario al solicitar la cancelación.",
+    },
   },
   {
     tableName: "puja",
-  }
+  },
 );
 
 module.exports = Puja;

@@ -3,7 +3,7 @@ const router = express.Router();
 const pujaController = require("../controllers/puja.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { userRateLimiter } = require("../middleware/rateLimiter");
 // RUTAS PARA USUARIOS
 router.post(
   "/",
@@ -32,6 +32,12 @@ router.get(
   "/mis_pujas/:id",
   authMiddleware.authenticate,
   pujaController.findMyPujaById,
+);
+router.post(
+  "/mis_pujas/:id/solicitar-cancelacion",
+  authMiddleware.authenticate,
+  blockAdminTransactions,
+  pujaController.solicitarCancelacion,
 );
 /*
 router.delete(
