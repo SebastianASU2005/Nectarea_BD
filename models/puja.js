@@ -63,7 +63,7 @@ const Puja = sequelize.define(
         "El usuario ganador solicitó cancelar su puja ganadora pendiente.",
     },
     motivo_cancelacion: {
-      type: DataTypes.TEXT,
+      type: DataTypes.STRING(255),
       allowNull: true,
       comment: "Motivo ingresado por el usuario al solicitar la cancelación.",
     },
