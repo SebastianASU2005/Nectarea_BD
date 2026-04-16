@@ -50,6 +50,12 @@ router.post(
 );
 
 // RUTAS PARA ADMINISTRADORES
+router.post(
+  "/mis_pujas/:id/solicitar-cancelacion",
+  authMiddleware.authenticate,
+  blockAdminTransactions,
+  pujaController.solicitarCancelacion,
+);
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -70,12 +76,6 @@ router.delete(
 );
 
 // Dinámicas al final
-router.post(
-  "/cancelar_puja_ganadora/:id",
-  authMiddleware.authenticate,
-  authMiddleware.authorizeAdmin,
-  pujaController.cancelarPujaGanadoraAnticipada,
-);
 router.get(
   "/:id",
   authMiddleware.authenticate,
