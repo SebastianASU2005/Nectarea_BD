@@ -1653,7 +1653,21 @@ const pujaService = {
     });
   },
   async solicitarCancelacion(pujaId, userId, motivo) {
-    const puja = await Puja.findByPk(pujaId);
+    // Traer la puja CON el usuario y el lote para el email
+    const puja = await Puja.findByPk(pujaId, {
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+        {
+          model: Lote,
+          as: "lote",
+          attributes: ["id", "nombre_lote", "id_proyecto"],
+        },
+      ],
+    });
 
     if (!puja) throw new Error("Puja no encontrada.");
 
@@ -1679,6 +1693,8 @@ const pujaService = {
       solicitud_cancelacion: true,
       motivo_cancelacion: motivo || null,
     });
+
+    // Notificar admins — ahora puja.usuario existe
     try {
       const admins = await usuarioService.findAllAdmins();
       for (const admin of admins) {
@@ -1699,7 +1715,8 @@ const pujaService = {
 
     return {
       success: true,
-      message: "Solicitud enviada. Un administrador revisará tu caso.",
+      message:
+        "Solicitud enviada. Un administrador revisará tu caso a la brevedad.",
     };
   },
 };

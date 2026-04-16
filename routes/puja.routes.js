@@ -33,18 +33,7 @@ router.get(
   authMiddleware.authenticate,
   pujaController.findMyPujaById,
 );
-router.post(
-  "/mis_pujas/:id/solicitar-cancelacion",
-  authMiddleware.authenticate,
-  blockAdminTransactions,
-  pujaController.solicitarCancelacion,
-);
-/*
-router.delete(
-  "/mis_pujas/:id",
-  authMiddleware.authenticate,
-  pujaController.softDeleteMyPuja,
-);*/
+
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
@@ -80,6 +69,12 @@ router.delete(
 );
 
 // Dinámicas al final
+router.post(
+  "/cancelar_puja_ganadora/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.cancelarPujaGanadoraAnticipada,
+);
 router.get(
   "/:id",
   authMiddleware.authenticate,
