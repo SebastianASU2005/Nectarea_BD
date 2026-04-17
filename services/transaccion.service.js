@@ -1425,6 +1425,23 @@ const transaccionService = {
       throw new Error("Error al eliminar transacción.");
     }
   },
+  async findTransaccionIdByPujaId(pujaId, options = {}) {
+    try {
+      const transaccion = await Transaccion.findOne({
+        where: { id_puja: pujaId },
+        attributes: ["id"], // Solo traemos el ID
+        transaction: options.transaction,
+        raw: true, // Para obtener objeto plano
+      });
+      return transaccion ? transaccion.id : null;
+    } catch (error) {
+      console.error(
+        `Error al obtener ID de transacción para puja ${pujaId}:`,
+        error,
+      );
+      throw new Error("Error al buscar transacción por ID de puja");
+    }
+  },
 };
 
 module.exports = transaccionService;

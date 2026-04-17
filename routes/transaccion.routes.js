@@ -4,7 +4,7 @@ const express = require("express");
 const router = express.Router();
 const transaccionController = require("../controllers/transaccion.controller");
 const authMiddleware = require("../middleware/auth.middleware");
-const { userRateLimiter } = require("../middleware/rateLimiter")
+const { userRateLimiter } = require("../middleware/rateLimiter");
 // =======================================================
 // RUTAS PARA ADMINISTRADORES (Estáticas Primero)
 // =======================================================
@@ -14,7 +14,7 @@ router.get(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  transaccionController.findAll
+  transaccionController.findAll,
 );
 
 // NUEVA RUTA: Ruta para que el administrador pueda forzar la confirmación (Semidinámica, va antes que /:id)
@@ -22,7 +22,7 @@ router.put(
   "/:id/confirmar",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  transaccionController.confirmarTransaccion
+  transaccionController.confirmarTransaccion,
 );
 
 // =======================================================
@@ -34,18 +34,24 @@ router.get(
   "/mis_transacciones",
   authMiddleware.authenticate,
   userRateLimiter,
-  transaccionController.findMyTransactions
+  transaccionController.findMyTransactions,
 );
 
 router.get(
   "/mis_transacciones/:id",
   authMiddleware.authenticate,
-  transaccionController.findMyTransactionById
+  transaccionController.findMyTransactionById,
 );
 router.put(
   "/mis_transacciones/:id",
   authMiddleware.authenticate,
-  transaccionController.updateMyTransaction
+  transaccionController.updateMyTransaction,
+);
+router.get(
+  "/por-puja/:pujaId/transaccion-id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  transaccionController.getTransaccionIdByPujaId,
 );
 
 // =======================================================
@@ -56,19 +62,19 @@ router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  transaccionController.findById
+  transaccionController.findById,
 );
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  transaccionController.update
+  transaccionController.update,
 );
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  transaccionController.softDelete
+  transaccionController.softDelete,
 );
 
 module.exports = router;
