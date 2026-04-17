@@ -66,7 +66,7 @@ let clienteLimiterStore = null;
  */
 async function initRateLimiters() {
   // Global: 100 req/min por IP (aplica a TODOS, autenticados o no)
-  globalLimiterStore = await createDbLimiter("global_ip", 300, 60);
+  globalLimiterStore = await createDbLimiter("global_ip", 100, 60);
 
   // Por usuario cliente autenticado: 300 req/min por userId
   clienteLimiterStore = await createDbLimiter("cliente", 300, 60);
