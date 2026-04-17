@@ -514,6 +514,38 @@ const pujaController = {
       });
     }
   },
+  /**
+   * @async
+   * @function findBySuscripcionId
+   * @description Obtiene pujas por ID de suscripción. Solo admin. Puede filtrar por estado (?estado_puja=activa)
+   */
+  async findBySuscripcionId(req, res) {
+    try {
+      const { suscripcionId } = req.params;
+      let { estado_puja } = req.query; // ej: ?estado_puja=ganadora_pendiente
+
+      if (!suscripcionId || isNaN(parseInt(suscripcionId))) {
+        return res.status(400).json({ error: "ID de suscripción inválido." });
+      }
+
+      // Si estado_puja viene con comas, lo convertimos a array para múltiples filtros
+      if (
+        estado_puja &&
+        typeof estado_puja === "string" &&
+        estado_puja.includes(",")
+      ) {
+        estado_puja = estado_puja.split(",").map((s) => s.trim());
+      }
+
+      const pujas = await pujaService.findBySuscripcionId(
+        parseInt(suscripcionId),
+        estado_puja || null,
+      );
+      res.status(200).json(pujas);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = pujaController;

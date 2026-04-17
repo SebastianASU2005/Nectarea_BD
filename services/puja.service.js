@@ -1719,6 +1719,60 @@ const pujaService = {
         "Solicitud enviada. Un administrador revisará tu caso a la brevedad.",
     };
   },
+  /**
+   * @param {number} suscripcionId
+   * @param {string|string[]} [estado_puja] - Opcional: filtra por uno o varios estados de puja.
+   * @returns {Promise<Puja[]>}
+   */
+  async findBySuscripcionId(suscripcionId, estado_puja = null) {
+    const where = { id_suscripcion: suscripcionId };
+
+    if (estado_puja) {
+      // Si es un array, usamos Op.in; si es string, filtro exacto
+      if (Array.isArray(estado_puja)) {
+        where.estado_puja = { [Op.in]: estado_puja };
+      } else {
+        where.estado_puja = estado_puja;
+      }
+    }
+
+    return Puja.findAll({
+      where,
+      include: [
+        {
+          model: Lote,
+          as: "lote",
+          attributes: [
+            "id",
+            "nombre_lote",
+            "precio_base",
+            "estado_subasta",
+            "id_proyecto",
+            "latitud",
+            "longitud",
+          ],
+          include: [
+            {
+              model: Proyecto,
+              as: "proyectoLote",
+              attributes: [
+                "id",
+                "nombre_proyecto",
+                "tipo_inversion",
+                "estado_proyecto",
+              ],
+            },
+          ],
+        },
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+        },
+      ],
+      order: [["id", "DESC"]],
+    });
+  },
 };
 
 module.exports = pujaService;

@@ -34,7 +34,6 @@ router.get(
   pujaController.findMyPujaById,
 );
 
-
 router.post(
   "/iniciar-pago/:id",
   authMiddleware.authenticate,
@@ -55,6 +54,12 @@ router.post(
   authMiddleware.authenticate,
   blockAdminTransactions,
   pujaController.solicitarCancelacion,
+);
+router.get(
+  "/suscripcion/:suscripcionId",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.findBySuscripcionId,
 );
 router.get(
   "/",
