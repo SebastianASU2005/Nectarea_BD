@@ -7,20 +7,13 @@ const Pago = require("../models/pago");
 const Usuario = require("../models/usuario");
 const verificacionIdentidadService = require("./verificacionIdentidad.service");
 const ContratoPlantilla = require("../models/ContratoPlantilla");
+const Adhesion = require("../models/adhesion");
 
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Firmados (Registro de Auditoría).
  * Implementa la **AUTO-DETECCIÓN** de la Inversión o Suscripción válida asociada al contrato.
  */
 const contratoFirmadoService = {
-  /**
-   * Registra la auditoría completa de un Contrato Firmado.
-   * La función realiza validaciones críticas de KYC, coherencia y auto-detección
-   * de la entidad de negocio (Inversión o Suscripción) asociada a la firma.
-   * @param {object} signatureData - Datos de la firma del contrato.
-   * @returns {Promise<ContratoFirmado>} El registro de auditoría creado.
-   * @throws {Error} Si fallan las validaciones de negocio o seguridad.
-   */
   async registerSignedContract(signatureData) {
     const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } =
       signatureData;
@@ -38,7 +31,6 @@ const contratoFirmadoService = {
       await verificacionIdentidadService.getVerificationStatus(
         id_usuario_firmante,
       );
-
     if (
       !verificacionKYC ||
       verificacionKYC.estado_verificacion !== "APROBADA"
@@ -50,32 +42,24 @@ const contratoFirmadoService = {
 
     // 2. OBTENER Y VALIDAR EL PROYECTO
     const proyecto = await Proyecto.findByPk(id_proyecto);
-    if (!proyecto) {
-      throw new Error("❌ El proyecto especificado no existe.");
-    }
+    if (!proyecto) throw new Error("❌ El proyecto especificado no existe.");
 
-    // 2.5. VALIDACIÓN CRÍTICA DE SEGURIDAD: Verificar que la plantilla pertenezca al proyecto.
+    // 3. VALIDAR PLANTILLA
     const plantilla = await ContratoPlantilla.findByPk(id_contrato_plantilla);
-
-    if (!plantilla) {
+    if (!plantilla)
       throw new Error("❌ La plantilla de contrato especificada no existe.");
-    }
-
-    const idProyectoNum = parseInt(id_proyecto);
-
-    if (plantilla.id_proyecto !== idProyectoNum) {
+    if (plantilla.id_proyecto !== parseInt(id_proyecto)) {
       throw new Error(
         `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
       );
     }
-
     if (!plantilla.activo) {
       throw new Error(
         "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada.",
       );
     }
 
-    // 3. AUTO-DETECCIÓN: Buscar la Inversión o Suscripción válida asociada al usuario/proyecto.
+    // 4. AUTO-DETECCIÓN DE ENTIDAD VÁLIDA
     let inversionValida = null;
     let suscripcionValida = null;
 
@@ -92,31 +76,32 @@ const contratoFirmadoService = {
     }
 
     if (proyecto.tipo_inversion === "mensual") {
-      const suscripcion = await SuscripcionProyecto.findOne({
+      // 🔥 NUEVO: Buscar una suscripción activa asociada a una adhesión con al menos una cuota pagada
+      // Primero, obtener las adhesiones del usuario en este proyecto con cuotas_pagadas > 0
+      const adhesion = await Adhesion.findOne({
         where: {
           id_usuario: id_usuario_firmante,
           id_proyecto: id_proyecto,
-          activo: true,
+          cuotas_pagadas: { [Op.gt]: 0 },
+          estado: { [Op.in]: ["en_curso", "completada"] },
         },
         order: [["id", "DESC"]],
       });
 
-      if (suscripcion) {
-        const primerPago = await Pago.findOne({
+      if (adhesion && adhesion.id_suscripcion) {
+        const suscripcion = await SuscripcionProyecto.findOne({
           where: {
-            id_suscripcion: suscripcion.id,
-            mes: 1,
-            estado_pago: "pagado",
+            id: adhesion.id_suscripcion,
+            activo: true,
           },
         });
-
-        if (primerPago) {
+        if (suscripcion) {
           suscripcionValida = suscripcion;
         }
       }
     }
 
-    // 4. VALIDACIONES DE COHERENCIA DE NEGOCIO
+    // 5. VALIDACIONES DE COHERENCIA
     if (!inversionValida && !suscripcionValida) {
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
@@ -124,7 +109,7 @@ const contratoFirmadoService = {
         );
       } else {
         throw new Error(
-          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`,
+          `❌ Para proyectos mensuales, debes haber pagado al menos una cuota de tu adhesión antes de firmar el contrato.`,
         );
       }
     }
@@ -135,19 +120,7 @@ const contratoFirmadoService = {
       );
     }
 
-    if (inversionValida && proyecto.tipo_inversion !== "directo") {
-      throw new Error(
-        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`,
-      );
-    }
-
-    if (suscripcionValida && proyecto.tipo_inversion !== "mensual") {
-      throw new Error(
-        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`,
-      );
-    }
-
-    // 5. VERIFICAR QUE NO EXISTA YA UN CONTRATO FIRMADO
+    // 6. VERIFICAR QUE NO EXISTA YA UN CONTRATO FIRMADO
     if (inversionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -155,14 +128,11 @@ const contratoFirmadoService = {
           estado_firma: "FIRMADO",
         },
       });
-
-      if (contratoExistente) {
+      if (contratoExistente)
         throw new Error(
           "❌ Ya existe un contrato firmado para esta inversión.",
         );
-      }
     }
-
     if (suscripcionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -170,15 +140,13 @@ const contratoFirmadoService = {
           estado_firma: "FIRMADO",
         },
       });
-
-      if (contratoExistente) {
+      if (contratoExistente)
         throw new Error(
           "❌ Ya existe un contrato firmado para esta suscripción.",
         );
-      }
     }
 
-    // 6. CREAR EL REGISTRO DE AUDITORÍA
+    // 7. CREAR EL REGISTRO DE AUDITORÍA
     const newContract = await ContratoFirmado.create({
       ...signatureData,
       id_inversion_asociada: inversionValida ? inversionValida.id : null,
@@ -188,18 +156,13 @@ const contratoFirmadoService = {
 
     return newContract;
   },
-
   /**
-   * Valida si el usuario es elegible para firmar un contrato.
-   * NO crea ningún registro, solo valida.
-   * @param {object} data - Datos para validación
-   * @returns {Promise<object>} Datos de inversión/suscripción válida
-   * @throws {Error} Si falla cualquier validación
+   * Valida si el usuario es elegible para firmar un contrato (sin crear registro).
+   * Ahora incluye la validación de adhesión con al menos una cuota pagada.
    */
   async validateContractEligibility(data) {
     const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } = data;
 
-    // Verificar que el usuario no sea admin
     const usuario =
       await require("./usuario.service").findById(id_usuario_firmante);
     if (usuario && usuario.rol === "admin") {
@@ -208,12 +171,11 @@ const contratoFirmadoService = {
       );
     }
 
-    // 1. Verificación KYC
+    // KYC
     const verificacionKYC =
       await verificacionIdentidadService.getVerificationStatus(
         id_usuario_firmante,
       );
-
     if (
       !verificacionKYC ||
       verificacionKYC.estado_verificacion !== "APROBADA"
@@ -223,32 +185,22 @@ const contratoFirmadoService = {
       );
     }
 
-    // 2. Validar proyecto
+    // Proyecto
     const proyecto = await Proyecto.findByPk(id_proyecto);
-    if (!proyecto) {
-      throw new Error("❌ El proyecto especificado no existe.");
-    }
+    if (!proyecto) throw new Error("❌ El proyecto especificado no existe.");
 
-    // 3. Validar plantilla
+    // Plantilla
     const plantilla = await ContratoPlantilla.findByPk(id_contrato_plantilla);
-    if (!plantilla) {
+    if (!plantilla)
       throw new Error("❌ La plantilla de contrato especificada no existe.");
-    }
-
-    const idProyectoNum = parseInt(id_proyecto);
-    if (plantilla.id_proyecto !== idProyectoNum) {
+    if (plantilla.id_proyecto !== parseInt(id_proyecto)) {
       throw new Error(
-        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
+        `❌ Error de seguridad: La plantilla no pertenece al proyecto.`,
       );
     }
+    if (!plantilla.activo) throw new Error("❌ La plantilla está inactiva.");
 
-    if (!plantilla.activo) {
-      throw new Error(
-        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada.",
-      );
-    }
-
-    // 4. Auto-detección de inversión/suscripción
+    // Auto-detección
     let inversionValida = null;
     let suscripcionValida = null;
 
@@ -265,62 +217,42 @@ const contratoFirmadoService = {
     }
 
     if (proyecto.tipo_inversion === "mensual") {
-      const suscripcion = await SuscripcionProyecto.findOne({
+      const adhesion = await Adhesion.findOne({
         where: {
           id_usuario: id_usuario_firmante,
           id_proyecto: id_proyecto,
-          activo: true,
+          cuotas_pagadas: { [Op.gt]: 0 },
+          estado: { [Op.in]: ["en_curso", "completada"] },
         },
         order: [["id", "DESC"]],
       });
-
-      if (suscripcion) {
-        const primerPago = await Pago.findOne({
-          where: {
-            id_suscripcion: suscripcion.id,
-            mes: 1,
-            estado_pago: "pagado",
-          },
+      if (adhesion && adhesion.id_suscripcion) {
+        suscripcionValida = await SuscripcionProyecto.findOne({
+          where: { id: adhesion.id_suscripcion, activo: true },
         });
-
-        if (primerPago) {
-          suscripcionValida = suscripcion;
-        }
       }
     }
 
-    // 5. Validaciones de coherencia
     if (!inversionValida && !suscripcionValida) {
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
-          `❌ Debes completar el pago de tu inversión antes de firmar el contrato para el proyecto "${proyecto.nombre_proyecto}".`,
+          `❌ Debes completar el pago de tu inversión antes de firmar.`,
         );
       } else {
         throw new Error(
-          `❌ Debes tener una suscripción activa con el pago inicial (Mes 1) completado para el proyecto "${proyecto.nombre_proyecto}".`,
+          `❌ Debes pagar al menos una cuota de tu adhesión antes de firmar el contrato.`,
         );
       }
     }
 
-    if (inversionValida && suscripcionValida) {
-      throw new Error(
-        "❌ Error de integridad: Se encontró una inversión Y una suscripción. Contacta soporte.",
-      );
-    }
+    if (inversionValida && suscripcionValida)
+      throw new Error("❌ Inconsistencia de entidades.");
+    if (inversionValida && proyecto.tipo_inversion !== "directo")
+      throw new Error("❌ Inconsistencia de tipo.");
+    if (suscripcionValida && proyecto.tipo_inversion !== "mensual")
+      throw new Error("❌ Inconsistencia de tipo.");
 
-    if (inversionValida && proyecto.tipo_inversion !== "directo") {
-      throw new Error(
-        `❌ Inconsistencia: Se encontró una inversión, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'directo'.`,
-      );
-    }
-
-    if (suscripcionValida && proyecto.tipo_inversion !== "mensual") {
-      throw new Error(
-        `❌ Inconsistencia: Se encontró una suscripción, pero el proyecto "${proyecto.nombre_proyecto}" no es de tipo 'mensual'.`,
-      );
-    }
-
-    // 6. Verificar contrato duplicado
+    // Verificar duplicado
     if (inversionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -328,14 +260,9 @@ const contratoFirmadoService = {
           estado_firma: "FIRMADO",
         },
       });
-
-      if (contratoExistente) {
-        throw new Error(
-          "❌ Ya existe un contrato firmado para esta inversión.",
-        );
-      }
+      if (contratoExistente)
+        throw new Error("❌ Ya existe contrato firmado para esta inversión.");
     }
-
     if (suscripcionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -343,20 +270,11 @@ const contratoFirmadoService = {
           estado_firma: "FIRMADO",
         },
       });
-
-      if (contratoExistente) {
-        throw new Error(
-          "❌ Ya existe un contrato firmado para esta suscripción.",
-        );
-      }
+      if (contratoExistente)
+        throw new Error("❌ Ya existe contrato firmado para esta suscripción.");
     }
 
-    // ✅ Si llegamos aquí, todo está OK
-    return {
-      inversionValida,
-      suscripcionValida,
-      proyecto,
-    };
+    return { inversionValida, suscripcionValida, proyecto };
   },
 
   /**
@@ -452,7 +370,7 @@ const contratoFirmadoService = {
   },
   /**
    * Rastrea el estado de pago y firma de un usuario para un proyecto.
-   * Útil para el frontend: saber si el usuario pagó y si ya firmó el contrato.
+   * Útil para el frontend: saber si el usuario pagó la adhesión y si ya firmó el contrato.
    *
    * @param {number} userId - ID del usuario
    * @param {number} projectId - ID del proyecto
@@ -473,9 +391,6 @@ const contratoFirmadoService = {
     }
 
     // ─── CASO: Inversión directa ───────────────────────────────────────────────
-    // Para proyectos directos no hay ambigüedad: solo puede haber una inversión
-    // pagada por usuario/proyecto (el proyecto se Finaliza al pagarse).
-
     if (proyecto.tipo_inversion === "directo") {
       const inversion = await Inversion.findOne({
         where: {
@@ -553,15 +468,8 @@ const contratoFirmadoService = {
     }
 
     // ─── CASO: Suscripción mensual ─────────────────────────────────────────────
-    // Una persona PUEDE tener múltiples suscripciones activas al mismo proyecto.
-    // Lógica:
-    //   1. Traer TODAS las suscripciones activas del usuario en el proyecto.
-    //   2. Para cada una, verificar si tiene el primer pago confirmado.
-    //   3. De las que tienen pago, buscar si alguna ya tiene contrato firmado.
-    //   4. Si hay una sin firmar → puede_firmar: true (prioridad: la más reciente).
-    //   5. Si todas están firmadas → puede_firmar: false.
-
     if (proyecto.tipo_inversion === "mensual") {
+      // 1. Buscar todas las suscripciones activas del usuario en este proyecto
       const suscripciones = await SuscripcionProyecto.findAll({
         where: {
           id_usuario: userId,
@@ -589,22 +497,28 @@ const contratoFirmadoService = {
         };
       }
 
-      // Construir detalle completo por cada suscripción
+      // 2. Para cada suscripción, verificar si tiene al menos una cuota de adhesión pagada
       const suscripcionesDetalle = [];
+      let algunaConPagoAdhesion = false;
+      let algunaConContrato = false;
+      let suscripcionPendienteFirma = null;
 
       for (const suscripcion of suscripciones) {
-        const primerPago = await Pago.findOne({
+        // Buscar la adhesión asociada a esta suscripción
+        const adhesion = await Adhesion.findOne({
           where: {
             id_suscripcion: suscripcion.id,
-            mes: 1,
-            estado_pago: "pagado",
+            cuotas_pagadas: { [Op.gt]: 0 }, // al menos una cuota pagada
+            estado: { [Op.in]: ["en_curso", "completada"] },
           },
+          order: [["id", "DESC"]],
         });
 
-        const tienePago = !!primerPago;
+        const tienePagoAdhesion = !!adhesion;
+        if (tienePagoAdhesion) algunaConPagoAdhesion = true;
 
         let contratoFirmado = null;
-        if (tienePago) {
+        if (tienePagoAdhesion) {
           contratoFirmado = await ContratoFirmado.findOne({
             where: {
               id_suscripcion_asociada: suscripcion.id,
@@ -622,13 +536,29 @@ const contratoFirmadoService = {
           });
         }
 
+        const tieneContrato = !!contratoFirmado;
+        if (tieneContrato) algunaConContrato = true;
+
+        const puedeFirmar = tienePagoAdhesion && !tieneContrato;
+        if (puedeFirmar && !suscripcionPendienteFirma) {
+          suscripcionPendienteFirma = {
+            suscripcion_id: suscripcion.id,
+            adhesion_id: adhesion.id,
+            adhesion_estado: adhesion.estado,
+            cuotas_pagadas: adhesion.cuotas_pagadas,
+            cuotas_totales: adhesion.cuotas_totales,
+          };
+        }
+
         suscripcionesDetalle.push({
           suscripcion_id: suscripcion.id,
-          tiene_pago: tienePago,
-          tiene_contrato_firmado: !!contratoFirmado,
-          puede_firmar: tienePago && !contratoFirmado,
-          monto: primerPago ? primerPago.monto : null,
-          fecha_pago: primerPago ? primerPago.createdAt : null,
+          adhesion_id: adhesion ? adhesion.id : null,
+          tiene_pago_adhesion: tienePagoAdhesion,
+          cuotas_pagadas: adhesion ? adhesion.cuotas_pagadas : 0,
+          cuotas_totales: adhesion ? adhesion.cuotas_totales : 0,
+          adhesion_estado: adhesion ? adhesion.estado : null,
+          tiene_contrato_firmado: tieneContrato,
+          puede_firmar: puedeFirmar,
           contrato_firmado: contratoFirmado
             ? {
                 id: contratoFirmado.id,
@@ -642,52 +572,41 @@ const contratoFirmadoService = {
         });
       }
 
-      // ── Determinar el estado global para el frontend ──────────────────────────
-
-      // Suscripción pendiente de firma: pagada pero sin contrato (la más reciente primero)
-      const pendienteDeFirma = suscripcionesDetalle.find((s) => s.puede_firmar);
-
-      // ¿Tiene al menos una firmada?
-      const algunaFirmada = suscripcionesDetalle.some(
-        (s) => s.tiene_contrato_firmado,
-      );
-
-      // ¿Tiene al menos un pago confirmado en alguna suscripción?
-      const algunPago = suscripcionesDetalle.some((s) => s.tiene_pago);
-
-      let mensaje;
-      if (pendienteDeFirma) {
-        mensaje = algunaFirmada
-          ? `El usuario tiene ${suscripcionesDetalle.filter((s) => s.tiene_contrato_firmado).length} suscripción(es) firmada(s) y 1 suscripción con pago confirmado pendiente de firma.`
-          : "El usuario tiene un pago confirmado pero aún no firmó el contrato.";
-      } else if (algunaFirmada) {
+      // Construir mensaje según el estado
+      let mensaje = "";
+      if (suscripcionPendienteFirma) {
+        mensaje = algunaConContrato
+          ? `El usuario tiene al menos una suscripción con contrato firmado y otra con pago de adhesión pendiente de firma.`
+          : "El usuario ha pagado al menos una cuota de adhesión y puede firmar el contrato.";
+      } else if (algunaConContrato) {
         mensaje =
-          "Todas las suscripciones con pago confirmado ya tienen contrato firmado.";
+          "El usuario ya tiene un contrato firmado para todas las suscripciones con pago de adhesión.";
+      } else if (!algunaConPagoAdhesion) {
+        mensaje =
+          "El usuario aún no ha pagado ninguna cuota de adhesión. No puede firmar el contrato.";
       } else {
         mensaje =
-          "El usuario aún no tiene pagos confirmados en ninguna suscripción.";
+          "El usuario tiene pago de adhesión pero todas las suscripciones ya tienen contrato firmado.";
       }
 
       return {
-        tiene_pago: algunPago,
-        tiene_contrato_firmado: algunaFirmada,
-        // puede_firmar apunta a la suscripción más reciente sin firma (si existe)
-        puede_firmar: !!pendienteDeFirma,
-        // entidad_pagadora apunta a la que necesita firma (para que el front sepa a cuál dirigir)
-        entidad_pagadora: pendienteDeFirma
+        tiene_pago: algunaConPagoAdhesion, // ✅ indica si pagó al menos una cuota de adhesión
+        tiene_contrato_firmado: algunaConContrato,
+        puede_firmar: !!suscripcionPendienteFirma,
+        // entidad_pagadora apunta a la suscripción/adhesión que necesita firma (si existe)
+        entidad_pagadora: suscripcionPendienteFirma
           ? {
               tipo: "suscripcion",
-              id: pendienteDeFirma.suscripcion_id,
-              monto: pendienteDeFirma.monto,
-              fecha: pendienteDeFirma.fecha_pago,
-              estado: "pagado",
+              id: suscripcionPendienteFirma.suscripcion_id,
+              adhesion_id: suscripcionPendienteFirma.adhesion_id,
+              adhesion_estado: suscripcionPendienteFirma.adhesion_estado,
+              cuotas_pagadas: suscripcionPendienteFirma.cuotas_pagadas,
+              cuotas_totales: suscripcionPendienteFirma.cuotas_totales,
             }
           : null,
-        // contrato_firmado apunta al más reciente firmado (para mostrar en el historial)
         contrato_firmado:
           suscripcionesDetalle.find((s) => s.contrato_firmado)
             ?.contrato_firmado || null,
-        // detalle completo por si el front quiere mostrar el historial de suscripciones
         suscripciones_detalle: suscripcionesDetalle,
         proyecto: {
           id: proyecto.id,

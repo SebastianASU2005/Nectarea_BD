@@ -543,6 +543,8 @@ const suscripcionProyectoService = {
    * valida la puja ganadora, registra la cancelación y limpia los pagos pendientes o vencidos.
    * Si el usuario tiene una puja ganadora_pendiente, la cancela y procesa el lote
    * (siguiente postor o limpieza) dentro de la misma transacción atómica.
+   * Si la suscripción tiene una adhesión asociada NO completada, delega la cancelación completa
+   * a adhesionService.cancelarAdhesion.
    * @param {number} suscripcionId - ID de la suscripción a cancelar.
    * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol).
    * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
@@ -574,6 +576,31 @@ const suscripcionProyectoService = {
           "Acceso denegado. La suscripción no te pertenece y no tienes permisos de administrador.",
         );
       }
+
+      // 🔥 NUEVO: Verificar si existe una adhesión asociada y no está completada
+      const Adhesion = require("../models/adhesion");
+      const adhesion = await Adhesion.findOne({
+        where: { id_suscripcion: suscripcionId },
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+
+      if (adhesion && adhesion.estado !== "completada") {
+        // La adhesión está pendiente o en curso → cancelarla completamente
+        const adhesionService = require("./adhesion.service");
+        await adhesionService.cancelarAdhesion(
+          adhesion.id,
+          usuarioAutenticado.id,
+          esAdministrador,
+          "Cancelación de suscripción antes de completar adhesión",
+          t, // pasar la transacción actual
+        );
+        // La adhesión ya desactivó la suscripción y liberó cupo, así que podemos finalizar
+        await t.commit();
+        return suscripcion; // La suscripción ya quedó inactiva
+      }
+
+      // Si no hay adhesión o ya está completada, continuar con la lógica normal de cancelación de suscripción
 
       // 2. Validar que no tenga pujas ganadas y pagadas
       const hasPaidBid = await pujaService.hasWonAndPaidBid(
@@ -731,7 +758,6 @@ const suscripcionProyectoService = {
       throw error;
     }
   },
-
   /**
    * @async
    * @private

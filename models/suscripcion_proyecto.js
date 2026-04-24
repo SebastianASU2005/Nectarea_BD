@@ -41,6 +41,13 @@ const SuscripcionProyecto = sequelize.define(
       comment:
         "true si el usuario ganó y pagó una subasta. Bloquea cualquier devolución futura del token.",
     },
+    adhesion_completada: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment:
+        "Indica si el usuario ya completó el pago de la adhesión (4% del valor móvil).",
+    },
   },
   {
     tableName: "suscripcion_proyecto",

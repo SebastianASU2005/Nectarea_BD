@@ -117,6 +117,8 @@ const Favorito = require("./models/Favorito");
 const VerificacionIdentidad = require("./models/verificacion_identidad");
 const ContratoPlantilla = require("./models/ContratoPlantilla");
 const ContratoFirmado = require("./models/ContratoFirmado");
+const Adhesion = require("./models/adhesion");
+const PagoAdhesion = require("./models/PagoAdhesion");
 
 const configureAssociations = require("./models/associations");
 
@@ -142,9 +144,9 @@ const cuotaMensualRoutes = require("./routes/cuota_mensual.routes");
 const resumenCuentaRoutes = require("./routes/resumen_cuenta.routes");
 const pagoMercadoRoutes = require("./routes/pagoMercado.routes");
 const redireccionRoutes = require("./routes/redireccion.routes");
-const testRoutes = require("./routes/test.routes");
 const favoritoRoutes = require("./routes/favorito.routes");
 const kycRoutes = require("./routes/kyc.routes");
+const adhesionRoutes = require("./routes/adhesion.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
@@ -158,7 +160,7 @@ const {
   iniciarCronJobExpiracion,
 } = require("./tasks/expireOldTransactions.job");
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
-
+const marcarCuotasAdhesionVencidas = require("./tasks/vencerCuotasAdhesion");
 // ====================================================================
 // 5. 🔥 CONFIGURACIÓN DE RUTAS EN ORDEN ESPECÍFICO
 // ====================================================================
@@ -216,8 +218,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mensajes", mensajeRoutes);
 app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
-app.use("/api/test", testRoutes);
 app.use("/api/favoritos", favoritoRoutes);
+app.use("/api/adhesion", adhesionRoutes);
 
 app.use("/api/payment", pagoMercadoRoutes);
 app.use(redireccionRoutes);
@@ -271,6 +273,8 @@ async function synchronizeDatabase() {
     await Inversion.sync({ alter: true });
     await Pago.sync({ alter: true });
     await PagoMercado.sync({ alter: true });
+    await Adhesion.sync({ alter: true });
+    await PagoAdhesion.sync({ alter: true });
     await Transaccion.sync({ alter: true });
     await Imagen.sync({ alter: true });
     await Contrato.sync({ alter: true });
@@ -298,6 +302,11 @@ async function synchronizeDatabase() {
     startCronJobs();
     iniciarCronJobExpiracion();
     subscriptionCheckScheduler.scheduleJobs();
+    const cron = require("node-cron");
+    cron.schedule("0 0 * * *", async () => {
+      console.log("🕒 Ejecutando tarea: marcarCuotasAdhesionVencidas");
+      await marcarCuotasAdhesionVencidas();
+    });
 
     // Inicia el servidor de Express
     app.listen(PORT, "0.0.0.0", () => {

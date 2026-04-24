@@ -20,6 +20,8 @@ const Favorito = require("./Favorito"); // Este SÍ tiene mayúscula
 const ContratoPlantilla = require("./ContratoPlantilla"); // Este SÍ tiene mayúscula
 const ContratoFirmado = require("./ContratoFirmado"); // Este SÍ tiene mayúscula
 const VerificacionIdentidad = require("./verificacion_identidad");
+const Adhesion = require("./adhesion");
+const PagoAdhesion = require("./pagoAdhesion");
 
 const configureAssociations = () => {
   // -------------------------------------------------------------------
@@ -549,6 +551,49 @@ const configureAssociations = () => {
   VerificacionIdentidad.belongsTo(Usuario, {
     foreignKey: "id_verificador",
     as: "verificador",
+  });
+  // Usuario tiene muchas Adhesiones
+  Usuario.hasMany(Adhesion, { foreignKey: "id_usuario", as: "adhesiones" });
+  // Proyecto tiene muchas Adhesiones
+  Proyecto.hasMany(Adhesion, { foreignKey: "id_proyecto", as: "adhesiones" });
+  // Adhesión pertenece a Usuario y Proyecto
+  Adhesion.belongsTo(Usuario, { foreignKey: "id_usuario", as: "usuario" });
+  Adhesion.belongsTo(Proyecto, { foreignKey: "id_proyecto", as: "proyecto" });
+
+  // Adhesión tiene muchos PagosAdhesion
+  Adhesion.hasMany(PagoAdhesion, { foreignKey: "id_adhesion", as: "pagos" });
+  // PagoAdhesion pertenece a Adhesión
+  PagoAdhesion.belongsTo(Adhesion, {
+    foreignKey: "id_adhesion",
+    as: "adhesion",
+  });
+
+  // PagoAdhesion puede tener una Transacción (relación opcional)
+  PagoAdhesion.belongsTo(Transaccion, {
+    foreignKey: "id_transaccion",
+    as: "transaccion",
+  });
+  Transaccion.hasOne(PagoAdhesion, {
+    foreignKey: "id_transaccion",
+    as: "pagoAdhesion",
+  });
+  // Relación entre Adhesion y SuscripcionProyecto (una adhesión pertenece a una suscripción)
+  Adhesion.belongsTo(SuscripcionProyecto, {
+    foreignKey: "id_suscripcion",
+    as: "suscripcion",
+  });
+  SuscripcionProyecto.hasOne(Adhesion, {
+    foreignKey: "id_suscripcion",
+    as: "adhesion",
+  });
+  // Relaciones de Transaccion con SuscripcionProyecto y PagoAdhesion
+  Transaccion.belongsTo(SuscripcionProyecto, {
+    foreignKey: "id_suscripcion",
+    as: "suscripcionRel",
+  });
+  Transaccion.belongsTo(PagoAdhesion, {
+    foreignKey: "id_pago_adhesion",
+    as: "pagoAdhesionRel",
   });
 };
 

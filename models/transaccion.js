@@ -55,14 +55,34 @@ const Transaccion = sequelize.define(
       allowNull: true,
     },
     estado_transaccion: {
-      type: DataTypes.ENUM("pendiente", "pagado", "fallido", "reembolsado","expirado","rechazado_proyecto_cerrado","rechazado_por_capacidad","en_proceso"),
+      type: DataTypes.ENUM(
+        "pendiente",
+        "pagado",
+        "fallido",
+        "reembolsado",
+        "expirado",
+        "rechazado_proyecto_cerrado",
+        "rechazado_por_capacidad",
+        "en_proceso",
+      ),
       allowNull: false,
       defaultValue: "pendiente",
+    },
+    
+    id_suscripcion: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+   
+    id_pago_adhesion: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
     },
   },
   {
     tableName: "transaccion",
-  }
+  },
 );
 
 module.exports = Transaccion;

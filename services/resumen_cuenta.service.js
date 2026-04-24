@@ -80,7 +80,7 @@ const resumenCuentaService = {
         {
           model: SuscripcionProyecto,
           as: "suscripcion",
-          attributes: ["id", "id_usuario"],
+          attributes: ["id", "id_usuario", "activo"],
           include: [
             {
               model: Usuario,

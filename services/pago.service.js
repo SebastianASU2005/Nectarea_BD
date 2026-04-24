@@ -133,11 +133,13 @@ const pagoService = {
    * @async
    * @function generarPagoMensualConDescuento
    * @description Genera un nuevo registro de pago mensual, aplicando el saldo a favor de la suscripción.
+   * Verifica que la adhesión esté completada (adhesion_completada = true) antes de generar el pago.
    * @param {number} suscripcionId - ID de la suscripción.
    * @param {object} [options] - Opciones de Sequelize (ej. transaction).
-   * @returns {Promise<Pago|object>} El nuevo pago generado o un mensaje si no hay meses restantes.
+   * @returns {Promise<Pago|object>} El nuevo pago generado o un mensaje si no hay meses restantes o la adhesión no está completada.
    * @throws {Error} Si la suscripción o proyecto no existen o faltan IDs clave.
-   */ async generarPagoMensualConDescuento(suscripcionId, options = {}) {
+   */
+  async generarPagoMensualConDescuento(suscripcionId, options = {}) {
     const t = options.transaction || (await sequelize.transaction());
     try {
       // 1. Buscar Suscripción y Proyecto asociado
@@ -154,20 +156,32 @@ const pagoService = {
       ) {
         if (!options.transaction) await t.rollback();
         throw new Error("Suscripción, proyecto o IDs asociados faltantes.");
-      } // 2. Verificar meses restantes
+      }
 
+      // 🆕 VALIDACIÓN: Solo generar pagos si la adhesión está completada
+      if (!suscripcion.adhesion_completada) {
+        if (!options.transaction) await t.commit();
+        return {
+          message:
+            "La adhesión aún no está completada. No se generan pagos mensuales hasta que se complete.",
+        };
+      }
+
+      // 2. Verificar meses restantes
       if (suscripcion.meses_a_pagar <= 0) {
         if (!options.transaction) await t.commit();
         return { message: "No hay más meses por pagar en esta suscripción." };
-      } // 3. Determinar el número de mes del pago
+      }
 
+      // 3. Determinar el número de mes del pago
       const ultimoPago = await Pago.findOne({
         where: { id_suscripcion: suscripcionId },
         order: [["mes", "DESC"]],
         transaction: t,
       });
-      const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1; // 4. Aplicar saldo a favor
+      const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
 
+      // 4. Aplicar saldo a favor
       const cuotaMensual = parseFloat(
         suscripcion.proyectoAsociado.monto_inversion,
       );
@@ -178,7 +192,7 @@ const pagoService = {
       if (saldoAFavor > 0) {
         const descuentoAplicado = Math.min(cuotaMensual, saldoAFavor);
         montoAPagar = cuotaMensual - descuentoAplicado;
-        saldoAFavor -= descuentoAplicado; // Actualizar saldo a favor en la suscripción
+        saldoAFavor -= descuentoAplicado;
 
         await suscripcion.update(
           { saldo_a_favor: saldoAFavor.toFixed(2) },
@@ -186,27 +200,30 @@ const pagoService = {
         );
 
         if (montoAPagar === 0) {
-          estado_pago = "cubierto_por_puja"; // Estado especial si es cubierto 100% por saldo
+          estado_pago = "cubierto_por_puja";
         }
-      } // 5. Calcular la fecha de vencimiento (Día 10 del mes en que se crea)
+      }
 
+      // 5. Calcular la fecha de vencimiento (Día 10 del mes en que se crea)
       const now = new Date();
       const fechaVencimiento = new Date(now.getFullYear(), now.getMonth(), 10);
-      fechaVencimiento.setHours(0, 0, 0, 0); // 6. ✅ CRÍTICO: Crear el nuevo registro de Pago
+      fechaVencimiento.setHours(0, 0, 0, 0);
 
+      // 6. Crear el nuevo registro de Pago
       const nuevoPago = await Pago.create(
         {
           id_suscripcion: suscripcion.id,
-          id_usuario: suscripcion.id_usuario, // Asignación explícita desde la suscripción
-          id_proyecto: suscripcion.id_proyecto, // Asignación explícita desde la suscripción
+          id_usuario: suscripcion.id_usuario,
+          id_proyecto: suscripcion.id_proyecto,
           monto: montoAPagar.toFixed(2),
           fecha_vencimiento: fechaVencimiento,
           estado_pago: estado_pago,
           mes: proximoMes,
         },
         { transaction: t },
-      ); // 7. Decrementar meses restantes a pagar
+      );
 
+      // 7. Decrementar meses restantes a pagar
       await suscripcion.decrement("meses_a_pagar", { by: 1, transaction: t });
 
       if (!options.transaction) await t.commit();

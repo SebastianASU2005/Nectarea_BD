@@ -1,5 +1,5 @@
 // Archivo: services/transaccion.service.js
-// VERSIÓN COMPLETA
+// VERSIÓN COMPLETA CON SOPORTE PARA ADHESIÓN (corregida)
 
 const { sequelize } = require("../config/database");
 const { Op } = require("sequelize");
@@ -10,6 +10,9 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Inversion = require("../models/inversion");
 const Puja = require("../models/puja");
+// Modelos para adhesión
+const PagoAdhesion = require("../models/pagoAdhesion");
+const Adhesion = require("../models/adhesion");
 
 // Servicios externos
 const paymentService = require("./pagoMercado.service");
@@ -18,7 +21,6 @@ const pagoService = require("./pago.service");
 const suscripcionService = require("./suscripcion_proyecto.service");
 const resumenCuentaService = require("./resumen_cuenta.service");
 
-// Helper para asegurar el tipo de dato numérico
 const toFloat = (value) => parseFloat(value);
 const TRANSACTION_TIMEOUT_MINUTES = 30;
 
@@ -113,7 +115,8 @@ const transaccionService = {
         id_proyecto: data.id_proyecto || null,
         id_inversion: data.id_inversion || null,
         id_puja: data.id_puja || null,
-        id_suscripcion: data.id_suscripcion || null,
+        id_suscripcion: data.id_suscripcion || null, // ✅ nuevo
+        id_pago_adhesion: data.id_pago_adhesion || null, // ✅ nuevo
         id_pago_mensual: data.id_pago_mensual || null,
         estado_transaccion: "pendiente",
       },
@@ -122,7 +125,7 @@ const transaccionService = {
 
     return this.generarCheckoutParaTransaccionExistente(
       transaccion,
-      "mercadopago",
+      metodo,
       options,
     );
   },
@@ -321,6 +324,39 @@ const transaccionService = {
           };
           break;
 
+        // 🔥 NUEVO CASO: PAGO DE CUOTA DE ADHESIÓN (PagoAdhesion)
+        case "pagoadhesion":
+          const pagoAdhesion = await PagoAdhesion.findOne({
+            where: { id: modeloId, estado: "pendiente" },
+            include: [
+              {
+                model: Adhesion,
+                as: "adhesion",
+                include: [{ model: Proyecto, as: "proyecto" }],
+              },
+            ],
+            transaction: t,
+          });
+          if (!pagoAdhesion) {
+            throw new Error(
+              `Pago de adhesión ${modeloId} no encontrado o ya pagado`,
+            );
+          }
+          if (pagoAdhesion.adhesion.id_usuario !== userId) {
+            throw new Error("Este pago de adhesión no te pertenece");
+          }
+
+          datosTransaccion = {
+            ...datosTransaccion,
+            tipo_transaccion: "adhesion",
+            monto: parseFloat(pagoAdhesion.monto),
+            id_proyecto: pagoAdhesion.adhesion.id_proyecto,
+            id_pago_adhesion: pagoAdhesion.id,
+            // Opcional: guardar también la suscripción asociada a la adhesión
+            id_suscripcion: pagoAdhesion.adhesion.id_suscripcion,
+          };
+          break;
+
         case "pago":
           entidadBase = await Pago.findOne({
             where: {
@@ -434,6 +470,8 @@ const transaccionService = {
           whereClause.id_inversion = datosTransaccion.id_inversion;
         } else if (datosTransaccion.id_pago_mensual) {
           whereClause.id_pago_mensual = datosTransaccion.id_pago_mensual;
+        } else if (datosTransaccion.id_pago_adhesion) {
+          whereClause.id_pago_adhesion = datosTransaccion.id_pago_adhesion;
         }
 
         const existingTransaccion = await Transaccion.findOne({
@@ -577,6 +615,41 @@ const transaccionService = {
     );
   },
 
+  // 🔥 MÉTODO PARA MANEJAR PAGO DE CUOTA DE ADHESIÓN
+  async manejarPagoAdhesion(transaccion, montoTransaccion, t) {
+    if (!transaccion.id_pago_adhesion) {
+      throw new Error("Transacción 'adhesion' sin id_pago_adhesion");
+    }
+
+    const pagoAdhesion = await PagoAdhesion.findByPk(
+      transaccion.id_pago_adhesion,
+      {
+        transaction: t,
+        include: [{ model: Adhesion, as: "adhesion" }],
+      },
+    );
+
+    if (!pagoAdhesion) {
+      throw new Error("PagoAdhesion no encontrado");
+    }
+
+    // Llamar al servicio de adhesión para procesar el pago de la cuota
+    const adhesionService = require("./adhesion.service");
+    await adhesionService.procesarPagoCuota(
+      pagoAdhesion.adhesion.id,
+      pagoAdhesion.numero_cuota,
+      transaccion.id,
+      t,
+    );
+
+    // Actualizar saldo general del usuario (restar el monto pagado)
+    await resumenCuentaService.actualizarSaldoGeneral(
+      transaccion.id_usuario,
+      -montoTransaccion,
+      t,
+    );
+  },
+
   // =========================================================================
   // FUNCIÓN PRINCIPAL DE CONFIRMACIÓN (CON VALIDACIÓN ANTI-DUPLICACIÓN)
   // =========================================================================
@@ -656,7 +729,7 @@ const transaccionService = {
         );
       }
 
-      // 🔥 VALIDACIÓN ANTI-DUPLICACIÓN
+      // 🔥 VALIDACIÓN ANTI-DUPLICACIÓN (incluye adhesion)
       await this._validarEntidadSinPagoPrevisto(transaccion, t);
 
       if (
@@ -752,6 +825,11 @@ const transaccionService = {
           );
           break;
 
+        // 🔥 NUEVO CASO: Confirmar pago de cuota de adhesión
+        case "adhesion":
+          await this.manejarPagoAdhesion(transaccion, montoTransaccion, t);
+          break;
+
         default:
           throw new Error(
             `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`,
@@ -800,8 +878,14 @@ const transaccionService = {
   },
 
   async _validarEntidadSinPagoPrevisto(transaccion, t) {
-    const { tipo_transaccion, id_inversion, id_puja, id_pago_mensual, id } =
-      transaccion;
+    const {
+      tipo_transaccion,
+      id_inversion,
+      id_puja,
+      id_pago_mensual,
+      id_pago_adhesion,
+      id,
+    } = transaccion;
 
     let whereCondition = null;
     let entidadNombre = "";
@@ -830,11 +914,18 @@ const transaccionService = {
         entidadId = id_pago_mensual;
         break;
 
+      case "adhesion":
+        if (!id_pago_adhesion) return;
+        whereCondition = { id_pago_adhesion };
+        entidadNombre = "pago de adhesión";
+        entidadId = id_pago_adhesion;
+        break;
+
       default:
         return;
     }
 
-    // ✅ Sin includes → sin outer joins → lock seguro
+    // Validar que no exista otra transacción pagada o en proceso para la misma entidad
     const transaccionExistente = await Transaccion.findOne({
       where: {
         ...whereCondition,
@@ -845,7 +936,6 @@ const transaccionService = {
       },
       transaction: t,
       lock: t.LOCK.UPDATE,
-      // ✅ CLAVE: sin include aquí
     });
 
     if (transaccionExistente) {
@@ -854,15 +944,12 @@ const transaccionService = {
       throw new Error(errorMsg);
     }
 
-    // ✅ Para verificar estado de entidades, usá findByPk SIN lock
-    // ya que solo es lectura de validación y no necesita bloquear esas filas
+    // Validaciones específicas de estado de la entidad (para evitar dobles pagos)
     if (tipo_transaccion === "Puja" && id_puja) {
       const puja = await Puja.findByPk(id_puja, {
         transaction: t,
-        // ✅ Sin lock → sin problema de outer join
         attributes: ["estado_puja", "id"],
       });
-
       if (puja && puja.estado_puja === "ganadora_pagada") {
         const errorMsg = `❌ La puja ID ${id_puja} ya está marcada como 'ganadora_pagada'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
@@ -873,10 +960,8 @@ const transaccionService = {
     if (tipo_transaccion === "directo" && id_inversion) {
       const inversion = await Inversion.findByPk(id_inversion, {
         transaction: t,
-        // ✅ Sin lock
         attributes: ["estado", "id"],
       });
-
       if (inversion && inversion.estado === "pagado") {
         const errorMsg = `❌ La inversión ID ${id_inversion} ya está marcada como 'pagado'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
@@ -891,16 +976,26 @@ const transaccionService = {
     ) {
       const pago = await Pago.findByPk(id_pago_mensual, {
         transaction: t,
-        // ✅ Sin lock
         attributes: ["estado_pago", "id"],
       });
-
       if (
         pago &&
         (pago.estado_pago === "pagado" ||
           pago.estado_pago === "cubierto_por_puja")
       ) {
         const errorMsg = `❌ El pago mensual ID ${id_pago_mensual} ya está marcado como '${pago.estado_pago}'. No se puede procesar un segundo pago.`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+    }
+
+    if (tipo_transaccion === "adhesion" && id_pago_adhesion) {
+      const pagoAdhesion = await PagoAdhesion.findByPk(id_pago_adhesion, {
+        transaction: t,
+        attributes: ["estado", "id"],
+      });
+      if (pagoAdhesion && pagoAdhesion.estado === "pagado") {
+        const errorMsg = `❌ El pago de adhesión ID ${id_pago_adhesion} ya está marcado como 'pagado'. No se puede procesar un segundo pago.`;
         console.error(errorMsg);
         throw new Error(errorMsg);
       }
@@ -975,6 +1070,9 @@ const transaccionService = {
       case "mensual":
         titulo = `Pago Mensual - Suscripción #${transaccion.id_suscripcion}`;
         break;
+      case "adhesion":
+        titulo = `Cuota de Adhesión - Proyecto #${transaccion.id_proyecto}`;
+        break;
       default:
         titulo = `Transacción #${id}`;
     }
@@ -1018,7 +1116,13 @@ const transaccionService = {
   },
 
   _validarDatosTransaccion(data) {
-    const { tipo_transaccion, id_inversion, id_puja, id_suscripcion } = data;
+    const {
+      tipo_transaccion,
+      id_inversion,
+      id_puja,
+      id_suscripcion,
+      id_pago_adhesion,
+    } = data;
 
     switch (tipo_transaccion) {
       case "directo":
@@ -1043,6 +1147,11 @@ const transaccionService = {
           throw new Error(
             "Transacción 'pago_suscripcion_inicial' requiere id_proyecto y id_pago_mensual",
           );
+        }
+        break;
+      case "adhesion":
+        if (!id_pago_adhesion) {
+          throw new Error("Transacción 'adhesion' requiere id_pago_adhesion");
         }
         break;
       default:
@@ -1089,6 +1198,8 @@ const transaccionService = {
           "id_pago_pasarela",
           "id_inversion",
           "id_puja",
+          "id_suscripcion",
+          "id_pago_adhesion",
           "estado_transaccion",
           "createdAt",
           "updatedAt",
@@ -1202,6 +1313,8 @@ const transaccionService = {
           "id_pago_pasarela",
           "id_inversion",
           "id_puja",
+          "id_suscripcion",
+          "id_pago_adhesion",
           "estado_transaccion",
           "createdAt",
           "updatedAt",
@@ -1314,6 +1427,8 @@ const transaccionService = {
           "id_pago_pasarela",
           "id_inversion",
           "id_puja",
+          "id_suscripcion",
+          "id_pago_adhesion",
           "estado_transaccion",
           "createdAt",
           "updatedAt",
@@ -1425,13 +1540,14 @@ const transaccionService = {
       throw new Error("Error al eliminar transacción.");
     }
   },
+
   async findTransaccionIdByPujaId(pujaId, options = {}) {
     try {
       const transaccion = await Transaccion.findOne({
         where: { id_puja: pujaId },
-        attributes: ["id"], // Solo traemos el ID
+        attributes: ["id"],
         transaction: options.transaction,
-        raw: true, // Para obtener objeto plano
+        raw: true,
       });
       return transaccion ? transaccion.id : null;
     } catch (error) {

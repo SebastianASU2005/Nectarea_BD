@@ -1293,6 +1293,120 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
     await this.sendEmail(userEmail, subject, textPlain, html);
   },
+  // ==================== NUEVAS FUNCIONES PARA ADHESIONES ====================
+
+  /**
+   * Notifica al usuario que ha creado un plan de pagos de adhesión.
+   */
+  async notificarAdhesionCreada(user, adhesion, proyecto, planPago) {
+    const subject = `Plan de pagos iniciado para "${proyecto.nombre_proyecto}"`;
+    const montoTotal = parseFloat(adhesion.monto_total_adhesion).toFixed(2);
+    const montoPorCuota = (
+      adhesion.monto_total_adhesion / adhesion.cuotas_totales
+    ).toFixed(2);
+    const cuotasTotales = adhesion.cuotas_totales;
+    let planTexto = "";
+    if (planPago === "contado") planTexto = "Pago de contado (1 cuota)";
+    else if (planPago === "6_cuotas") planTexto = "6 cuotas mensuales";
+    else planTexto = "12 cuotas mensuales";
+
+    const contenidoInterno = `
+    <h2 style="color: #0b1b36;">¡Plan de pagos registrado!</h2>
+    <p>Hola <strong>${user.nombre}</strong>,</p>
+    <p>Has iniciado el plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    <h3>Detalles del plan:</h3>
+    <ul>
+      <li><strong>Plan elegido:</strong> ${planTexto}</li>
+      <li><strong>Monto total de adhesión (4% del valor móvil):</strong> $${montoTotal}</li>
+      <li><strong>Monto por cuota:</strong> $${montoPorCuota}</li>
+      <li><strong>Total cuotas:</strong> ${cuotasTotales}</li>
+    </ul>
+    <p>Las fechas de vencimiento de cada cuota son el día <strong>10 de cada mes</strong>. Recibirás recordatorios y podrás pagar desde tu panel de usuario.</p>
+    <p style="font-weight: bold;">Recuerda que una vez que completes el 100% de las cuotas, tu suscripción al proyecto se activará automáticamente.</p>
+    <a href="${process.env.FRONTEND_URL}/mis-adhesiones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver mis adhesiones</a>
+  `;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    await this.sendEmail(
+      user.email,
+      subject,
+      `Plan de pagos creado para ${proyecto.nombre_proyecto}`,
+      html,
+    );
+  },
+
+  /**
+   * Notifica al usuario que una cuota de adhesión ha sido pagada.
+   */
+  async notificarCuotaAdhesionPagada(user, adhesion, cuota, proyecto) {
+    const subject = `Pago de cuota #${cuota.numero_cuota} de adhesión confirmado - ${proyecto.nombre_proyecto}`;
+    const montoPagado = parseFloat(cuota.monto).toFixed(2);
+    const cuotasRestantes = adhesion.cuotas_totales - adhesion.cuotas_pagadas;
+
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50;">¡Pago registrado!</h2>
+    <p>Hola <strong>${user.nombre}</strong>,</p>
+    <p>Hemos recibido el pago de la <strong>cuota #${cuota.numero_cuota}</strong> del plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    <ul>
+      <li><strong>Monto pagado:</strong> $${montoPagado}</li>
+      <li><strong>Cuotas pagadas hasta ahora:</strong> ${adhesion.cuotas_pagadas} de ${adhesion.cuotas_totales}</li>
+      <li><strong>Cuotas restantes:</strong> ${cuotasRestantes}</li>
+    </ul>
+    ${cuotasRestantes === 0 ? '<p style="color: #4CAF50; font-weight: bold;">🎉 ¡Felicidades! Has completado el pago total de la adhesión. Tu suscripción al proyecto será activada en breve.</p>' : ""}
+    <a href="${process.env.FRONTEND_URL}/mis-adhesiones/${adhesion.id}" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles</a>
+  `;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    await this.sendEmail(
+      user.email,
+      subject,
+      `Pago cuota #${cuota.numero_cuota} de adhesión confirmado`,
+      html,
+    );
+  },
+
+  /**
+   * Notifica al usuario que ha completado todas las cuotas y su suscripción está activa.
+   */
+  async notificarAdhesionCompletada(user, adhesion, suscripcion, proyecto) {
+    const subject = `🎉 ¡Adhesión completada! Tu suscripción a "${proyecto.nombre_proyecto}" ya está activa`;
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50;">¡Proceso exitoso!</h2>
+    <p>Hola <strong>${user.nombre}</strong>,</p>
+    <p>Has completado el pago total del <strong>${adhesion.cuotas_totales} cuotas</strong> del plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    <p style="font-weight: bold; font-size: 1.1em;">✅ Tu suscripción ya está activa y cuentas con <strong>1 token de inversión</strong> disponible para participar en las subastas de lotes de este proyecto.</p>
+    <p>A partir de ahora, se generarán tus cuotas mensuales de inversión (el monto mensual del proyecto) y deberás pagarlas antes del día 10 de cada mes.</p>
+    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Ir a mis suscripciones</a>
+  `;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    await this.sendEmail(
+      user.email,
+      subject,
+      `Adhesión completada - Suscripción activa`,
+      html,
+    );
+  },
+
+  /**
+   * Notifica al usuario que su adhesión ha sido cancelada.
+   */
+  async notificarAdhesionCancelada(user, adhesion, proyecto, motivo) {
+    const subject = `Adhesión cancelada - ${proyecto.nombre_proyecto}`;
+    const motivoTexto = motivo || "No especificado";
+    const contenidoInterno = `
+    <h2 style="color: #d9534f;">Adhesión cancelada</h2>
+    <p>Hola <strong>${user.nombre}</strong>,</p>
+    <p>Te informamos que tu plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha sido cancelado.</p>
+    <p><strong>Motivo de cancelación:</strong> ${motivoTexto}</p>
+    <p>Si no solicitaste esta cancelación o necesitas más información, por favor contacta a nuestro equipo de soporte.</p>
+    <a href="mailto:soporte@loteplan.com" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Contactar soporte</a>
+  `;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    await this.sendEmail(
+      user.email,
+      subject,
+      `Adhesión cancelada para ${proyecto.nombre_proyecto}`,
+      html,
+    );
+  },
 };
 
 module.exports = emailService;
