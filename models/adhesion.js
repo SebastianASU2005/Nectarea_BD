@@ -33,7 +33,7 @@ const Adhesion = sequelize.define(
       comment: "Cálculo: valor_movil * (porcentaje/100)",
     },
     plan_pago: {
-      type: DataTypes.ENUM("contado", "6_cuotas", "12_cuotas"),
+      type: DataTypes.ENUM("contado", "3_cuotas", "6_cuotas"),
       allowNull: false,
     },
     cuotas_totales: {

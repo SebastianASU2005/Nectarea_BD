@@ -49,18 +49,18 @@ const adhesionService = {
 
       const valorMovil = parseFloat(cuotaMensual.valor_movil);
       const porcentajeAdhesion = 4.0;
-      const montoTotal = (valorMovil * porcentajeAdhesion) / 100;
+      const montoTotal = (valorMovil * (porcentajeAdhesion/100));
 
       let cuotasTotales = 1;
       switch (planPago) {
         case "contado":
           cuotasTotales = 1;
           break;
+        case "3_cuotas":
+          cuotasTotales = 3;
+          break;
         case "6_cuotas":
           cuotasTotales = 6;
-          break;
-        case "12_cuotas":
-          cuotasTotales = 12;
           break;
         default:
           throw new Error("Plan de pago inválido");
