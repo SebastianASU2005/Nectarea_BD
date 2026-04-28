@@ -306,68 +306,7 @@ const usuarioController = {
       res.status(statusCode).json({ error: error.message });
     }
   },
-  /**
-   * @async
-   * @function softDeleteMe
-   * @description "Elimina" lógicamente (soft delete) el perfil del usuario autenticado,
-   * REQUIRIENDO 2FA si está activo.
-   */
-  async softDeleteMe(req, res) {
-    const userId = req.user.id; // 🛑 CORRECCIÓN CLAVE: Usamos 'req.body || {}' para prevenir TypeError // Si req.body es undefined (porque no se envió un cuerpo JSON), twofaCode será undefined, lo cual es manejable.
-    const { twofaCode } = req.body || {};
 
-    try {
-      // 1. Obtener el secreto 2FA del usuario
-      const secret = await usuarioService.get2FASecret(userId);
-      const is2FAEnabled = !!secret;
-
-      if (is2FAEnabled) {
-        // A) 2FA ACTIVO: Requiere el código
-        if (!twofaCode) {
-          // El frontend debe detectar este estado y pedir el código.
-          return res.status(403).json({
-            message:
-              "Se requiere el código de Autenticación de Dos Factores (2FA) para eliminar la cuenta.",
-            requires2fa: true,
-          });
-        } // B) 2FA ACTIVO y CÓDIGO PROPORCIONADO: Validar el código
-
-        const isTokenValid = auth2faService.verifyToken(secret, twofaCode);
-
-        if (!isTokenValid) {
-          return res.status(403).json({
-            message:
-              "Código 2FA incorrecto. La eliminación de cuenta fue abortada.",
-            requires2fa: true,
-            codeInvalid: true,
-          });
-        } // Si el código es válido, se procede a la eliminación.
-      } else {
-        // C) 2FA INACTIVO: Procede directamente (no se necesita código)
-      } // 2. Ejecutar la lógica de soft delete (validación de suscripciones + desactivación)
-
-      const usuarioDesactivado = await usuarioService.softDelete(userId);
-
-      if (!usuarioDesactivado) {
-        return res.status(404).json({ error: "Usuario no encontrado" });
-      }
-
-      return res.status(200).json({
-        message:
-          "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
-        success: true,
-      });
-    } catch (error) {
-      // Captura errores de softDelete, como tener suscripciones activas.
-      const isConflict =
-        error.message.includes("suscripción") ||
-        error.message.includes("ya está activa");
-      const statusCode = isConflict ? 409 : 500;
-
-      console.error("Error al desactivar cuenta:", error.message);
-      res.status(statusCode).json({ error: error.message });
-    }
-  },
   /**
    * @async
    * @function search
@@ -506,6 +445,67 @@ const usuarioController = {
       res.status(statusCode).json({ error: error.message });
     }
   },
+  /**
+ * Paso 1: Inicia la desactivación de cuenta.
+ * Si el usuario tiene 2FA activo, devuelve un indicador para solicitar código.
+ * Si no, desactiva directamente.
+ */
+async iniciarCancelacionCuenta  (req, res) {
+  try {
+    const userId = req.user.id;
+    const user = await usuarioService.findById(userId);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    if (user.is_2fa_enabled) {
+      return res.status(202).json({
+        message: "Se requiere verificación 2FA para desactivar la cuenta.",
+        requires2FA: true
+      });
+    }
+
+    // Sin 2FA: desactivar directamente
+    const usuarioDesactivado = await usuarioService.softDelete(userId);
+    res.status(200).json({
+      message: "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
+      success: true
+    });
+  } catch (error) {
+    console.error("Error en iniciarCancelacionCuenta:", error.message);
+    res.status(400).json({ error: error.message });
+  }
+},
+
+/**
+ * Paso 2: Confirma la desactivación con el código 2FA.
+ */
+async confirmarCancelacionCuenta  (req, res)  {
+  try {
+    const userId = req.user.id;
+    const { codigo_2fa } = req.body;
+    if (!codigo_2fa) {
+      return res.status(400).json({ error: "Falta el código 2FA." });
+    }
+
+    const user = await usuarioService.findById(userId);
+    if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
+      return res.status(403).json({ error: "2FA no activo o configuración inválida." });
+    }
+
+    const isVerified = auth2faService.verifyToken(user.twofa_secret, codigo_2fa);
+    if (!isVerified) {
+      return res.status(401).json({ error: "Código 2FA incorrecto." });
+    }
+
+    const usuarioDesactivado = await usuarioService.softDelete(userId);
+    res.status(200).json({
+      message: "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
+      success: true
+    });
+  } catch (error) {
+    console.error("Error en confirmarCancelacionCuenta:", error.message);
+    res.status(400).json({ error: error.message });
+  }
+}
 };
 
 module.exports = usuarioController;

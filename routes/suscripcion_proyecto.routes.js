@@ -1,5 +1,4 @@
-// Archivo: routes/suscripcion_proyecto.routes.js
-
+// routes/suscripcion_proyecto.routes.js
 const express = require("express");
 const router = express.Router();
 const suscripcionProyectoController = require("../controllers/suscripcion_proyecto.controller");
@@ -7,79 +6,89 @@ const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
 const checkKYCandTwoFA = require("../middleware/checkKYCandTwoFA");
 const { userRateLimiter } = require("../middleware/rateLimiter");
+
 // =======================================================
 // RUTAS PARA USUARIOS (Estáticas y Semidinámicas Primero)
 // =======================================================
 
-// POST /iniciar-pago
-// 🔒 OPERACIÓN CRÍTICA: Inicia el proceso de suscripción
+// Iniciar el proceso de suscripción (crea pago y transacción pendientes)
 router.post(
   "/iniciar-pago",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ YA TIENE
+  blockAdminTransactions,
   checkKYCandTwoFA,
   userRateLimiter,
   suscripcionProyectoController.iniciarSuscripcion,
 );
 
-// POST /confirmar-2fa
-// 🔒 OPERACIÓN CRÍTICA: Verifica el código 2FA y genera la URL de checkout
+// Confirmar suscripción con 2FA (genera checkout)
+// — userRateLimiter agregado para evitar fuerza bruta del código TOTP
 router.post(
   "/confirmar-2fa",
   authMiddleware.authenticate,
-  blockAdminTransactions, // ✅ YA TIENE
+  blockAdminTransactions,
   checkKYCandTwoFA,
+  userRateLimiter,
   suscripcionProyectoController.confirmarSuscripcionCon2FA,
 );
 
-// GET /activas
+// Confirmar pago de suscripción (webhook o callback interno)
+router.post(
+  "/confirmar-pago",
+  authMiddleware.authenticate,
+  blockAdminTransactions,
+  suscripcionProyectoController.confirmarSuscripcion,
+);
+
+// Obtener todas las suscripciones activas (admin)
 router.get(
   "/activas",
   authMiddleware.authenticate,
   suscripcionProyectoController.findAllActivo,
 );
 
-// GET /mis_suscripciones
+// Obtener las suscripciones del usuario autenticado
 router.get(
   "/mis_suscripciones",
   authMiddleware.authenticate,
   suscripcionProyectoController.findMySubscriptions,
 );
 
-// GET /mis_suscripciones/:id
+// =======================================================
+// CANCELACIÓN DE SUSCRIPCIÓN CON 2FA (dos pasos)
+// =======================================================
+
+// Paso 2: Confirmar cancelación con código 2FA
+// — Va ANTES de /mis_suscripciones/:id para que Express no confunda
+//   "confirmar-cancelacion" como un :id
+// — userRateLimiter agregado para evitar fuerza bruta del código TOTP
+router.post(
+  "/mis_suscripciones/confirmar-cancelacion",
+  authMiddleware.authenticate,
+  userRateLimiter,
+  suscripcionProyectoController.confirmarCancelacionSuscripcion,
+);
+
+// Obtener una suscripción específica del usuario autenticado
 router.get(
   "/mis_suscripciones/:id",
   authMiddleware.authenticate,
   suscripcionProyectoController.findMySubscriptionById,
 );
 
-// DELETE /mis_suscripciones/:id
-// 🔒 OPERACIÓN SENSIBLE: Cancelar suscripción
-router.delete(
-  "/mis_suscripciones/:id",
+// Paso 1: Iniciar cancelación de suscripción
+router.post(
+  "/mis_suscripciones/:id/iniciar-cancelacion",
   authMiddleware.authenticate,
   checkKYCandTwoFA,
-  suscripcionProyectoController.softDeleteMySubscription,
-);
-
-// POST /confirmar-pago (Webhook - puede ser llamado sin autenticación desde MP)
-// ⚠️ NOTA: Si este endpoint es llamado por MercadoPago, NO debe tener authMiddleware
-// Si es llamado desde tu frontend, entonces SÍ debe estar protegido
-router.post(
-  "/confirmar-pago",
-  // ⚠️ DECISIÓN: ¿Este endpoint es llamado por MercadoPago o por tu frontend?
-  // Si es por MP: NO poner middlewares de auth
-  // Si es por tu frontend: descomentar las siguientes líneas:
-  // authMiddleware.authenticate,
-  // blockAdminTransactions,
-  suscripcionProyectoController.confirmarSuscripcion,
+  suscripcionProyectoController.iniciarCancelacionSuscripcion,
 );
 
 // =======================================================
 // RUTAS PARA ADMINISTRADORES
 // =======================================================
 
-// GET /metrics/morosidad (KPI 4)
+// Métricas de morosidad (KPI 4)
 router.get(
   "/metrics/morosidad",
   authMiddleware.authenticate,
@@ -87,7 +96,7 @@ router.get(
   suscripcionProyectoController.getMorosityMetrics,
 );
 
-// GET /metrics/cancelacion (KPI 5)
+// Tasa de cancelación (KPI 5)
 router.get(
   "/metrics/cancelacion",
   authMiddleware.authenticate,
@@ -95,7 +104,7 @@ router.get(
   suscripcionProyectoController.getCancellationRate,
 );
 
-// GET /
+// Obtener todas las suscripciones (admin)
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -103,7 +112,7 @@ router.get(
   suscripcionProyectoController.findAll,
 );
 
-// GET /proyecto/:id_proyecto/all
+// Obtener todas las suscripciones de un proyecto (activas e inactivas)
 router.get(
   "/proyecto/:id_proyecto/all",
   authMiddleware.authenticate,
@@ -111,7 +120,7 @@ router.get(
   suscripcionProyectoController.findAllByProjectId,
 );
 
-// GET /proyecto/:id_proyecto (Solo activas)
+// Obtener suscripciones activas de un proyecto
 router.get(
   "/proyecto/:id_proyecto",
   authMiddleware.authenticate,
@@ -119,13 +128,15 @@ router.get(
   suscripcionProyectoController.findActiveByProjectId,
 );
 
-// 🚨 RUTAS DINÁMICAS DE ADMIN (Van al final)
+// Obtener suscripción por ID (admin)
 router.get(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findById,
 );
+
+// Actualizar campos de una suscripción (admin)
 router.patch(
   "/:id",
   authMiddleware.authenticate,
@@ -133,6 +144,7 @@ router.patch(
   suscripcionProyectoController.adminUpdate,
 );
 
+// Cancelar suscripción por ID (admin — evita el flujo de 2FA)
 router.delete(
   "/:id",
   authMiddleware.authenticate,

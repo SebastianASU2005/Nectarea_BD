@@ -458,36 +458,6 @@ const suscripcionProyectoController = {
     }
   },
 
-  /**
-   * @async
-   * @function softDeleteMySubscription
-   * @description Realiza el "soft delete" (cancelación) de la propia suscripción del usuario.
-   */
-  /**
-   * @async
-   * @function softDeleteMySubscription
-   * @description Realiza el "soft delete" (cancelación) de la propia suscripción del usuario.
-   */
-  async softDeleteMySubscription(req, res) {
-    try {
-      const { id } = req.params;
-      const usuarioAutenticado = req.user; // 🛑 CORRECCIÓN: Usar el objeto completo // 1. Ejecutar el soft delete con validación de propiedad dentro del servicio
-
-      const suscripcionCancelada = await suscripcionProyectoService.softDelete(
-        id,
-        usuarioAutenticado, // 👈 Se pasa el objeto completo (ID y rol)
-      );
-
-      res.status(200).json({
-        message: "Suscripción cancelada correctamente.",
-        suscripcion: suscripcionCancelada,
-      });
-    } catch (error) {
-      // 400 para errores de negocio (ej. no se puede cancelar por puja pagada)
-      const statusCode = error.message.startsWith("❌") ? 400 : 500;
-      res.status(statusCode).json({ error: error.message });
-    }
-  },
 
   /**
    * @async
@@ -607,6 +577,91 @@ const suscripcionProyectoController = {
         .json({ error: "Error interno al calcular la tasa de cancelación." });
     }
   },
+  // ============================================================
+// CANCELACIÓN DE SUSCRIPCIÓN CON 2FA (stateless, sin Map)
+// ============================================================
+
+/**
+ * Paso 1: Inicia la cancelación de una suscripción.
+ * Si el usuario tiene 2FA activo, devuelve el suscripcionId para solicitar código.
+ * Si no, cancela directamente.
+ */
+async iniciarCancelacionSuscripcion (req, res){
+  try {
+    const usuarioAutenticado = req.user;
+    const suscripcionId = req.params.id;
+    const esAdmin = usuarioAutenticado.rol === "admin";
+    const motivo = req.body.motivo || null;
+
+    // Validar suscripción
+    const suscripcion = await suscripcionProyectoService.findById(suscripcionId);
+    if (!suscripcion) return res.status(404).json({ error: "Suscripción no encontrada." });
+    if (!esAdmin && suscripcion.id_usuario !== usuarioAutenticado.id) {
+      return res.status(403).json({ error: "No tienes permiso para cancelar esta suscripción." });
+    }
+    if (!suscripcion.activo) {
+      return res.status(400).json({ error: "La suscripción ya está cancelada." });
+    }
+
+    const user = await UsuarioService.findById(usuarioAutenticado.id);
+    if (!user) throw new Error("Usuario no encontrado");
+
+    if (user.is_2fa_enabled) {
+      return res.status(202).json({
+        message: "Se requiere verificación 2FA para cancelar la suscripción.",
+        requires2FA: true,
+        suscripcionId: suscripcionId
+      });
+    }
+
+    // Sin 2FA: cancelar directamente
+    const resultado = await suscripcionProyectoService.softDelete(suscripcionId, usuarioAutenticado);
+    res.status(200).json({ message: "Suscripción cancelada correctamente.", suscripcion: resultado });
+  } catch (error) {
+    console.error("Error en iniciarCancelacionSuscripcion:", error.message);
+    res.status(400).json({ error: error.message });
+  }
+},
+
+/**
+ * Paso 2: Confirma la cancelación con el código 2FA.
+ */
+async confirmarCancelacionSuscripcion  (req, res) {
+  try {
+    const usuarioId = req.user.id;
+    const { suscripcionId, codigo_2fa, motivo } = req.body;
+    if (!suscripcionId || !codigo_2fa) {
+      return res.status(400).json({ error: "Faltan suscripcionId o codigo_2fa." });
+    }
+
+    const user = await UsuarioService.findById(usuarioId);
+    if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
+      return res.status(403).json({ error: "2FA no activo o configuración inválida." });
+    }
+
+    const isVerified = auth2faService.verifyToken(user.twofa_secret, codigo_2fa);
+    if (!isVerified) {
+      return res.status(401).json({ error: "Código 2FA incorrecto." });
+    }
+
+    // Revalidar que la suscripción sigue activa y pertenece
+    const esAdmin = req.user.rol === "admin";
+    const usuarioAutenticado = { id: usuarioId, rol: esAdmin ? "admin" : "cliente" };
+    const suscripcion = await suscripcionProyectoService.findById(suscripcionId);
+    if (!suscripcion || !suscripcion.activo) {
+      return res.status(409).json({ error: "La suscripción ya no está activa o no existe." });
+    }
+    if (!esAdmin && suscripcion.id_usuario !== usuarioId) {
+      return res.status(403).json({ error: "No tienes permiso para cancelar esta suscripción." });
+    }
+
+    const resultado = await suscripcionProyectoService.softDelete(suscripcionId, usuarioAutenticado);
+    res.status(200).json({ message: "Suscripción cancelada correctamente.", suscripcion: resultado });
+  } catch (error) {
+    console.error("Error en confirmarCancelacionSuscripcion:", error.message);
+    res.status(400).json({ error: error.message });
+  }
+}
 };
 
 module.exports = suscripcionProyectoController;
