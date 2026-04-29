@@ -1,4 +1,5 @@
 // services/contratoFirmadoService.js
+const { Op } = require("sequelize");
 const ContratoFirmado = require("../models/ContratoFirmado");
 const Inversion = require("../models/inversion");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
