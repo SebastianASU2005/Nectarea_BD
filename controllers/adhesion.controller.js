@@ -280,6 +280,7 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Adhesión no encontrada" });
+
     if (adhesion.estado === "completada") {
       return res.status(400).json({
         success: false,
@@ -293,6 +294,18 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
         .json({ success: false, message: "La adhesión ya está cancelada." });
     }
 
+    // ✅ Si es admin, cancelar directamente (sin 2FA)
+    if (esAdmin) {
+      const resultado = await adhesionService.cancelarAdhesion(
+        id,
+        usuarioId,
+        esAdmin,
+        motivo,
+      );
+      return res.json({ success: true, message: resultado.message });
+    }
+
+    // ✅ Usuario normal: verificar 2FA si está activo
     const user = await usuarioService.findById(usuarioId);
     if (!user) throw new Error("Usuario no encontrado");
 
@@ -304,6 +317,7 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
       });
     }
 
+    // Usuario sin 2FA: cancelar directamente
     const resultado = await adhesionService.cancelarAdhesion(
       id,
       usuarioId,

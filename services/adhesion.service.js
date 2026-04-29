@@ -362,15 +362,23 @@ const adhesionService = {
     const t = externalTransaction || (await sequelize.transaction());
     const shouldCommit = !externalTransaction;
     try {
-      const adhesion = await Adhesion.findByPk(adhesionId, {
+      // 1. Bloquear solo la fila de Adhesion (sin includes)
+      const adhesionLocked = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+        attributes: ["id"],
+      });
+      if (!adhesionLocked) throw new Error("Adhesión no encontrada.");
+
+      // 2. Obtener los datos completos con includes (sin lock)
+      const adhesion = await Adhesion.findByPk(adhesionId, {
+        transaction: t,
         include: [
           { model: SuscripcionProyecto, as: "suscripcion" },
           { model: Proyecto, as: "proyecto" },
         ],
       });
-      if (!adhesion) throw new Error("Adhesión no encontrada.");
+
       if (!esAdmin && adhesion.id_usuario !== userId) {
         throw new Error("No tienes permiso para cancelar esta adhesión.");
       }
@@ -453,7 +461,6 @@ const adhesionService = {
       throw error;
     }
   },
-
   // ------------------------------------------------------------------
   // FORZAR PAGO DE CUOTA (ADMIN)
   // ------------------------------------------------------------------
@@ -461,13 +468,19 @@ const adhesionService = {
   async forzarPagoCuota(adhesionId, numeroCuota, motivo, adminId) {
     const t = await sequelize.transaction();
     try {
-      // Obtener adhesión con todas las cuotas para validar orden
-      const adhesion = await Adhesion.findByPk(adhesionId, {
+      // 1. Bloquear solo la fila de Adhesion (sin includes)
+      const adhesionLocked = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
+        attributes: ["id"],
+      });
+      if (!adhesionLocked) throw new Error("Adhesión no encontrada");
+
+      // 2. Obtener datos completos con includes (sin lock)
+      const adhesion = await Adhesion.findByPk(adhesionId, {
+        transaction: t,
         include: [{ model: PagoAdhesion, as: "pagos" }],
       });
-      if (!adhesion) throw new Error("Adhesión no encontrada");
 
       const pagoAdhesion = adhesion.pagos.find(
         (p) => p.numero_cuota === numeroCuota,
@@ -479,7 +492,7 @@ const adhesionService = {
         );
       }
 
-      // Validar que cuotas anteriores estén pagadas o forzadas (para mantener coherencia)
+      // Validar que cuotas anteriores estén pagadas o forzadas
       const cuotasAnteriores = adhesion.pagos.filter(
         (p) => p.numero_cuota < numeroCuota,
       );
@@ -526,7 +539,7 @@ const adhesionService = {
 
       await t.commit();
 
-      // Notificar
+      // Notificaciones
       const usuario = await Usuario.findByPk(adhesion.id_usuario);
       const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
       await emailService.notificarCuotaAdhesionPagada(
