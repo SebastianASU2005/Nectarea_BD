@@ -40,14 +40,42 @@ exports.crearAdhesion = async (req, res) => {
 exports.obtenerAdhesion = async (req, res) => {
   try {
     const usuarioId = req.user.id;
+    const esAdmin = req.user.rol === "admin";
     const { id } = req.params;
-    const adhesion = await adhesionService.obtenerAdhesion(id, usuarioId);
+    // Si es admin, pasar null para que el servicio no filtre por usuario
+    const adhesion = await adhesionService.obtenerAdhesion(
+      id,
+      esAdmin ? null : usuarioId,
+    );
     if (!adhesion) {
       return res
         .status(404)
         .json({ success: false, message: "Adhesión no encontrada" });
     }
     res.json({ success: true, data: adhesion });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+exports.obtenerCuotasImpagas = async (req, res) => {
+  try {
+    const usuarioId = req.user.id;
+    const esAdmin = req.user.rol === "admin";
+    const { id } = req.params;
+
+    // Validar que el usuario tenga acceso a esta adhesión
+    const adhesion = await adhesionService.obtenerAdhesion(
+      id,
+      esAdmin ? null : usuarioId,
+    );
+    if (!adhesion) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Adhesión no encontrada" });
+    }
+
+    const cuotas = await adhesionService.obtenerCuotasPendientes(id);
+    res.json({ success: true, data: cuotas });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -127,11 +155,12 @@ exports.iniciarPagoCuota = async (req, res) => {
       });
     }
 
-    const { redirectUrl } = await transaccionService.iniciarTransaccionYCheckout(
-      "pagoAdhesion",
-      cuota.id,
-      usuarioId,
-    );
+    const { redirectUrl } =
+      await transaccionService.iniciarTransaccionYCheckout(
+        "pagoAdhesion",
+        cuota.id,
+        usuarioId,
+      );
     res.json({ success: true, redirectUrl });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -179,11 +208,12 @@ exports.confirmarPagoCuota = async (req, res) => {
       return res.status(401).json({ error: "Código 2FA incorrecto." });
     }
 
-    const { redirectUrl } = await transaccionService.iniciarTransaccionYCheckout(
-      "pagoAdhesion",
-      pagoAdhesion.id,
-      usuarioId,
-    );
+    const { redirectUrl } =
+      await transaccionService.iniciarTransaccionYCheckout(
+        "pagoAdhesion",
+        pagoAdhesion.id,
+        usuarioId,
+      );
     res.json({ success: true, redirectUrl });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -214,11 +244,12 @@ exports.pagarCuotaAdhesion = async (req, res) => {
     );
     if (!cuota) throw new Error("Cuota no disponible para pago");
 
-    const { redirectUrl } = await transaccionService.iniciarTransaccionYCheckout(
-      "pagoAdhesion",
-      cuota.id,
-      usuarioId,
-    );
+    const { redirectUrl } =
+      await transaccionService.iniciarTransaccionYCheckout(
+        "pagoAdhesion",
+        cuota.id,
+        usuarioId,
+      );
     res.json({ success: true, redirectUrl });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -250,13 +281,11 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Adhesión no encontrada" });
     if (adhesion.estado === "completada") {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message:
-            "No se puede cancelar una adhesión completada. Cancela la suscripción.",
-        });
+      return res.status(400).json({
+        success: false,
+        message:
+          "No se puede cancelar una adhesión completada. Cancela la suscripción.",
+      });
     }
     if (adhesion.estado === "cancelada") {
       return res
@@ -323,12 +352,10 @@ exports.confirmarCancelacionAdhesion = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Adhesión no encontrada" });
     if (adhesion.estado === "completada") {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No se puede cancelar una adhesión completada.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No se puede cancelar una adhesión completada.",
+      });
     }
     if (adhesion.estado === "cancelada") {
       return res

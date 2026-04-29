@@ -49,7 +49,7 @@ const adhesionService = {
 
       const valorMovil = parseFloat(cuotaMensual.valor_movil);
       const porcentajeAdhesion = 4.0;
-      const montoTotal = (valorMovil * (porcentajeAdhesion/100));
+      const montoTotal = valorMovil * (porcentajeAdhesion / 100);
 
       let cuotasTotales = 1;
       switch (planPago) {
@@ -221,9 +221,9 @@ const adhesionService = {
       (p) => p.numero_cuota === numeroCuota,
     );
     if (!pagoAdhesion) throw new Error(`Cuota ${numeroCuota} no encontrada`);
-    if (pagoAdhesion.estado !== "pendiente") {
+    if (!["pendiente", "vencido"].includes(pagoAdhesion.estado)) {
       throw new Error(
-        `Cuota ${numeroCuota} no está pendiente (estado: ${pagoAdhesion.estado})`,
+        `La cuota ${numeroCuota} no está pendiente ni vencida (estado actual: ${pagoAdhesion.estado}).`,
       );
     }
 
@@ -338,12 +338,12 @@ const adhesionService = {
     });
   },
 
-  /**
-   * Obtener cuotas pendientes de una adhesión
-   */
   async obtenerCuotasPendientes(adhesionId) {
     return PagoAdhesion.findAll({
-      where: { id_adhesion: adhesionId, estado: "pendiente" },
+      where: {
+        id_adhesion: adhesionId,
+        estado: { [Op.in]: ["pendiente", "vencido"] },
+      },
       order: [["numero_cuota", "ASC"]],
     });
   },

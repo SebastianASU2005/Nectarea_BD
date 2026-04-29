@@ -128,6 +128,11 @@ router.get(
 // 3. RUTAS DINÁMICAS (/:id y derivadas)
 // Siempre al final
 // ===============================================
+router.get(
+  "/:id/cuotas-impagas",
+  authMiddleware.authenticate,
+  adhesionController.obtenerCuotasImpagas,
+);
 
 // Obtener una adhesión específica por su ID
 router.get(
