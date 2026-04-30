@@ -461,6 +461,45 @@ const adhesionService = {
       throw error;
     }
   },
+  /**
+   * Verifica si una cuota específica puede ser pagada
+   * (todas las cuotas anteriores deben estar pagadas o forzadas)
+   * @param {number} adhesionId - ID de la adhesión
+   * @param {number} numeroCuota - Número de cuota a pagar (1..N)
+   * @param {number|null} usuarioId - Opcional, para verificar pertenencia
+   * @returns {Promise<boolean>}
+   * @throws {Error} si no es pagable, con mensaje explicativo
+   */
+  async validarCuotaPagable(adhesionId, numeroCuota, usuarioId = null) {
+    const adhesion = await this.obtenerAdhesion(adhesionId, usuarioId);
+    if (!adhesion) throw new Error("Adhesión no encontrada");
+
+    const cuota = adhesion.pagos.find((p) => p.numero_cuota === numeroCuota);
+    if (!cuota) throw new Error(`Cuota ${numeroCuota} no encontrada`);
+    if (!["pendiente", "vencido"].includes(cuota.estado)) {
+      throw new Error(
+        `La cuota ${numeroCuota} no está pendiente o vencida (estado: ${cuota.estado})`,
+      );
+    }
+
+    // Buscar cuotas anteriores que NO estén pagadas/forzadas
+    const cuotasAnterioresNoPagadas = adhesion.pagos.filter(
+      (p) =>
+        p.numero_cuota < numeroCuota &&
+        !["pagado", "forzado"].includes(p.estado),
+    );
+
+    if (cuotasAnterioresNoPagadas.length > 0) {
+      const numeros = cuotasAnterioresNoPagadas
+        .map((p) => p.numero_cuota)
+        .join(", ");
+      throw new Error(
+        `Debes pagar las cuotas anteriores (${numeros}) antes de pagar la cuota ${numeroCuota}.`,
+      );
+    }
+
+    return true;
+  },
   // ------------------------------------------------------------------
   // FORZAR PAGO DE CUOTA (ADMIN)
   // ------------------------------------------------------------------
@@ -493,7 +532,7 @@ const adhesionService = {
       }
 
       // Validar que cuotas anteriores estén pagadas o forzadas
-        const cuotasAnteriores = adhesion.pagos.filter(
+      const cuotasAnteriores = adhesion.pagos.filter(
         (p) => p.numero_cuota < numeroCuota,
       );
       const algunaPendiente = cuotasAnteriores.some((p) =>

@@ -131,6 +131,13 @@ exports.iniciarPagoCuota = async (req, res) => {
         .json({ error: "Faltan adhesionId o numeroCuota." });
     }
 
+    // ✅ Validar orden de pago ANTES de cualquier otra cosa
+    await adhesionService.validarCuotaPagable(
+      adhesionId,
+      numeroCuota,
+      usuarioId,
+    );
+
     const adhesion = await adhesionService.obtenerAdhesion(
       adhesionId,
       usuarioId,
@@ -192,6 +199,13 @@ exports.confirmarPagoCuota = async (req, res) => {
     if (adhesion.id_usuario !== usuarioId) {
       return res.status(403).json({ error: "Esta cuota no te pertenece." });
     }
+
+    // ✅ Validar orden de pago ANTES de generar el checkout
+    await adhesionService.validarCuotaPagable(
+      adhesion.id,
+      pagoAdhesion.numero_cuota,
+      usuarioId,
+    );
 
     const user = await usuarioService.findById(usuarioId);
     if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
