@@ -107,28 +107,36 @@ const adhesionService = {
         { transaction: t },
       );
 
-      // 7. Generar los pagos de adhesión: PRIMERA CUOTA el día 10 del próximo mes, las siguientes el día 10 de cada mes subsiguiente.
-      // Calcular fecha de primera cuota: día 10 del próximo mes
       const hoy = new Date();
-      let añoPrimerVenc = hoy.getFullYear();
-      let mesPrimerVenc = hoy.getMonth() + 1; // próximo mes
+      // Fecha base: primer día del próximo mes a las 00:00 UTC
+      let añoPrimerVenc = hoy.getUTCFullYear();
+      let mesPrimerVenc = hoy.getUTCMonth() + 1; // próximo mes
       if (mesPrimerVenc > 11) {
         mesPrimerVenc = 0;
         añoPrimerVenc++;
       }
-      const fechaBase = new Date(añoPrimerVenc, mesPrimerVenc, 10);
-      fechaBase.setHours(0, 0, 0, 0);
+      // Construir string 'YYYY-MM-DD' para el día 10 del mes correspondiente, en UTC
+      const primerDiaStr = `${añoPrimerVenc}-${String(mesPrimerVenc + 1).padStart(2, "0")}-10`;
+      const fechaBase = new Date(primerDiaStr + "T00:00:00Z"); // objeto Date UTC
 
       for (let i = 0; i < cuotasTotales; i++) {
-        const fechaVencimiento = new Date(fechaBase);
-        fechaVencimiento.setMonth(fechaBase.getMonth() + i);
-        fechaVencimiento.setHours(0, 0, 0, 0);
+        const fechaVencimientoUTC = new Date(fechaBase);
+        fechaVencimientoUTC.setUTCMonth(fechaBase.getUTCMonth() + i);
+        // Formatear como YYYY-MM-DD para DATEONLY
+        const año = fechaVencimientoUTC.getUTCFullYear();
+        const mes = String(fechaVencimientoUTC.getUTCMonth() + 1).padStart(
+          2,
+          "0",
+        );
+        const dia = String(fechaVencimientoUTC.getUTCDate()).padStart(2, "0");
+        const fechaVencimientoStr = `${año}-${mes}-${dia}`;
+
         await PagoAdhesion.create(
           {
             id_adhesion: adhesion.id,
             numero_cuota: i + 1,
             monto: montoPorCuota,
-            fecha_vencimiento: fechaVencimiento,
+            fecha_vencimiento: fechaVencimientoStr, // string YYYY-MM-DD
             estado: "pendiente",
           },
           { transaction: t },
@@ -244,7 +252,7 @@ const adhesionService = {
     await pagoAdhesion.update(
       {
         estado: "pagado",
-        fecha_pago: new Date(),
+        fecha_pago: new Date().toISOString().slice(0, 10), // ✅ YYYY-MM-DD UTC
         id_transaccion: transaccionId,
       },
       { transaction: t },
