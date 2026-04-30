@@ -8,7 +8,7 @@ const PagoAdhesion = require("../models/pagoAdhesion");
 /**
  * POST /api/adhesion
  * Crea una nueva adhesión (plan de pago del 4% del valor móvil)
- * Body: { proyectoId, planPago }  (planPago: "contado" | "6_cuotas" | "12_cuotas")
+ * Body: { proyectoId, planPago }  (planPago: "contado" | "3_cuotas" | "6_cuotas")
  */
 exports.crearAdhesion = async (req, res) => {
   try {

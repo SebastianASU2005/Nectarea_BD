@@ -493,7 +493,7 @@ const adhesionService = {
       }
 
       // Validar que cuotas anteriores estén pagadas o forzadas
-      const cuotasAnteriores = adhesion.pagos.filter(
+        const cuotasAnteriores = adhesion.pagos.filter(
         (p) => p.numero_cuota < numeroCuota,
       );
       const algunaPendiente = cuotasAnteriores.some((p) =>
@@ -740,6 +740,7 @@ const adhesionService = {
             "monto",
             "estado",
             "fecha_vencimiento",
+            "motivo",
             "fecha_pago",
           ],
           order: [["numero_cuota", "ASC"]],
