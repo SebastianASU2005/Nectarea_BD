@@ -149,6 +149,23 @@ const contratoFirmaController = {
       return res.status(statusCode).json(formatErrorResponse(error.message));
     }
   },
+  async trackPaymentAndContract(req, res) {
+    try {
+      const userId = req.user.id; // del middleware de auth
+      const { projectId } = req.params;
+
+      const resultado = await contratoFirmadoService.trackPaymentAndContract(
+        userId,
+        parseInt(projectId),
+      );
+
+      return res.status(200).json(resultado);
+    } catch (error) {
+      console.error("Error al rastrear pago y contrato:", error);
+      const statusCode = error.message.startsWith("❌") ? 400 : 500;
+      return res.status(statusCode).json(formatErrorResponse(error.message));
+    }
+  },
 };
 
 module.exports = contratoFirmaController;
