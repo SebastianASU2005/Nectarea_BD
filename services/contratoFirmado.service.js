@@ -15,10 +15,60 @@ const Adhesion = require("../models/adhesion");
  * Implementa la **AUTO-DETECCIÓN** de la Inversión o Suscripción válida asociada al contrato.
  */
 const contratoFirmadoService = {
+  /**
+   * Registra un contrato firmado en base de datos.
+   * Acepta id_inversion o id_suscripcion opcionales para asociación explícita.
+   */
   async registerSignedContract(signatureData) {
-    const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } =
-      signatureData;
+    const {
+      id_usuario_firmante,
+      id_proyecto,
+      id_contrato_plantilla,
+      id_inversion: explicitIdInversion,
+      id_suscripcion: explicitIdSuscripcion,
+      ...rest
+    } = signatureData;
 
+    // Reutilizar la validación (incluye chequeo de duplicado y KYC)
+    const { inversionValida, suscripcionValida } =
+      await this.validateContractEligibility({
+        id_usuario_firmante,
+        id_proyecto,
+        id_contrato_plantilla,
+        id_inversion: explicitIdInversion,
+        id_suscripcion: explicitIdSuscripcion,
+      });
+
+    // Crear el registro de auditoría
+    const newContract = await ContratoFirmado.create({
+      ...rest,
+      id_contrato_plantilla,
+      id_proyecto,
+      id_usuario_firmante,
+      id_inversion_asociada: inversionValida ? inversionValida.id : null,
+      id_suscripcion_asociada: suscripcionValida ? suscripcionValida.id : null,
+      fecha_firma: new Date(),
+      ip_firma: rest.ip_firma,
+      geolocalizacion_firma: rest.geolocalizacion_firma,
+    });
+
+    return newContract;
+  },
+  /**
+   * Valida si el usuario es elegible para firmar un contrato.
+   * Permite especificar opcionalmente id_inversion o id_suscripcion.
+   * Si no se especifica, auto-detecta según el tipo de proyecto.
+   */
+  async validateContractEligibility(data) {
+    const {
+      id_usuario_firmante,
+      id_proyecto,
+      id_contrato_plantilla,
+      id_inversion: explicitIdInversion,
+      id_suscripcion: explicitIdSuscripcion,
+    } = data;
+
+    // 1. Validar usuario y rol
     const usuario =
       await require("./usuario.service").findById(id_usuario_firmante);
     if (usuario && usuario.rol === "admin") {
@@ -27,7 +77,7 @@ const contratoFirmadoService = {
       );
     }
 
-    // 1. VERIFICACIÓN CRÍTICA: Estatus de Verificación de Identidad (KYC).
+    // 2. KYC obligatorio
     const verificacionKYC =
       await verificacionIdentidadService.getVerificationStatus(
         id_usuario_firmante,
@@ -41,68 +91,119 @@ const contratoFirmadoService = {
       );
     }
 
-    // 2. OBTENER Y VALIDAR EL PROYECTO
+    // 3. Proyecto existe
     const proyecto = await Proyecto.findByPk(id_proyecto);
     if (!proyecto) throw new Error("❌ El proyecto especificado no existe.");
 
-    // 3. VALIDAR PLANTILLA
+    // 4. Plantilla válida y pertenece al proyecto
     const plantilla = await ContratoPlantilla.findByPk(id_contrato_plantilla);
     if (!plantilla)
       throw new Error("❌ La plantilla de contrato especificada no existe.");
     if (plantilla.id_proyecto !== parseInt(id_proyecto)) {
       throw new Error(
-        `❌ Error de seguridad: La plantilla de contrato (ID: ${id_contrato_plantilla}) no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
+        `❌ Error de seguridad: La plantilla no pertenece al proyecto "${proyecto.nombre_proyecto}".`,
       );
     }
-    if (!plantilla.activo) {
-      throw new Error(
-        "❌ La plantilla de contrato seleccionada está inactiva y no puede ser utilizada.",
-      );
-    }
+    if (!plantilla.activo) throw new Error("❌ La plantilla está inactiva.");
 
-    // 4. AUTO-DETECCIÓN DE ENTIDAD VÁLIDA
     let inversionValida = null;
     let suscripcionValida = null;
 
-    if (proyecto.tipo_inversion === "directo") {
+    // 5. Validación según parámetros explícitos o auto-detección
+    if (explicitIdInversion && explicitIdSuscripcion) {
+      throw new Error(
+        "❌ No se puede especificar una inversión y una suscripción al mismo tiempo.",
+      );
+    }
+
+    if (explicitIdInversion) {
+      // Validar inversión específica
       inversionValida = await Inversion.findOne({
         where: {
+          id: explicitIdInversion,
           id_usuario: id_usuario_firmante,
           id_proyecto: id_proyecto,
           estado: "pagado",
           activo: true,
         },
-        order: [["id", "DESC"]],
       });
-    }
-
-    if (proyecto.tipo_inversion === "mensual") {
-      // 🔥 NUEVO: Buscar una suscripción activa asociada a una adhesión con al menos una cuota pagada
-      // Primero, obtener las adhesiones del usuario en este proyecto con cuotas_pagadas > 0
-      const adhesion = await Adhesion.findOne({
+      if (!inversionValida) {
+        throw new Error(
+          `❌ La inversión ID ${explicitIdInversion} no es válida o no pertenece al usuario.`,
+        );
+      }
+      if (proyecto.tipo_inversion !== "directo") {
+        throw new Error(
+          `❌ El proyecto es de tipo "${proyecto.tipo_inversion}" pero se envió una inversión.`,
+        );
+      }
+    } else if (explicitIdSuscripcion) {
+      // Validar suscripción específica
+      const suscripcion = await SuscripcionProyecto.findOne({
         where: {
+          id: explicitIdSuscripcion,
           id_usuario: id_usuario_firmante,
           id_proyecto: id_proyecto,
+          activo: true,
+        },
+      });
+      if (!suscripcion) {
+        throw new Error(
+          `❌ La suscripción ID ${explicitIdSuscripcion} no es válida o no pertenece al usuario.`,
+        );
+      }
+      if (proyecto.tipo_inversion !== "mensual") {
+        throw new Error(
+          `❌ El proyecto es de tipo "${proyecto.tipo_inversion}" pero se envió una suscripción.`,
+        );
+      }
+
+      // Verificar que tenga al menos una cuota pagada (adhesión asociada)
+      const adhesion = await Adhesion.findOne({
+        where: {
+          id_suscripcion: suscripcion.id,
           cuotas_pagadas: { [Op.gt]: 0 },
           estado: { [Op.in]: ["en_curso", "completada"] },
         },
         order: [["id", "DESC"]],
       });
-
-      if (adhesion && adhesion.id_suscripcion) {
-        const suscripcion = await SuscripcionProyecto.findOne({
+      if (!adhesion) {
+        throw new Error(
+          `❌ La suscripción ID ${explicitIdSuscripcion} no tiene ninguna cuota de adhesión pagada. No puede firmar contrato.`,
+        );
+      }
+      suscripcionValida = suscripcion;
+    } else {
+      // AUTO-DETECCIÓN (comportamiento original)
+      if (proyecto.tipo_inversion === "directo") {
+        inversionValida = await Inversion.findOne({
           where: {
-            id: adhesion.id_suscripcion,
+            id_usuario: id_usuario_firmante,
+            id_proyecto: id_proyecto,
+            estado: "pagado",
             activo: true,
           },
+          order: [["id", "DESC"]],
         });
-        if (suscripcion) {
-          suscripcionValida = suscripcion;
+      } else if (proyecto.tipo_inversion === "mensual") {
+        const adhesion = await Adhesion.findOne({
+          where: {
+            id_usuario: id_usuario_firmante,
+            id_proyecto: id_proyecto,
+            cuotas_pagadas: { [Op.gt]: 0 },
+            estado: { [Op.in]: ["en_curso", "completada"] },
+          },
+          order: [["id", "DESC"]],
+        });
+        if (adhesion && adhesion.id_suscripcion) {
+          suscripcionValida = await SuscripcionProyecto.findOne({
+            where: { id: adhesion.id_suscripcion, activo: true },
+          });
         }
       }
     }
 
-    // 5. VALIDACIONES DE COHERENCIA
+    // 6. Validación final de existencia
     if (!inversionValida && !suscripcionValida) {
       if (proyecto.tipo_inversion === "directo") {
         throw new Error(
@@ -121,7 +222,7 @@ const contratoFirmadoService = {
       );
     }
 
-    // 6. VERIFICAR QUE NO EXISTA YA UN CONTRATO FIRMADO
+    // 7. Verificar que no exista ya un contrato firmado para esa entidad
     if (inversionValida) {
       const contratoExistente = await ContratoFirmado.findOne({
         where: {
@@ -145,134 +246,6 @@ const contratoFirmadoService = {
         throw new Error(
           "❌ Ya existe un contrato firmado para esta suscripción.",
         );
-    }
-
-    // 7. CREAR EL REGISTRO DE AUDITORÍA
-    const newContract = await ContratoFirmado.create({
-      ...signatureData,
-      id_inversion_asociada: inversionValida ? inversionValida.id : null,
-      id_suscripcion_asociada: suscripcionValida ? suscripcionValida.id : null,
-      fecha_firma: new Date(),
-    });
-
-    return newContract;
-  },
-  /**
-   * Valida si el usuario es elegible para firmar un contrato (sin crear registro).
-   * Ahora incluye la validación de adhesión con al menos una cuota pagada.
-   */
-  async validateContractEligibility(data) {
-    const { id_usuario_firmante, id_proyecto, id_contrato_plantilla } = data;
-
-    const usuario =
-      await require("./usuario.service").findById(id_usuario_firmante);
-    if (usuario && usuario.rol === "admin") {
-      throw new Error(
-        "⛔ Los administradores no pueden firmar contratos como clientes.",
-      );
-    }
-
-    // KYC
-    const verificacionKYC =
-      await verificacionIdentidadService.getVerificationStatus(
-        id_usuario_firmante,
-      );
-    if (
-      !verificacionKYC ||
-      verificacionKYC.estado_verificacion !== "APROBADA"
-    ) {
-      throw new Error(
-        "❌ Firma rechazada: El usuario no ha completado o aprobado la Verificación de Identidad (KYC).",
-      );
-    }
-
-    // Proyecto
-    const proyecto = await Proyecto.findByPk(id_proyecto);
-    if (!proyecto) throw new Error("❌ El proyecto especificado no existe.");
-
-    // Plantilla
-    const plantilla = await ContratoPlantilla.findByPk(id_contrato_plantilla);
-    if (!plantilla)
-      throw new Error("❌ La plantilla de contrato especificada no existe.");
-    if (plantilla.id_proyecto !== parseInt(id_proyecto)) {
-      throw new Error(
-        `❌ Error de seguridad: La plantilla no pertenece al proyecto.`,
-      );
-    }
-    if (!plantilla.activo) throw new Error("❌ La plantilla está inactiva.");
-
-    // Auto-detección
-    let inversionValida = null;
-    let suscripcionValida = null;
-
-    if (proyecto.tipo_inversion === "directo") {
-      inversionValida = await Inversion.findOne({
-        where: {
-          id_usuario: id_usuario_firmante,
-          id_proyecto: id_proyecto,
-          estado: "pagado",
-          activo: true,
-        },
-        order: [["id", "DESC"]],
-      });
-    }
-
-    if (proyecto.tipo_inversion === "mensual") {
-      const adhesion = await Adhesion.findOne({
-        where: {
-          id_usuario: id_usuario_firmante,
-          id_proyecto: id_proyecto,
-          cuotas_pagadas: { [Op.gt]: 0 },
-          estado: { [Op.in]: ["en_curso", "completada"] },
-        },
-        order: [["id", "DESC"]],
-      });
-      if (adhesion && adhesion.id_suscripcion) {
-        suscripcionValida = await SuscripcionProyecto.findOne({
-          where: { id: adhesion.id_suscripcion, activo: true },
-        });
-      }
-    }
-
-    if (!inversionValida && !suscripcionValida) {
-      if (proyecto.tipo_inversion === "directo") {
-        throw new Error(
-          `❌ Debes completar el pago de tu inversión antes de firmar.`,
-        );
-      } else {
-        throw new Error(
-          `❌ Debes pagar al menos una cuota de tu adhesión antes de firmar el contrato.`,
-        );
-      }
-    }
-
-    if (inversionValida && suscripcionValida)
-      throw new Error("❌ Inconsistencia de entidades.");
-    if (inversionValida && proyecto.tipo_inversion !== "directo")
-      throw new Error("❌ Inconsistencia de tipo.");
-    if (suscripcionValida && proyecto.tipo_inversion !== "mensual")
-      throw new Error("❌ Inconsistencia de tipo.");
-
-    // Verificar duplicado
-    if (inversionValida) {
-      const contratoExistente = await ContratoFirmado.findOne({
-        where: {
-          id_inversion_asociada: inversionValida.id,
-          estado_firma: "FIRMADO",
-        },
-      });
-      if (contratoExistente)
-        throw new Error("❌ Ya existe contrato firmado para esta inversión.");
-    }
-    if (suscripcionValida) {
-      const contratoExistente = await ContratoFirmado.findOne({
-        where: {
-          id_suscripcion_asociada: suscripcionValida.id,
-          estado_firma: "FIRMADO",
-        },
-      });
-      if (contratoExistente)
-        throw new Error("❌ Ya existe contrato firmado para esta suscripción.");
     }
 
     return { inversionValida, suscripcionValida, proyecto };
