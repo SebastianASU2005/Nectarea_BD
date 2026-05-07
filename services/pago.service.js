@@ -167,6 +167,33 @@ const pagoService = {
         };
       }
 
+      // 🆕 VALIDACIÓN DE STANDBY
+      if (suscripcion.standby_active) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const endDate = suscripcion.standby_end_date
+          ? new Date(suscripcion.standby_end_date)
+          : null;
+
+        if (endDate && endDate >= today) {
+          // Aún en período de pausa
+          if (!options.transaction) await t.commit();
+          return {
+            message: `Suscripción en período de pausa hasta ${endDate.toISOString().slice(0, 10)}. No se generan nuevas cuotas durante este tiempo.`,
+          };
+        } else {
+          // El período de pausa ya expiró, desactivar automáticamente
+          await suscripcion.update(
+            {
+              standby_active: false,
+              standby_end_date: null,
+            },
+            { transaction: t },
+          );
+          // Continuar con la generación del pago
+        }
+      }
+
       // 2. Verificar meses restantes
       if (suscripcion.meses_a_pagar <= 0) {
         if (!options.transaction) await t.commit();
@@ -204,7 +231,7 @@ const pagoService = {
         }
       }
 
-      // 5. Calcular la fecha de vencimiento (Día 10 del mes en que se crea)
+      // 5. Calcular fecha de vencimiento (Día 10 del mes en que se crea)
       const now = new Date();
       const fechaVencimiento = new Date(now.getFullYear(), now.getMonth(), 10);
       fechaVencimiento.setHours(0, 0, 0, 0);

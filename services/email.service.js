@@ -1362,6 +1362,98 @@ Ingresá al panel de administración para decidir la acción a tomar.
       html,
     );
   },
+  /**
+   * Notifica al usuario que su período de pausa (standby) ha finalizado
+   * y que la generación de cuotas se reanudará normalmente.
+   * @param {object} usuario - Objeto del usuario (nombre, email)
+   * @param {object} proyecto - Proyecto asociado
+   */
+  async notificarStandbyFinalizado(usuario, proyecto) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = `🟢 Tu período de pausa ha terminado - ${proyecto.nombre_proyecto}`;
+    const fechaHoy = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">¡Tu período de pausa ha finalizado!</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>El período de pausa de <strong>6 meses</strong> que solicitaste para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha terminado el día <strong>${fechaHoy}</strong>.</p>
+    
+    <div style="border-left: 4px solid #FF5733; padding: 15px; background-color: #fff3e0; margin: 20px 0;">
+      <h3 style="color: #d9534f; margin-top: 0; font-size: 16px;">📌 ¿Qué sucede ahora?</h3>
+      <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+        <li>Se <strong>reactivarán automáticamente</strong> tus cuotas mensuales de inversión.</li>
+        <li>En los próximos días comenzará a generarse tu próxima cuota según el cronograma original.</li>
+        <li>Recibirás un recordatorio de pago con la fecha de vencimiento correspondiente.</li>
+      </ul>
+    </div>
+
+    <p style="margin-top: 20px;">Si deseas <strong>cancelar tu suscripción</strong> o solicitar una nueva pausa, por favor contacta con el equipo de administración.</p>
+    
+    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ver Mis Suscripciones
+    </a>
+
+    <p style="margin-top: 20px;">Saludos cordiales,<br>El Equipo de Loteplan.com</p>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Tu período de pausa para el proyecto ${proyecto.nombre_proyecto} ha terminado. Se reanudará la generación de cuotas.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
+  /**
+ * Notifica al usuario que un administrador ha activado el período de pausa (standby) de 6 meses.
+ * @param {object} usuario - Objeto del usuario (nombre, email)
+ * @param {object} proyecto - Proyecto asociado
+ * @param {Date|string} fechaFin - Fecha en que finaliza la pausa (YYYY-MM-DD)
+ */
+async notificarStandbyActivado(usuario, proyecto, fechaFin) {
+  if (!usuario || !usuario.email) return;
+
+  const fechaFormateada = new Date(fechaFin).toLocaleDateString("es-ES", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const subject = `🔵 Período de pausa activado - ${proyecto.nombre_proyecto}`;
+
+  const contenidoInterno = `
+    <h2 style="color: #0b1b36; margin-top: 0;">Se ha activado un período de pausa en tu suscripción</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Por gestión administrativa, se ha activado un <strong>período de pausa de 6 meses</strong> en tu suscripción al proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    
+    <div style="border-left: 4px solid #FF5733; padding: 15px; background-color: #fff3e0; margin: 20px 0;">
+      <h3 style="color: #d9534f; margin-top: 0; font-size: 16px;">📌 ¿Qué significa esto?</h3>
+      <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.8;">
+        <li><strong>No se generarán nuevas cuotas mensuales</strong> durante este período.</li>
+        <li>El contador de <strong>meses_a_pagar se detiene</strong> y se reanudará al finalizar la pausa.</li>
+        <li>No perderás tu lugar en el proyecto ni los meses ya pagados.</li>
+      </ul>
+    </div>
+
+    <p><strong>Fecha de finalización de la pausa:</strong> ${fechaFormateada}</p>
+    <p>A partir de esa fecha, el sistema reactivará automáticamente la generación de tus cuotas.</p>
+    
+    <p style="margin-top: 20px;">Si tienes dudas, contacta con el equipo de soporte.</p>
+    
+    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ver Mis Suscripciones
+    </a>
+
+    <p>Saludos,<br>El Equipo de Loteplan.com</p>
+  `;
+
+  const html = obtenerPlantillaHtml(contenidoInterno);
+  const textPlain = `Se ha activado una pausa de 6 meses en tu suscripción a ${proyecto.nombre_proyecto}. No se generarán cuotas hasta el ${fechaFormateada}.`;
+
+  await this.sendEmail(usuario.email, subject, textPlain, html);
+},
 
   /**
    * Notifica al usuario que ha completado todas las cuotas y su suscripción está activa.

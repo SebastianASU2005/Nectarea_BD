@@ -161,6 +161,7 @@ const {
 } = require("./tasks/expireOldTransactions.job");
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 const marcarCuotasAdhesionVencidas = require("./tasks/vencerCuotasAdhesion");
+const { startStandbyDeactivator } = require("./tasks/deactivateStandbyTask");
 // ====================================================================
 // 5. 🔥 CONFIGURACIÓN DE RUTAS EN ORDEN ESPECÍFICO
 // ====================================================================
@@ -294,6 +295,7 @@ async function synchronizeDatabase() {
     // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
     // ==========================================================
     paymentReminderScheduler.scheduleJobs();
+    startStandbyDeactivator();
     monthlyPaymentGenerationTask.start();
     overduePaymentManager.start();
     overduePaymentNotifier.start();

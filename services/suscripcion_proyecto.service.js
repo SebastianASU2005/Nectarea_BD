@@ -1090,6 +1090,107 @@ const suscripcionProyectoService = {
       tasa_cancelacion: tasaCancelacion.toFixed(2),
     };
   },
+  async activateStandby(suscripcionId, usuarioAutenticado) {
+    const t = await sequelize.transaction();
+    try {
+      const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+
+      if (!suscripcion) throw new Error("Suscripción no encontrada.");
+      if (!suscripcion.activo)
+        throw new Error("La suscripción ya está cancelada.");
+      if (suscripcion.standby_active)
+        throw new Error("La suscripción ya se encuentra en período de pausa.");
+
+      const esAdmin = usuarioAutenticado?.rol === "admin";
+      if (suscripcion.id_usuario !== usuarioAutenticado.id && !esAdmin) {
+        throw new Error("No tienes permiso para pausar esta suscripción.");
+      }
+
+      const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
+        transaction: t,
+      });
+      if (!proyecto || proyecto.estado_proyecto !== "En proceso") {
+        throw new Error(
+          "No se puede pausar la suscripción porque el proyecto no está en proceso.",
+        );
+      }
+
+      const hoy = new Date();
+      const endDate = new Date(hoy);
+      endDate.setMonth(hoy.getMonth() + 6);
+      endDate.setHours(0, 0, 0, 0);
+
+      await suscripcion.update(
+        {
+          standby_active: true,
+          standby_end_date: endDate,
+        },
+        { transaction: t },
+      );
+
+      await t.commit();
+
+      // ------------------------------------------------
+      // 🔔 NOTIFICACIONES (fuera de la transacción)
+      // ------------------------------------------------
+      // Cargar el usuario completo (por si no estaba incluido)
+      const usuario = await Usuario.findByPk(suscripcion.id_usuario);
+      if (usuario) {
+        // Email
+        try {
+          await emailService.notificarStandbyActivado(
+            usuario,
+            proyecto,
+            endDate,
+          );
+        } catch (emailError) {
+          console.error(
+            "Error enviando email de activación de standby:",
+            emailError.message,
+          );
+        }
+      }
+
+      return suscripcion;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  },
+  async deactivateStandby(suscripcionId, usuarioAutenticado) {
+    const t = await sequelize.transaction();
+    try {
+      const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!suscripcion) throw new Error("Suscripción no encontrada.");
+      if (!suscripcion.standby_active)
+        throw new Error("La suscripción no está en período de pausa.");
+
+      const esAdmin = usuarioAutenticado?.rol === "admin";
+      if (suscripcion.id_usuario !== usuarioAutenticado.id && !esAdmin) {
+        throw new Error("No tienes permiso para reactivar esta suscripción.");
+      }
+
+      await suscripcion.update(
+        {
+          standby_active: false,
+          standby_end_date: null,
+        },
+        { transaction: t },
+      );
+
+      await t.commit();
+      return suscripcion;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  },
 };
 
 module.exports = suscripcionProyectoService;

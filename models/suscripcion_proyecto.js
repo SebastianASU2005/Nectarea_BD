@@ -48,6 +48,18 @@ const SuscripcionProyecto = sequelize.define(
       comment:
         "Indica si el usuario ya completó el pago de la adhesión (4% del valor móvil).",
     },
+    standby_active: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: "Indica si la suscripción está actualmente en pausa (standby)",
+    },
+    standby_end_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment:
+        "Fecha en que finaliza el período de pausa (6 meses después de activarlo)",
+    },
   },
   {
     tableName: "suscripcion_proyecto",

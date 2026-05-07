@@ -661,6 +661,33 @@ async confirmarCancelacionSuscripcion  (req, res) {
     console.error("Error en confirmarCancelacionSuscripcion:", error.message);
     res.status(400).json({ error: error.message });
   }
+},
+async activateStandby(req, res) {
+  try {
+    const { id } = req.params;
+    const usuarioAutenticado = req.user;
+    const suscripcion = await suscripcionProyectoService.activateStandby(id, usuarioAutenticado);
+    res.status(200).json({
+      message: `Suscripción en pausa hasta ${suscripcion.standby_end_date}. No se generarán cuotas durante 6 meses.`,
+      suscripcion
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+},
+
+async deactivateStandby(req, res) {
+  try {
+    const { id } = req.params;
+    const usuarioAutenticado = req.user;
+    const suscripcion = await suscripcionProyectoService.deactivateStandby(id, usuarioAutenticado);
+    res.status(200).json({
+      message: "La suscripción ha salido del modo pausa. La generación de cuotas se reanudará normalmente.",
+      suscripcion
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 }
 };
 

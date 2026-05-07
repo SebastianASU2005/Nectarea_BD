@@ -7,13 +7,20 @@ const UsuarioService = require("../services/usuario.service");
  * 1. Que el usuario tenga KYC aprobado
  * 2. Que el usuario tenga 2FA activado
  *
- * Debe aplicarse ANTES de cualquier operación sensible (pagos, inversiones, suscripciones, firmas)
+ * Se aplica ANTES de cualquier operación sensible (pagos, inversiones, suscripciones, firmas).
+ * Los administradores quedan exentos de estas verificaciones.
  */
 const checkKYCandTwoFA = async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const userRole = req.user.rol; // asumiendo que el token incluye 'rol'
 
-    // 1. Obtener datos del usuario
+    // 🚀 EXENCIÓN PARA ADMINISTRADORES (no requieren 2FA ni KYC)
+    if (userRole === "admin") {
+      return next();
+    }
+
+    // 1. Obtener datos del usuario (solo para no-admins)
     const user = await UsuarioService.findById(userId);
 
     if (!user) {

@@ -106,7 +106,7 @@ const inversionService = {
       return inversion;
     }
 
-    const proyecto = await Proyecto.findByPk(inversion.id_proyecto, {
+    const proyecto = await Proyecto.findByPk(inversion.id_proyecto, { 
       transaction: t,
     });
     if (!proyecto) {

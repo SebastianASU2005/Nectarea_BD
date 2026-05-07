@@ -135,6 +135,25 @@ router.get(
   authMiddleware.authorizeAdmin,
   suscripcionProyectoController.findById,
 );
+// =======================================================
+// RUTAS PARA ADMINISTRADORES – GESTIÓN DE STANDBY
+// =======================================================
+
+// Activar período de pausa (standby) de 6 meses en una suscripción (solo admin)
+router.post(
+  "/:id/standby/activate",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.activateStandby,
+);
+
+// Desactivar período de pausa anticipadamente (solo admin)
+router.delete(
+  "/:id/standby/deactivate",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  suscripcionProyectoController.deactivateStandby,
+);
 
 // Actualizar campos de una suscripción (admin)
 router.patch(
