@@ -119,6 +119,7 @@ const ContratoPlantilla = require("./models/ContratoPlantilla");
 const ContratoFirmado = require("./models/ContratoFirmado");
 const Adhesion = require("./models/adhesion");
 const PagoAdhesion = require("./models/PagoAdhesion");
+const AuditLog = require("./models/audit_log");
 
 const configureAssociations = require("./models/associations");
 
@@ -147,6 +148,7 @@ const redireccionRoutes = require("./routes/redireccion.routes");
 const favoritoRoutes = require("./routes/favorito.routes");
 const kycRoutes = require("./routes/kyc.routes");
 const adhesionRoutes = require("./routes/adhesion.routes");
+const auditRoutes = require("./routes/audit.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
@@ -196,8 +198,6 @@ console.log("✅ Rate limiter global activado");
 // --------------------------------------------------------------------
 
 app.use("/api/kyc", (req, res, next) => {
-  console.log(`\n🔍 PETICIÓN KYC: ${req.method} ${req.url}`);
-  console.log("📍 Content-Type:", req.get("content-type"));
   next();
 });
 
@@ -221,7 +221,7 @@ app.use("/api/cuotas_mensuales", cuotaMensualRoutes);
 app.use("/api/resumen-cuentas", resumenCuentaRoutes);
 app.use("/api/favoritos", favoritoRoutes);
 app.use("/api/adhesion", adhesionRoutes);
-
+app.use("/api/audit", auditRoutes);
 app.use("/api/payment", pagoMercadoRoutes);
 app.use(redireccionRoutes);
 
@@ -253,6 +253,7 @@ async function synchronizeDatabase() {
     await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
     await VerificacionIdentidad.sync({ alter: true });
+    await AuditLog.sync({ alter: true });
 
     // ==========================================================
     // ASOCIACIONES
@@ -283,6 +284,7 @@ async function synchronizeDatabase() {
     await ContratoFirmado.sync({ alter: true });
     await Favorito.sync({ alter: true });
     await VerificacionIdentidad.sync({ alter: true });
+    await AuditLog.sync({ alter: true });
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
@@ -308,6 +310,12 @@ async function synchronizeDatabase() {
     cron.schedule("0 0 * * *", async () => {
       console.log("🕒 Ejecutando tarea: marcarCuotasAdhesionVencidas");
       await marcarCuotasAdhesionVencidas();
+    });
+    const cleanOldAuditLogs = require("./tasks/cleanAuditLogs");
+
+    cron.schedule("0 2 * * 0", async () => {
+      console.log("🕒 Limpiando logs de auditoría antiguos...");
+      await cleanOldAuditLogs();
     });
 
     // Inicia el servidor de Express

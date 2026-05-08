@@ -130,7 +130,7 @@ const usuarioController = {
         "activo",
         "rol",
         "nombre_usuario",
-        "dni", 
+        "dni",
       ];
 
       // Creamos un nuevo objeto solo con las propiedades permitidas.
@@ -445,67 +445,69 @@ const usuarioController = {
       res.status(statusCode).json({ error: error.message });
     }
   },
-  /**
- * Paso 1: Inicia la desactivación de cuenta.
- * Si el usuario tiene 2FA activo, devuelve un indicador para solicitar código.
- * Si no, desactiva directamente.
- */
-async iniciarCancelacionCuenta  (req, res) {
-  try {
-    const userId = req.user.id;
-    const user = await usuarioService.findById(userId);
-    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+  async iniciarCancelacionCuenta(req, res) {
+    try {
+      const userId = req.user.id;
+      const user = await usuarioService.findById(userId);
+      if (!user)
+        return res.status(404).json({ error: "Usuario no encontrado" });
 
-    if (user.is_2fa_enabled) {
+      // Usuario normal: debe tener 2FA activo
+      if (!user.is_2fa_enabled || !user.twofa_secret) {
+        return res.status(403).json({
+          error:
+            "Debes activar la verificación en dos pasos (2FA) antes de poder desactivar tu cuenta.",
+        });
+      }
+
+      // Tiene 2FA → solicitar código
       return res.status(202).json({
         message: "Se requiere verificación 2FA para desactivar la cuenta.",
-        requires2FA: true
+        requires2FA: true,
       });
+    } catch (error) {
+      console.error("Error en iniciarCancelacionCuenta:", error.message);
+      res.status(400).json({ error: error.message });
     }
+  },
 
-    // Sin 2FA: desactivar directamente
-    const usuarioDesactivado = await usuarioService.softDelete(userId);
-    res.status(200).json({
-      message: "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
-      success: true
-    });
-  } catch (error) {
-    console.error("Error en iniciarCancelacionCuenta:", error.message);
-    res.status(400).json({ error: error.message });
-  }
-},
+  /**
+   * Paso 2: Confirma la desactivación con el código 2FA.
+   */
+  async confirmarCancelacionCuenta(req, res) {
+    try {
+      const userId = req.user.id;
+      const { codigo_2fa } = req.body;
+      if (!codigo_2fa) {
+        return res.status(400).json({ error: "Falta el código 2FA." });
+      }
 
-/**
- * Paso 2: Confirma la desactivación con el código 2FA.
- */
-async confirmarCancelacionCuenta  (req, res)  {
-  try {
-    const userId = req.user.id;
-    const { codigo_2fa } = req.body;
-    if (!codigo_2fa) {
-      return res.status(400).json({ error: "Falta el código 2FA." });
+      const user = await usuarioService.findById(userId);
+      if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
+        return res
+          .status(403)
+          .json({ error: "2FA no activo o configuración inválida." });
+      }
+
+      const isVerified = auth2faService.verifyToken(
+        user.twofa_secret,
+        codigo_2fa,
+      );
+      if (!isVerified) {
+        return res.status(401).json({ error: "Código 2FA incorrecto." });
+      }
+
+      const usuarioDesactivado = await usuarioService.softDelete(userId);
+      res.status(200).json({
+        message:
+          "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
+        success: true,
+      });
+    } catch (error) {
+      console.error("Error en confirmarCancelacionCuenta:", error.message);
+      res.status(400).json({ error: error.message });
     }
-
-    const user = await usuarioService.findById(userId);
-    if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
-      return res.status(403).json({ error: "2FA no activo o configuración inválida." });
-    }
-
-    const isVerified = auth2faService.verifyToken(user.twofa_secret, codigo_2fa);
-    if (!isVerified) {
-      return res.status(401).json({ error: "Código 2FA incorrecto." });
-    }
-
-    const usuarioDesactivado = await usuarioService.softDelete(userId);
-    res.status(200).json({
-      message: "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
-      success: true
-    });
-  } catch (error) {
-    console.error("Error en confirmarCancelacionCuenta:", error.message);
-    res.status(400).json({ error: error.message });
-  }
-}
+  },
 };
 
 module.exports = usuarioController;

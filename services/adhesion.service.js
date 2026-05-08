@@ -10,6 +10,7 @@ const { sequelize, Op } = require("../config/database");
 const pagoService = require("./pago.service");
 const Usuario = require("../models/usuario");
 const emailService = require("./email.service");
+const auditService = require("../services/audit.service");
 
 const adhesionService = {
   /**
@@ -369,11 +370,12 @@ const adhesionService = {
     esAdmin = false,
     motivo = null,
     externalTransaction = null,
+    ip = null,
+    userAgent = null,
   ) {
     const t = externalTransaction || (await sequelize.transaction());
     const shouldCommit = !externalTransaction;
     try {
-      // 1. Bloquear solo la fila de Adhesion (sin includes)
       const adhesionLocked = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -381,7 +383,6 @@ const adhesionService = {
       });
       if (!adhesionLocked) throw new Error("Adhesión no encontrada.");
 
-      // 2. Obtener los datos completos con includes (sin lock)
       const adhesion = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         include: [
@@ -402,7 +403,7 @@ const adhesionService = {
         throw new Error("La adhesión ya está cancelada.");
       }
 
-      // Cancelar todos los pagos de adhesión pendientes o vencidos
+      // Cancelar pagos pendientes/vencidos
       await PagoAdhesion.update(
         {
           estado: "cancelado",
@@ -445,11 +446,28 @@ const adhesionService = {
         }
       }
 
+      const datosPrevios = {
+        estado: adhesion.estado,
+        cuotas_pagadas: adhesion.cuotas_pagadas,
+      };
       await adhesion.update({ estado: "cancelada" }, { transaction: t });
+
+      // Registrar auditoría
+      await auditService.registrar({
+        usuarioId: esAdmin ? userId : null,
+        accion: "CANCELAR_ADHESION",
+        entidadTipo: "Adhesion",
+        entidadId: adhesion.id,
+        datosPrevios,
+        datosNuevos: { estado: "cancelada" },
+        motivo: motivo || "Cancelación por administrador",
+        ip,
+        userAgent,
+        transaccion: t,
+      });
 
       if (shouldCommit) await t.commit();
 
-      // Notificar por email después del commit
       const notificar = async () => {
         const usuario = await Usuario.findByPk(adhesion.id_usuario);
         const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
@@ -472,6 +490,7 @@ const adhesionService = {
       throw error;
     }
   },
+
   /**
    * Verifica si una cuota específica puede ser pagada
    * (todas las cuotas anteriores deben estar pagadas o forzadas)
@@ -515,10 +534,16 @@ const adhesionService = {
   // FORZAR PAGO DE CUOTA (ADMIN)
   // ------------------------------------------------------------------
 
-  async forzarPagoCuota(adhesionId, numeroCuota, motivo, adminId) {
+  async forzarPagoCuota(
+    adhesionId,
+    numeroCuota,
+    motivo,
+    adminId,
+    ip = null,
+    userAgent = null,
+  ) {
     const t = await sequelize.transaction();
     try {
-      // 1. Bloquear solo la fila de Adhesion (sin includes)
       const adhesionLocked = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -526,7 +551,6 @@ const adhesionService = {
       });
       if (!adhesionLocked) throw new Error("Adhesión no encontrada");
 
-      // 2. Obtener datos completos con includes (sin lock)
       const adhesion = await Adhesion.findByPk(adhesionId, {
         transaction: t,
         include: [{ model: PagoAdhesion, as: "pagos" }],
@@ -542,7 +566,7 @@ const adhesionService = {
         );
       }
 
-      // Validar que cuotas anteriores estén pagadas o forzadas
+      // Validar cuotas anteriores
       const cuotasAnteriores = adhesion.pagos.filter(
         (p) => p.numero_cuota < numeroCuota,
       );
@@ -556,6 +580,7 @@ const adhesionService = {
       }
 
       const yaPagadas = adhesion.cuotas_pagadas;
+      const datosPrevios = pagoAdhesion.toJSON(); // ✅ Definir datos previos antes del update
 
       await pagoAdhesion.update(
         {
@@ -587,7 +612,21 @@ const adhesionService = {
         { transaction: t },
       );
 
-      await t.commit();
+      // Registrar auditoría
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "FORZAR_PAGO_CUOTA_ADHESION",
+        entidadTipo: "PagoAdhesion",
+        entidadId: pagoAdhesion.id,
+        datosPrevios,
+        datosNuevos: pagoAdhesion.toJSON(),
+        motivo,
+        ip,
+        userAgent,
+        transaccion: t,
+      });
+
+      await t.commit(); // ✅ Un solo commit
 
       // Notificaciones
       const usuario = await Usuario.findByPk(adhesion.id_usuario);
@@ -626,11 +665,22 @@ const adhesionService = {
   // ------------------------------------------------------------------
 
   /**
-   * Obtiene métricas globales de todas las adhesiones
+   * Obtiene métricas globales de adhesiones, con opción de filtrar por rango de fechas (creación de la adhesión)
+   * @param {Date|null} fechaInicio - Fecha de inicio (opcional)
+   * @param {Date|null} fechaFin - Fecha de fin (opcional)
    * @returns {Promise<object>}
    */
-  async getAdhesionMetrics() {
+  async getAdhesionMetrics(fechaInicio = null, fechaFin = null) {
+    const whereAdhesion = {};
+    if (fechaInicio) whereAdhesion.createdAt = { [Op.gte]: fechaInicio };
+    if (fechaFin)
+      whereAdhesion.createdAt = {
+        ...whereAdhesion.createdAt,
+        [Op.lte]: fechaFin,
+      };
+
     const adhesiones = await Adhesion.findAll({
+      where: whereAdhesion,
       include: [{ model: PagoAdhesion, as: "pagos" }],
     });
 
@@ -666,6 +716,11 @@ const adhesionService = {
       }
     }
 
+    const tasaCobranza =
+      totalMontoComprometido > 0
+        ? ((totalPagado / totalMontoComprometido) * 100).toFixed(2)
+        : "0.00";
+
     return {
       total_adhesiones: totalAdhesiones,
       estado_resumen: {
@@ -681,10 +736,7 @@ const adhesionService = {
         monto_vencido: totalVencido.toFixed(2),
         monto_cancelado: totalCancelado.toFixed(2),
       },
-      tasa_cobranza:
-        totalMontoComprometido > 0
-          ? ((totalPagado / totalMontoComprometido) * 100).toFixed(2)
-          : "0.00",
+      tasa_cobranza: tasaCobranza,
     };
   },
 

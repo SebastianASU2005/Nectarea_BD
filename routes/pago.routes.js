@@ -73,6 +73,14 @@ router.get(
   pagoController.getOnTimeRate,
 );
 
+// GET /metricas/range (Admin) - Métricas de pagos por rango de fechas
+router.get(
+  "/metricas/range",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pagoController.getPaymentMetricsByDateRange,
+);
+
 // GET /
 router.get(
   "/",

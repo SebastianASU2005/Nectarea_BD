@@ -13,6 +13,7 @@ const Transaccion = require("../models/transaccion");
 const { sequelize, Op } = require("../config/database");
 const resumenCuentaService = require("./resumen_cuenta.service");
 const emailService = require("./email.service");
+const auditService = require("../services/audit.service");
 
 /**
  * Servicio de lógica de negocio para la gestión de Suscripciones a Proyectos (SuscripcionProyecto).
@@ -547,10 +548,17 @@ const suscripcionProyectoService = {
    * a adhesionService.cancelarAdhesion.
    * @param {number} suscripcionId - ID de la suscripción a cancelar.
    * @param {Object} usuarioAutenticado - El objeto del Usuario autenticado (incluye id y rol).
+   * @param {string} [ip] - Dirección IP del cliente (para auditoría).
+   * @param {string} [userAgent] - User-Agent del cliente (para auditoría).
    * @returns {Promise<SuscripcionProyecto>} La suscripción actualizada como inactiva.
    * @throws {Error} Si la suscripción no existe, ya está cancelada, no te pertenece o tiene pujas pagadas asociadas.
    */
-  async softDelete(suscripcionId, usuarioAutenticado) {
+  async softDelete(
+    suscripcionId,
+    usuarioAutenticado,
+    ip = null,
+    userAgent = null,
+  ) {
     const t = await sequelize.transaction();
     try {
       const pujaService = require("./puja.service");
@@ -562,7 +570,6 @@ const suscripcionProyectoService = {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
-
       if (!suscripcion) throw new Error("Suscripción no encontrada.");
       if (!suscripcion.activo)
         throw new Error("La suscripción ya ha sido cancelada.");
@@ -593,7 +600,9 @@ const suscripcionProyectoService = {
           usuarioAutenticado.id,
           esAdministrador,
           "Cancelación de suscripción antes de completar adhesión",
-          t, // pasar la transacción actual
+          t, // transacción actual
+          ip,
+          userAgent,
         );
         // La adhesión ya desactivó la suscripción y liberó cupo, así que podemos finalizar
         await t.commit();
@@ -608,7 +617,6 @@ const suscripcionProyectoService = {
         suscripcion.id_proyecto,
         { transaction: t },
       );
-
       if (hasPaidBid) {
         throw new Error(
           "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto.",
@@ -617,16 +625,13 @@ const suscripcionProyectoService = {
 
       // 3. Verificar si tiene una puja ganadora PENDIENTE de pago
       const Lote = require("../models/lote");
-
       const lotesDelProyecto = await Lote.findAll({
         where: { id_proyecto: suscripcion.id_proyecto },
         attributes: ["id"],
         transaction: t,
       });
-
       const loteIds = lotesDelProyecto.map((l) => l.id);
       let pujaPendiente = null;
-
       if (loteIds.length > 0) {
         pujaPendiente = await pujaService.findOne({
           where: {
@@ -646,7 +651,6 @@ const suscripcionProyectoService = {
           },
           { transaction: t },
         );
-
         await loteService.procesarImpagoLote(pujaPendiente.id_lote, t);
       }
 
@@ -666,20 +670,21 @@ const suscripcionProyectoService = {
         },
         transaction: t,
       });
-
       const montoTotalPagado = pagosRealizados.reduce(
         (sum, pago) => sum + parseFloat(pago.monto),
         0,
       );
 
-      // 6. Marcar suscripción como inactiva
+      // 6. Guardar estado previo para auditoría (si es admin)
+      const datosPreviosSuscripcion = suscripcion.toJSON();
+
+      // 7. Marcar suscripción como inactiva
       await suscripcion.update({ activo: false }, { transaction: t });
 
-      // 7. Actualizar contador del proyecto
+      // 8. Actualizar contador del proyecto
       const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
         transaction: t,
       });
-
       if (proyecto) {
         await proyecto.decrement("suscripciones_actuales", {
           by: 1,
@@ -687,7 +692,7 @@ const suscripcionProyectoService = {
         });
       }
 
-      // 8. Registrar la cancelación
+      // 9. Registrar la cancelación en la tabla SuscripcionCancelada
       const registroCancelacion = await SuscripcionCancelada.create(
         {
           id_suscripcion_original: suscripcion.id,
@@ -701,7 +706,7 @@ const suscripcionProyectoService = {
         { transaction: t },
       );
 
-      // 9. Registrar evento en resumen de cuenta
+      // 10. Registrar evento en resumen de cuenta
       await resumenCuentaService.registrarEventoCancelacion(
         {
           id_usuario: suscripcion.id_usuario,
@@ -716,16 +721,32 @@ const suscripcionProyectoService = {
         t,
       );
 
+      // 11. REGISTRO DE AUDITORÍA (SOLO SI ES ADMINISTRADOR)
+      if (esAdministrador) {
+        await auditService.registrar({
+          usuarioId: usuarioAutenticado.id,
+          accion: "CANCELAR_SUSCRIPCION_ADMIN",
+          entidadTipo: "SuscripcionProyecto",
+          entidadId: suscripcion.id,
+          datosPrevios: datosPreviosSuscripcion,
+          datosNuevos: { activo: false },
+          motivo: "Cancelación por administrador",
+          ip: ip,
+          userAgent: userAgent,
+          transaccion: t,
+        });
+      }
+
       await t.commit();
 
-      // 10. Notificaciones (fuera de la transacción)
+      // 12. Notificaciones (fuera de la transacción)
       this._sendCancellationNotifications(suscripcion, proyecto, {
         pagosCancelados,
         pagosRealizados: pagosRealizados.length,
         montoTotalPagado,
       });
 
-      // 10b. Notificar cancelación de puja si aplica (fuera de la transacción)
+      // 13. Notificar cancelación de puja si aplica (fuera de la transacción)
       if (pujaPendiente) {
         setImmediate(async () => {
           try {
@@ -1016,14 +1037,20 @@ const suscripcionProyectoService = {
   // -------------------------------------------------------------------
 
   /**
-   * @async
-   * @function getMorosityMetrics
-   * @description Calcula la Tasa de Morosidad y el monto total de pagos pendientes/atrasados (KPI 4).
-   * @returns {Promise<object>} Objeto con las métricas de morosidad.
+   * Calcula la Tasa de Morosidad y montos en riesgo, filtrando por rango de fechas (createdAt de los pagos)
+   * @param {Date|null} fechaInicio
+   * @param {Date|null} fechaFin
+   * @returns {Promise<object>}
    */
-  async getMorosityMetrics() {
+  async getMorosityMetrics(fechaInicio = null, fechaFin = null) {
+    const wherePagos = {};
+    if (fechaInicio) wherePagos.createdAt = { [Op.gte]: fechaInicio };
+    if (fechaFin)
+      wherePagos.createdAt = { ...wherePagos.createdAt, [Op.lte]: fechaFin };
+
     const totalGeneradoResult = await Pago.sum("monto", {
       where: {
+        ...wherePagos,
         estado_pago: {
           [Op.in]: [
             "pagado",
@@ -1031,6 +1058,7 @@ const suscripcionProyectoService = {
             "vencido",
             "cubierto_por_puja",
             "cancelado",
+            "forzado",
           ],
         },
       },
@@ -1039,20 +1067,14 @@ const suscripcionProyectoService = {
 
     const totalEnRiesgoResult = await Pago.sum("monto", {
       where: {
+        ...wherePagos,
         estado_pago: { [Op.in]: ["pendiente", "vencido"] },
       },
     });
     const totalEnRiesgo = Number(totalEnRiesgoResult) || 0;
 
-    if (totalGenerado === 0) {
-      return {
-        total_pagos_generados: 0,
-        total_en_riesgo: 0,
-        tasa_morosidad: 0.0,
-      };
-    }
-
-    const tasaMorosidad = (totalEnRiesgo / totalGenerado) * 100;
+    const tasaMorosidad =
+      totalGenerado > 0 ? (totalEnRiesgo / totalGenerado) * 100 : 0;
 
     return {
       total_pagos_generados: totalGenerado.toFixed(2),
@@ -1062,12 +1084,12 @@ const suscripcionProyectoService = {
   },
 
   /**
-   * @async
-   * @function getCancellationRate
-   * @description Calcula la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5).
-   * @returns {Promise<object>} Objeto con la tasa de cancelación.
+   * Calcula la Tasa de Cancelación de Suscripciones (Churn Rate) filtrando por fecha de cancelación
+   * @param {Date|null} fechaInicio
+   * @param {Date|null} fechaFin
+   * @returns {Promise<object>}
    */
-  async getCancellationRate() {
+  async getCancellationRate(fechaInicio = null, fechaFin = null) {
     const totalSuscripciones = await SuscripcionProyecto.count();
 
     if (totalSuscripciones === 0) {
@@ -1078,8 +1100,16 @@ const suscripcionProyectoService = {
       };
     }
 
-    const totalCanceladas = await SuscripcionProyecto.count({
-      where: { activo: false },
+    const whereCancel = {};
+    if (fechaInicio) whereCancel.fecha_cancelacion = { [Op.gte]: fechaInicio };
+    if (fechaFin)
+      whereCancel.fecha_cancelacion = {
+        ...whereCancel.fecha_cancelacion,
+        [Op.lte]: fechaFin,
+      };
+
+    const totalCanceladas = await SuscripcionCancelada.count({
+      where: whereCancel,
     });
 
     const tasaCancelacion = (totalCanceladas / totalSuscripciones) * 100;

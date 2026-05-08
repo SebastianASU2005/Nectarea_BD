@@ -70,7 +70,7 @@ const proyectoController = {
       // Usamos la versión corregida del servicio que acepta datos y lotesIds
       const nuevoProyecto = await proyectoService.crearProyecto(
         proyectoData,
-        lotesIds // Pasamos el array de IDs
+        lotesIds, // Pasamos el array de IDs
       );
 
       // 2. Envía un mensaje a todos los usuarios activos (transaccional para mensajes masivos)
@@ -87,7 +87,7 @@ const proyectoController = {
               id_receptor: usuario.id,
               contenido: contenido,
             },
-            { transaction: t }
+            { transaction: t },
           );
         }
       }
@@ -144,7 +144,7 @@ const proyectoController = {
       // 1. Actualizar el Proyecto (sin transacción, ya que es una operación simple)
       const proyectoActualizado = await proyectoService.update(
         id,
-        proyectoData
+        proyectoData,
       );
 
       if (!proyectoActualizado) {
@@ -181,7 +181,7 @@ const proyectoController = {
 
       const proyectoActualizado = await proyectoService.asignarLotesAProyecto(
         Number(id),
-        lotesIds
+        lotesIds,
       );
 
       // Obtener el proyecto completo para la respuesta (incluyendo los nuevos lotes)
@@ -231,9 +231,8 @@ const proyectoController = {
   async iniciarProceso(req, res) {
     try {
       const { id } = req.params;
-      const proyectoActualizado = await proyectoService.iniciarConteoMensual(
-        id
-      );
+      const proyectoActualizado =
+        await proyectoService.iniciarConteoMensual(id);
 
       res.status(200).json({
         mensaje: `Proyecto ID ${id} iniciado/reanudado. Estado: En proceso. Meses restantes: ${proyectoActualizado.meses_restantes}`,
@@ -331,9 +330,8 @@ const proyectoController = {
       const userId = req.user.id;
 
       // 1. Obtener proyectos a través de las suscripciones
-      const suscripciones = await suscripcionProyectoService.findByUserId(
-        userId
-      );
+      const suscripciones =
+        await suscripcionProyectoService.findByUserId(userId);
       // ⚠️ Se asume que el servicio devuelve el proyecto asociado en una propiedad 'proyectoAsociado'
       const proyectosSuscritos = suscripciones
         .map((suscripcion) => suscripcion.proyectoAsociado)
@@ -364,15 +362,21 @@ const proyectoController = {
   // -------------------------------------------------------------------
 
   /**
-   * @async
-   * @function getCompletionRate
-   * @description Obtiene la Tasa de Culminación de Proyectos (KPI 4).
-   * @param {object} req - Objeto de solicitud de Express.
-   * @param {object} res - Objeto de respuesta de Express.
+   * GET /api/proyectos/admin/completion-rate
+   * Obtiene la Tasa de Culminación de Proyectos (KPI 4) con filtro por fechas de inicio.
+   * Query params: fechaInicio, fechaFin
    */
   async getCompletionRate(req, res) {
     try {
-      const metrics = await proyectoService.getProjectCompletionRate();
+      const { fechaInicio, fechaFin } = req.query;
+      let startDate = null,
+        endDate = null;
+      if (fechaInicio) startDate = new Date(fechaInicio);
+      if (fechaFin) endDate = new Date(fechaFin);
+      const metrics = await proyectoService.getProjectCompletionRate(
+        startDate,
+        endDate,
+      );
       res.status(200).json({
         mensaje: "Tasa de Culminación de Proyectos (KPI 4).",
         data: metrics,

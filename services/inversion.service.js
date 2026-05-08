@@ -106,7 +106,7 @@ const inversionService = {
       return inversion;
     }
 
-    const proyecto = await Proyecto.findByPk(inversion.id_proyecto, { 
+    const proyecto = await Proyecto.findByPk(inversion.id_proyecto, {
       transaction: t,
     });
     if (!proyecto) {
@@ -302,17 +302,17 @@ const inversionService = {
   // -------------------------------------------------------------------
 
   /**
-   * @async
-   * @function getInvestmentLiquidityRate
-   * @description Calcula la **Tasa de Liquidez de Inversiones** (KPI 6).
-   * Mide la proporción de inversiones registradas (pendientes/pagadas) que se concretan (pagadas).
-   * Fórmula: (Total Pagado / Total Registrado) * 100.
-   * @returns {Promise<object>} Objeto con las métricas: total registrado, total pagado, y tasa de liquidez (%).
+   * Calcula la Tasa de Liquidez de Inversiones (KPI 6) filtrando por rango de fechas (createdAt)
+   * @param {Date|null} fechaInicio
+   * @param {Date|null} fechaFin
+   * @returns {Promise<object>}
    */
-  async getInvestmentLiquidityRate() {
-    const totalInvertidoResult = await Inversion.sum("monto", {
-      where: { activo: true },
-    });
+  async getInvestmentLiquidityRate(fechaInicio = null, fechaFin = null) {
+    const where = { activo: true };
+    if (fechaInicio) where.createdAt = { [Op.gte]: fechaInicio };
+    if (fechaFin) where.createdAt = { ...where.createdAt, [Op.lte]: fechaFin };
+
+    const totalInvertidoResult = await Inversion.sum("monto", { where });
     const totalInvertido = Number(totalInvertidoResult) || 0;
 
     if (totalInvertido === 0) {
@@ -323,8 +323,9 @@ const inversionService = {
       };
     }
 
+    const wherePagado = { ...where, estado: "pagado" };
     const totalPagadoResult = await Inversion.sum("monto", {
-      where: { estado: "pagado", activo: true },
+      where: wherePagado,
     });
     const totalPagado = Number(totalPagadoResult) || 0;
 
@@ -338,28 +339,28 @@ const inversionService = {
   },
 
   /**
-   * @async
-   * @function getAggregatedInvestmentByUser
-   * @description Agrega el monto total invertido (solo `estado: 'pagado'`) por cada usuario.
-   * Sirve de base para el cálculo del Rendimiento del Inversor (KPI 7).
-   * @returns {Promise<object[]>} Lista de objetos con `id_usuario` y `monto_total_invertido` (pagado).
+   * Agrega monto total invertido (estado pagado) por usuario, opcionalmente filtrando por rango de fechas
+   * @param {Date|null} fechaInicio
+   * @param {Date|null} fechaFin
+   * @returns {Promise<object[]>}
    */
-  async getAggregatedInvestmentByUser() {
-    const aggregatedInvestments = await Inversion.findAll({
+  async getAggregatedInvestmentByUser(fechaInicio = null, fechaFin = null) {
+    const where = { estado: "pagado", activo: true };
+    if (fechaInicio) where.createdAt = { [Op.gte]: fechaInicio };
+    if (fechaFin) where.createdAt = { ...where.createdAt, [Op.lte]: fechaFin };
+
+    const aggregated = await Inversion.findAll({
       attributes: [
         "id_usuario",
         [sequelize.fn("SUM", sequelize.col("monto")), "monto_total_invertido"],
       ],
-      where: {
-        estado: "pagado",
-        activo: true,
-      },
+      where,
       group: ["id_usuario"],
       order: [[sequelize.literal("monto_total_invertido"), "DESC"]],
       raw: true,
     });
 
-    return aggregatedInvestments.map((item) => ({
+    return aggregated.map((item) => ({
       id_usuario: item.id_usuario,
       monto_total_invertido: parseFloat(item.monto_total_invertido).toFixed(2),
     }));

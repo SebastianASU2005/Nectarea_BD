@@ -285,15 +285,20 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
     const { id } = req.params;
     const esAdmin = req.user.rol === "admin";
     const { motivo } = req.body;
+    const ip = req.ip || req.headers["x-forwarded-for"] || null;
+    const userAgent = req.get("user-agent") || null;
 
+    // Validar existencia de la adhesión
     const adhesion = await adhesionService.obtenerAdhesion(
       id,
       esAdmin ? null : usuarioId,
     );
-    if (!adhesion)
-      return res
-        .status(404)
-        .json({ success: false, message: "Adhesión no encontrada" });
+    if (!adhesion) {
+      return res.status(404).json({
+        success: false,
+        message: "Adhesión no encontrada",
+      });
+    }
 
     if (adhesion.estado === "completada") {
       return res.status(400).json({
@@ -303,9 +308,10 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
       });
     }
     if (adhesion.estado === "cancelada") {
-      return res
-        .status(400)
-        .json({ success: false, message: "La adhesión ya está cancelada." });
+      return res.status(400).json({
+        success: false,
+        message: "La adhesión ya está cancelada.",
+      });
     }
 
     // ✅ Si es admin, cancelar directamente (sin 2FA)
@@ -315,30 +321,31 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
         usuarioId,
         esAdmin,
         motivo,
+        null,
+        ip,
+        userAgent,
       );
       return res.json({ success: true, message: resultado.message });
     }
 
-    // ✅ Usuario normal: verificar 2FA si está activo
+    // ✅ Usuario normal: debe tener 2FA activo obligatoriamente
     const user = await usuarioService.findById(usuarioId);
     if (!user) throw new Error("Usuario no encontrado");
 
-    if (user.is_2fa_enabled) {
-      return res.status(202).json({
-        message: "Se requiere verificación 2FA para cancelar la adhesión.",
-        requires2FA: true,
-        adhesionId: id,
+    if (!user.is_2fa_enabled || !user.twofa_secret) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Debes activar la verificación en dos pasos (2FA) antes de poder cancelar la adhesión.",
       });
     }
 
-    // Usuario sin 2FA: cancelar directamente
-    const resultado = await adhesionService.cancelarAdhesion(
-      id,
-      usuarioId,
-      esAdmin,
-      motivo,
-    );
-    res.json({ success: true, message: resultado.message });
+    // Si tiene 2FA, devolver 202 para solicitar código
+    return res.status(202).json({
+      message: "Se requiere verificación 2FA para cancelar la adhesión.",
+      requires2FA: true,
+      adhesionId: id,
+    });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -351,6 +358,9 @@ exports.confirmarCancelacionAdhesion = async (req, res) => {
   try {
     const usuarioId = req.user.id;
     const { adhesionId, codigo_2fa, motivo } = req.body;
+    const ip = req.ip || req.headers["x-forwarded-for"] || null;
+    const userAgent = req.get("user-agent") || null;
+
     if (!adhesionId || !codigo_2fa) {
       return res.status(400).json({ error: "Faltan adhesionId o codigo_2fa." });
     }
@@ -371,31 +381,14 @@ exports.confirmarCancelacionAdhesion = async (req, res) => {
     }
 
     const esAdmin = req.user.rol === "admin";
-    const adhesion = await adhesionService.obtenerAdhesion(
-      adhesionId,
-      esAdmin ? null : usuarioId,
-    );
-    if (!adhesion)
-      return res
-        .status(404)
-        .json({ success: false, message: "Adhesión no encontrada" });
-    if (adhesion.estado === "completada") {
-      return res.status(400).json({
-        success: false,
-        message: "No se puede cancelar una adhesión completada.",
-      });
-    }
-    if (adhesion.estado === "cancelada") {
-      return res
-        .status(400)
-        .json({ success: false, message: "La adhesión ya está cancelada." });
-    }
-
     const resultado = await adhesionService.cancelarAdhesion(
       adhesionId,
       usuarioId,
       esAdmin,
       motivo,
+      null,
+      ip,
+      userAgent,
     );
     res.json({ success: true, message: resultado.message });
   } catch (error) {
@@ -421,6 +414,8 @@ exports.forzarPagoCuota = async (req, res) => {
     }
     const { adhesionId, numeroCuota, motivo } = req.body;
     const adminId = req.user.id;
+    const ip = req.ip || req.headers["x-forwarded-for"] || null;
+    const userAgent = req.get("user-agent") || null;
 
     if (!adhesionId || !numeroCuota) {
       return res.status(400).json({
@@ -434,6 +429,8 @@ exports.forzarPagoCuota = async (req, res) => {
       numeroCuota,
       motivo,
       adminId,
+      ip,
+      userAgent,
     );
     res.json({ success: true, ...resultado });
   } catch (error) {
@@ -486,7 +483,8 @@ exports.obtenerAdhesionPorSuscripcion = async (req, res) => {
 
 /**
  * GET /api/adhesion/admin/metrics
- * Solo admin: métricas globales de adhesiones
+ * Solo admin: métricas globales de adhesiones con opción de filtro por fechas
+ * Query params: fechaInicio (YYYY-MM-DD), fechaFin (YYYY-MM-DD)
  */
 exports.getAdhesionMetrics = async (req, res) => {
   try {
@@ -495,7 +493,15 @@ exports.getAdhesionMetrics = async (req, res) => {
         .status(403)
         .json({ success: false, message: "Acceso denegado." });
     }
-    const metrics = await adhesionService.getAdhesionMetrics();
+    const { fechaInicio, fechaFin } = req.query;
+    let startDate = null,
+      endDate = null;
+    if (fechaInicio) startDate = new Date(fechaInicio);
+    if (fechaFin) endDate = new Date(fechaFin);
+    const metrics = await adhesionService.getAdhesionMetrics(
+      startDate,
+      endDate,
+    );
     res.json({ success: true, data: metrics });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

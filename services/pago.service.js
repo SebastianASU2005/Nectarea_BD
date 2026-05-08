@@ -8,7 +8,8 @@ const Proyecto = require("../models/proyecto");
 const emailService = require("./email.service");
 const mensajeService = require("./mensaje.service");
 const { sequelize } = require("../config/database");
-const resumenCuentaService = require("./resumen_cuenta.service"); // 🚀 IMPORTACIÓN CLAVE
+const resumenCuentaService = require("./resumen_cuenta.service");
+const auditService = require("../services/audit.service");
 
 /**
  * @typedef {object} PagoData
@@ -259,6 +260,61 @@ const pagoService = {
       if (t && !options.transaction) await t.rollback();
       throw error;
     }
+  },
+  /**
+   * Obtiene métricas de pagos (recaudación, morosidad) dentro de un rango de fechas (createdAt)
+   * @param {Date} fechaInicio
+   * @param {Date} fechaFin
+   * @returns {Promise<object>}
+   */
+  async getPaymentMetricsByDateRange(fechaInicio, fechaFin) {
+    const where = {
+      createdAt: { [Op.between]: [fechaInicio, fechaFin] },
+    };
+
+    const resultados = await Pago.findAll({
+      attributes: [
+        [
+          sequelize.literal(
+            `SUM(CASE WHEN estado_pago = 'pagado' OR estado_pago = 'forzado' THEN monto ELSE 0 END)`,
+          ),
+          "total_recaudado",
+        ],
+        [sequelize.literal(`COUNT(*)`), "total_pagos_generados"],
+        [
+          sequelize.literal(
+            `SUM(CASE WHEN estado_pago = 'vencido' THEN 1 ELSE 0 END)`,
+          ),
+          "total_pagos_vencidos",
+        ],
+        [
+          sequelize.literal(
+            `SUM(CASE WHEN estado_pago = 'pagado' OR estado_pago = 'forzado' THEN 1 ELSE 0 END)`,
+          ),
+          "total_pagos_pagados",
+        ],
+      ],
+      where,
+      raw: true,
+    });
+
+    const data = resultados[0] || {};
+    const totalGenerado = parseInt(data.total_pagos_generados || 0);
+    const totalVencidos = parseInt(data.total_pagos_vencidos || 0);
+    const totalRecaudado = parseFloat(data.total_recaudado || 0);
+
+    const tasaMorosidad =
+      totalGenerado > 0 ? (totalVencidos / totalGenerado) * 100 : 0;
+
+    return {
+      fecha_desde: fechaInicio,
+      fecha_hasta: fechaFin,
+      total_recaudado: totalRecaudado.toFixed(2),
+      total_pagos_generados: totalGenerado,
+      total_pagos_vencidos: totalVencidos,
+      total_pagos_pagados: parseInt(data.total_pagos_pagados || 0),
+      tasa_morosidad: tasaMorosidad.toFixed(2),
+    };
   },
   /**
    * @async
@@ -609,36 +665,51 @@ const pagoService = {
    * @returns {Promise<Pago>} El pago actualizado.
    * @throws {Error} Si el pago no existe, no está en estado modificable o el monto es inválido.
    */
-  async actualizarMontoPago(pagoId, nuevoMonto, motivoCambio = null) {
-    const pago = await Pago.findByPk(pagoId);
-
-    if (!pago) {
-      throw new Error(`Pago ID ${pagoId} no encontrado.`);
-    }
-
-    // Solo se pueden modificar pagos pendientes o vencidos
-    if (!["pendiente", "vencido"].includes(pago.estado_pago)) {
-      throw new Error(
-        `No se puede modificar el monto de un pago en estado '${pago.estado_pago}'. Solo se permiten estados: pendiente, vencido.`,
+  async actualizarMontoPago(
+    pagoId,
+    nuevoMonto,
+    motivoCambio,
+    adminId,
+    ip,
+    userAgent,
+  ) {
+    const t = await sequelize.transaction();
+    try {
+      const pago = await Pago.findByPk(pagoId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!pago) throw new Error("Pago no encontrado");
+      if (!["pendiente", "vencido"].includes(pago.estado_pago)) {
+        throw new Error(
+          "Solo se puede modificar monto de pagos pendientes o vencidos",
+        );
+      }
+      const datosPrevios = pago.toJSON();
+      await pago.update(
+        { monto: parseFloat(nuevoMonto).toFixed(2) },
+        { transaction: t },
       );
+
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "MODIFICAR_MONTO_PAGO",
+        entidadTipo: "Pago",
+        entidadId: pago.id,
+        datosPrevios,
+        datosNuevos: pago.toJSON(),
+        motivo: motivoCambio,
+        ip,
+        userAgent,
+        transaccion: t,
+      });
+
+      await t.commit();
+      return pago;
+    } catch (error) {
+      await t.rollback();
+      throw error;
     }
-
-    if (nuevoMonto <= 0 || isNaN(nuevoMonto)) {
-      throw new Error("El nuevo monto debe ser un número positivo válido.");
-    }
-
-    // Registrar el cambio para auditoría
-    console.log(`[AUDITORÍA] Cambio de monto en Pago ID ${pagoId}:
-    Monto anterior: $${pago.monto}
-    Monto nuevo: $${nuevoMonto}
-    Motivo: ${motivoCambio || "No especificado"}
-    Fecha: ${new Date().toISOString()}`);
-
-    await pago.update({
-      monto: parseFloat(nuevoMonto).toFixed(2),
-    });
-
-    return pago;
   },
 
   /**
@@ -809,11 +880,16 @@ const pagoService = {
       order: [["mes", "ASC"]],
     });
   },
-  async updatePaymentStatus(pagoId, nuevoEstado, motivo = null) {
+  async updatePaymentStatus(
+    pagoId,
+    nuevoEstado,
+    motivo = null,
+    adminId,
+    ip = null,
+    userAgent = null,
+  ) {
     const t = await sequelize.transaction();
-
     try {
-      // 1. Agregar "forzado" a la lista de estados válidos
       const estadosValidos = [
         "pendiente",
         "pagado",
@@ -822,51 +898,47 @@ const pagoService = {
         "cubierto_por_puja",
         "forzado",
       ];
-
-      const pago = await Pago.findByPk(pagoId, { transaction: t });
+      const pago = await Pago.findByPk(pagoId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
       if (!pago) throw new Error(`Pago ID ${pagoId} no encontrado.`);
-
-      if (!estadosValidos.includes(nuevoEstado)) {
+      if (!estadosValidos.includes(nuevoEstado))
         throw new Error(`Estado '${nuevoEstado}' inválido.`);
-      }
 
       const estadoAnterior = pago.estado_pago;
-
       if (estadoAnterior === nuevoEstado) {
         await t.commit();
         return pago;
       }
 
-      // 2. Lógica de fecha: Si es pagado o forzado, se setea la fecha de hoy
       const esEstadoDePagoExitoso = [
         "pagado",
         "forzado",
         "cubierto_por_puja",
       ].includes(nuevoEstado);
+      const datosPrevios = pago.toJSON(); // ✅ Guardar antes del update
 
       await pago.update(
         {
           estado_pago: nuevoEstado,
           fecha_pago: esEstadoDePagoExitoso ? new Date() : pago.fecha_pago,
-          motivo: motivo || null, // 🆕 Persistir el motivo
+          motivo: motivo || null,
         },
         { transaction: t },
       );
 
-      // 3. Sincronizar ResumenCuenta
-      // Consideramos "forzado" como un estado pagado para el balance
+      // Sincronizar ResumenCuenta
       const estadosQueCuentanComoPagado = [
         "pagado",
         "cubierto_por_puja",
         "forzado",
       ];
-
       const anteriorEraPagado =
         estadosQueCuentanComoPagado.includes(estadoAnterior);
       const nuevoEsPagado = estadosQueCuentanComoPagado.includes(nuevoEstado);
       const anteriorEraVencido = estadoAnterior === "vencido";
       const nuevoEsVencido = nuevoEstado === "vencido";
-
       const huboCambioRelevante =
         anteriorEraPagado !== nuevoEsPagado ||
         anteriorEraVencido !== nuevoEsVencido;
@@ -878,10 +950,24 @@ const pagoService = {
         );
       }
 
+      // Registrar auditoría
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "CAMBIAR_ESTADO_PAGO",
+        entidadTipo: "Pago",
+        entidadId: pago.id,
+        datosPrevios,
+        datosNuevos: pago.toJSON(),
+        motivo,
+        ip,
+        userAgent,
+        transaccion: t,
+      });
+
       await t.commit();
       return pago;
     } catch (error) {
-      if (t) await t.rollback();
+      await t.rollback();
       throw error;
     }
   },

@@ -8,10 +8,7 @@ const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
 const emailService = require("./email.service");
 const usuarioService = require("./usuario.service");
-
-// ✅ NOTA: ProyectoService, PagoService, ResumenCuentaService, emailService,
-// MensajeService, SuscripcionService y LoteService se cargan dinámicamente
-// dentro de las funciones que los necesitan para evitar dependencias circulares.
+const auditService = require("../services/audit.service");
 
 // Helper para garantizar que un valor es un número flotante (decimal)
 const toFloat = (value) => parseFloat(value);
@@ -1379,6 +1376,9 @@ const pujaService = {
   async cancelarPujaGanadoraAnticipada(
     pujaId,
     motivoCancelacion = "Cancelación administrativa",
+    adminId,
+    ip = null,
+    userAgent = null,
   ) {
     const emailService = require("./email.service");
     const MensajeService = require("./mensaje.service");
@@ -1394,10 +1394,7 @@ const pujaService = {
 
       const pujaGanadora = await Puja.findByPk(pujaId, {
         include: [
-          {
-            model: Usuario,
-            as: "usuario",
-          },
+          { model: Usuario, as: "usuario" },
           {
             model: Lote,
             as: "lote",
@@ -1414,21 +1411,16 @@ const pujaService = {
               },
             ],
           },
-          {
-            model: SuscripcionProyecto,
-            as: "suscripcion",
-          },
+          { model: SuscripcionProyecto, as: "suscripcion" },
         ],
         transaction: t,
       });
 
-      if (!pujaGanadora) {
+      if (!pujaGanadora)
         throw {
           statusCode: 404,
           message: `No se encontró la puja con ID ${pujaId}.`,
         };
-      }
-
       if (pujaGanadora.estado_puja !== "ganadora_pendiente") {
         throw {
           statusCode: 400,
@@ -1439,10 +1431,6 @@ const pujaService = {
       const loteId = pujaGanadora.id_lote;
       const usuarioIncumplidor = pujaGanadora.usuario;
 
-      console.log(
-        `[${SERVICE_NAME}] ✅ Puja válida. Lote: ${loteId}, Usuario: ${usuarioIncumplidor.id}`,
-      );
-
       await pujaGanadora.update(
         {
           estado_puja: "ganadora_incumplimiento",
@@ -1451,36 +1439,35 @@ const pujaService = {
         { transaction: t },
       );
 
-      console.log(
-        `[${SERVICE_NAME}] ✅ Puja ${pujaId} marcada como 'ganadora_incumplimiento'.`,
-      );
       await this.devolverTokenPorImpago(
         usuarioIncumplidor.id,
         loteId,
         t,
         pujaGanadora.id_suscripcion,
       );
-      console.log(
-        `[${SERVICE_NAME}] ✅ Token devuelto al usuario incumplidor ${usuarioIncumplidor.id}.`,
-      );
 
       const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
-
       await emailService.notificarImpago(usuarioIncumplidor, loteId);
       await MensajeService.enviarMensajeSistema(
         usuarioIncumplidor.id,
         motivoCompleto,
       );
 
-      console.log(
-        `[${SERVICE_NAME}] ✅ Usuario ${usuarioIncumplidor.id} notificado.`,
-      );
-
       await LoteService.procesarImpagoLote(loteId, t);
 
-      console.log(
-        `[${SERVICE_NAME}] ✅ Lote ${loteId} procesado para reasignación/limpieza.`,
-      );
+      // Registrar auditoría
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "CANCELAR_PUJA_GANADORA_ADMIN",
+        entidadTipo: "Puja",
+        entidadId: pujaId,
+        datosPrevios: { estado_puja: "ganadora_pendiente" },
+        datosNuevos: { estado_puja: "ganadora_incumplimiento" },
+        motivo: motivoCancelacion,
+        ip,
+        userAgent,
+        transaccion: t,
+      });
 
       await t.commit();
 

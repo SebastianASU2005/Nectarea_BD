@@ -458,16 +458,12 @@ const suscripcionProyectoController = {
     }
   },
 
-
-  /**
-   * @async
-   * @function softDelete
-   * @description Realiza el "soft delete" (cancelación) de una suscripción por ID. (Ruta de Admin)
-   */
   async softDelete(req, res) {
     try {
-      // 🛑 CORRECCIÓN: Usamos req.user, que es lo que funciona en el resto del controlador
-      const usuarioAutenticado = req.user; // Asegurarse de que el usuario esté autenticado y su objeto esté disponible
+      const usuarioAutenticado = req.user;
+      const suscripcionId = req.params.id;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
 
       if (!usuarioAutenticado || !usuarioAutenticado.id) {
         return res
@@ -476,8 +472,10 @@ const suscripcionProyectoController = {
       }
 
       const suscripcionEliminada = await suscripcionProyectoService.softDelete(
-        req.params.id,
-        usuarioAutenticado, // 👈 Se pasa el objeto completo (req.user)
+        suscripcionId,
+        usuarioAutenticado,
+        ip,
+        userAgent,
       );
 
       if (!suscripcionEliminada) {
@@ -486,12 +484,10 @@ const suscripcionProyectoController = {
 
       res.status(200).json({ message: "Suscripción cancelada correctamente." });
     } catch (error) {
-      // Manejo de errores específicos de negocio (400) vs errores de servidor (500)
       const isBusinessError =
         error.message.startsWith("❌") ||
         error.message.includes("Acceso denegado") ||
         error.message.includes("ya ha sido cancelada");
-
       const statusCode = isBusinessError ? 400 : 500;
       res.status(statusCode).json({ error: error.message });
     }
@@ -533,16 +529,21 @@ const suscripcionProyectoController = {
   // =======================================================
 
   /**
-   * @async
-   * @function getMorosityMetrics
-   * @description Obtiene las métricas de morosidad (Tasa de Morosidad, Monto en Riesgo) (KPI 4).
-   * (ACCESO SÓLO ADMIN)
-   * @param {object} req - Objeto de solicitud de Express.
-   * @param {object} res - Objeto de respuesta de Express.
+   * GET /api/suscripciones/admin/morosity-metrics
+   * Obtiene las métricas de morosidad (Tasa de Morosidad, Monto en Riesgo) (KPI 4) con filtro por fechas.
+   * Query params: fechaInicio, fechaFin
    */
   async getMorosityMetrics(req, res) {
     try {
-      const metricas = await suscripcionProyectoService.getMorosityMetrics();
+      const { fechaInicio, fechaFin } = req.query;
+      let startDate = null,
+        endDate = null;
+      if (fechaInicio) startDate = new Date(fechaInicio);
+      if (fechaFin) endDate = new Date(fechaFin);
+      const metricas = await suscripcionProyectoService.getMorosityMetrics(
+        startDate,
+        endDate,
+      );
       res.status(200).json({
         kpi_name: "Tasa y Monto de Morosidad",
         ...metricas,
@@ -556,16 +557,49 @@ const suscripcionProyectoController = {
   },
 
   /**
-   * @async
-   * @function getCancellationRate
-   * @description Obtiene la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5).
-   * (ACCESO SÓLO ADMIN)
-   * @param {object} req - Objeto de solicitud de Express.
-   * @param {object} res - Objeto de respuesta de Express.
+   * GET /api/suscripciones/admin/morosity-metrics
+   * Obtiene las métricas de morosidad (Tasa de Morosidad, Monto en Riesgo) (KPI 4) con filtro por fechas.
+   * Query params: fechaInicio, fechaFin
+   */
+  async getMorosityMetrics(req, res) {
+    try {
+      const { fechaInicio, fechaFin } = req.query;
+      let startDate = null,
+        endDate = null;
+      if (fechaInicio) startDate = new Date(fechaInicio);
+      if (fechaFin) endDate = new Date(fechaFin);
+      const metricas = await suscripcionProyectoService.getMorosityMetrics(
+        startDate,
+        endDate,
+      );
+      res.status(200).json({
+        kpi_name: "Tasa y Monto de Morosidad",
+        ...metricas,
+      });
+    } catch (error) {
+      console.error("Error al obtener métricas de morosidad:", error.message);
+      res
+        .status(500)
+        .json({ error: "Error interno al calcular la morosidad." });
+    }
+  },
+
+  /**
+   * GET /api/suscripciones/admin/cancellation-rate
+   * Obtiene la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5) con filtro por fechas de cancelación.
+   * Query params: fechaInicio, fechaFin
    */
   async getCancellationRate(req, res) {
     try {
-      const metricas = await suscripcionProyectoService.getCancellationRate();
+      const { fechaInicio, fechaFin } = req.query;
+      let startDate = null,
+        endDate = null;
+      if (fechaInicio) startDate = new Date(fechaInicio);
+      if (fechaFin) endDate = new Date(fechaFin);
+      const metricas = await suscripcionProyectoService.getCancellationRate(
+        startDate,
+        endDate,
+      );
       res.status(200).json({
         kpi_name: "Tasa de Cancelación (Churn Rate)",
         ...metricas,
@@ -578,117 +612,170 @@ const suscripcionProyectoController = {
     }
   },
   // ============================================================
-// CANCELACIÓN DE SUSCRIPCIÓN CON 2FA (stateless, sin Map)
-// ============================================================
+  // CANCELACIÓN DE SUSCRIPCIÓN CON 2FA (stateless, sin Map)
+  // ============================================================
 
-/**
- * Paso 1: Inicia la cancelación de una suscripción.
- * Si el usuario tiene 2FA activo, devuelve el suscripcionId para solicitar código.
- * Si no, cancela directamente.
- */
-async iniciarCancelacionSuscripcion (req, res){
-  try {
-    const usuarioAutenticado = req.user;
-    const suscripcionId = req.params.id;
-    const esAdmin = usuarioAutenticado.rol === "admin";
-    const motivo = req.body.motivo || null;
+  async iniciarCancelacionSuscripcion(req, res) {
+    try {
+      const usuarioAutenticado = req.user;
+      const suscripcionId = req.params.id;
+      const esAdmin = usuarioAutenticado.rol === "admin";
+      const motivo = req.body.motivo || null;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
 
-    // Validar suscripción
-    const suscripcion = await suscripcionProyectoService.findById(suscripcionId);
-    if (!suscripcion) return res.status(404).json({ error: "Suscripción no encontrada." });
-    if (!esAdmin && suscripcion.id_usuario !== usuarioAutenticado.id) {
-      return res.status(403).json({ error: "No tienes permiso para cancelar esta suscripción." });
-    }
-    if (!suscripcion.activo) {
-      return res.status(400).json({ error: "La suscripción ya está cancelada." });
-    }
+      // Validar suscripción
+      const suscripcion =
+        await suscripcionProyectoService.findById(suscripcionId);
+      if (!suscripcion)
+        return res.status(404).json({ error: "Suscripción no encontrada." });
+      if (!esAdmin && suscripcion.id_usuario !== usuarioAutenticado.id) {
+        return res
+          .status(403)
+          .json({ error: "No tienes permiso para cancelar esta suscripción." });
+      }
+      if (!suscripcion.activo) {
+        return res
+          .status(400)
+          .json({ error: "La suscripción ya está cancelada." });
+      }
 
-    const user = await UsuarioService.findById(usuarioAutenticado.id);
-    if (!user) throw new Error("Usuario no encontrado");
+      // Admin puede cancelar directamente
+      if (esAdmin) {
+        const resultado = await suscripcionProyectoService.softDelete(
+          suscripcionId,
+          usuarioAutenticado,
+          ip,
+          userAgent,
+        );
+        return res.status(200).json({
+          message: "Suscripción cancelada correctamente.",
+          suscripcion: resultado,
+        });
+      }
 
-    if (user.is_2fa_enabled) {
+      // Usuario normal: debe tener 2FA activo
+      const user = await UsuarioService.findById(usuarioAutenticado.id);
+      if (!user) throw new Error("Usuario no encontrado");
+
+      if (!user.is_2fa_enabled || !user.twofa_secret) {
+        return res.status(403).json({
+          error:
+            "Debes activar la verificación en dos pasos (2FA) antes de poder cancelar la suscripción.",
+        });
+      }
+
+      // Tiene 2FA → solicitar código
       return res.status(202).json({
         message: "Se requiere verificación 2FA para cancelar la suscripción.",
         requires2FA: true,
-        suscripcionId: suscripcionId
+        suscripcionId: suscripcionId,
       });
+    } catch (error) {
+      console.error("Error en iniciarCancelacionSuscripcion:", error.message);
+      res.status(400).json({ error: error.message });
     }
+  },
 
-    // Sin 2FA: cancelar directamente
-    const resultado = await suscripcionProyectoService.softDelete(suscripcionId, usuarioAutenticado);
-    res.status(200).json({ message: "Suscripción cancelada correctamente.", suscripcion: resultado });
-  } catch (error) {
-    console.error("Error en iniciarCancelacionSuscripcion:", error.message);
-    res.status(400).json({ error: error.message });
-  }
-},
+  /**
+   * Paso 2: Confirma la cancelación con el código 2FA.
+   */
+  async confirmarCancelacionSuscripcion(req, res) {
+    try {
+      const usuarioId = req.user.id;
+      const { suscripcionId, codigo_2fa, motivo } = req.body;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
 
-/**
- * Paso 2: Confirma la cancelación con el código 2FA.
- */
-async confirmarCancelacionSuscripcion  (req, res) {
-  try {
-    const usuarioId = req.user.id;
-    const { suscripcionId, codigo_2fa, motivo } = req.body;
-    if (!suscripcionId || !codigo_2fa) {
-      return res.status(400).json({ error: "Faltan suscripcionId o codigo_2fa." });
+      if (!suscripcionId || !codigo_2fa) {
+        return res
+          .status(400)
+          .json({ error: "Faltan suscripcionId o codigo_2fa." });
+      }
+
+      const user = await UsuarioService.findById(usuarioId);
+      if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
+        return res
+          .status(403)
+          .json({ error: "2FA no activo o configuración inválida." });
+      }
+
+      const isVerified = auth2faService.verifyToken(
+        user.twofa_secret,
+        codigo_2fa,
+      );
+      if (!isVerified) {
+        return res.status(401).json({ error: "Código 2FA incorrecto." });
+      }
+
+      const esAdmin = req.user.rol === "admin";
+      const usuarioAutenticado = {
+        id: usuarioId,
+        rol: esAdmin ? "admin" : "cliente",
+      };
+      const suscripcion =
+        await suscripcionProyectoService.findById(suscripcionId);
+      if (!suscripcion || !suscripcion.activo) {
+        return res
+          .status(409)
+          .json({ error: "La suscripción ya no está activa o no existe." });
+      }
+      if (!esAdmin && suscripcion.id_usuario !== usuarioId) {
+        return res
+          .status(403)
+          .json({ error: "No tienes permiso para cancelar esta suscripción." });
+      }
+
+      const resultado = await suscripcionProyectoService.softDelete(
+        suscripcionId,
+        usuarioAutenticado,
+        ip,
+        userAgent,
+      );
+      res.status(200).json({
+        message: "Suscripción cancelada correctamente.",
+        suscripcion: resultado,
+      });
+    } catch (error) {
+      console.error("Error en confirmarCancelacionSuscripcion:", error.message);
+      res.status(400).json({ error: error.message });
     }
+  },
 
-    const user = await UsuarioService.findById(usuarioId);
-    if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
-      return res.status(403).json({ error: "2FA no activo o configuración inválida." });
+  async activateStandby(req, res) {
+    try {
+      const { id } = req.params;
+      const usuarioAutenticado = req.user;
+      const suscripcion = await suscripcionProyectoService.activateStandby(
+        id,
+        usuarioAutenticado,
+      );
+      res.status(200).json({
+        message: `Suscripción en pausa hasta ${suscripcion.standby_end_date}. No se generarán cuotas durante 6 meses.`,
+        suscripcion,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
+  },
 
-    const isVerified = auth2faService.verifyToken(user.twofa_secret, codigo_2fa);
-    if (!isVerified) {
-      return res.status(401).json({ error: "Código 2FA incorrecto." });
+  async deactivateStandby(req, res) {
+    try {
+      const { id } = req.params;
+      const usuarioAutenticado = req.user;
+      const suscripcion = await suscripcionProyectoService.deactivateStandby(
+        id,
+        usuarioAutenticado,
+      );
+      res.status(200).json({
+        message:
+          "La suscripción ha salido del modo pausa. La generación de cuotas se reanudará normalmente.",
+        suscripcion,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
     }
-
-    // Revalidar que la suscripción sigue activa y pertenece
-    const esAdmin = req.user.rol === "admin";
-    const usuarioAutenticado = { id: usuarioId, rol: esAdmin ? "admin" : "cliente" };
-    const suscripcion = await suscripcionProyectoService.findById(suscripcionId);
-    if (!suscripcion || !suscripcion.activo) {
-      return res.status(409).json({ error: "La suscripción ya no está activa o no existe." });
-    }
-    if (!esAdmin && suscripcion.id_usuario !== usuarioId) {
-      return res.status(403).json({ error: "No tienes permiso para cancelar esta suscripción." });
-    }
-
-    const resultado = await suscripcionProyectoService.softDelete(suscripcionId, usuarioAutenticado);
-    res.status(200).json({ message: "Suscripción cancelada correctamente.", suscripcion: resultado });
-  } catch (error) {
-    console.error("Error en confirmarCancelacionSuscripcion:", error.message);
-    res.status(400).json({ error: error.message });
-  }
-},
-async activateStandby(req, res) {
-  try {
-    const { id } = req.params;
-    const usuarioAutenticado = req.user;
-    const suscripcion = await suscripcionProyectoService.activateStandby(id, usuarioAutenticado);
-    res.status(200).json({
-      message: `Suscripción en pausa hasta ${suscripcion.standby_end_date}. No se generarán cuotas durante 6 meses.`,
-      suscripcion
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-},
-
-async deactivateStandby(req, res) {
-  try {
-    const { id } = req.params;
-    const usuarioAutenticado = req.user;
-    const suscripcion = await suscripcionProyectoService.deactivateStandby(id, usuarioAutenticado);
-    res.status(200).json({
-      message: "La suscripción ha salido del modo pausa. La generación de cuotas se reanudará normalmente.",
-      suscripcion
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-}
+  },
 };
 
 module.exports = suscripcionProyectoController;

@@ -391,13 +391,11 @@ const pujaController = {
 
     try {
       const { id } = req.params;
-      const { motivo_cancelacion } = req.body; // Opcional: razón administrativa
+      const { motivo_cancelacion } = req.body;
+      const adminId = req.user.id;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
 
-      console.log(
-        `[${CONTROLLER_NAME}] Solicitando cancelación anticipada de puja ID: ${id}`,
-      );
-
-      // Validar que el ID sea válido
       if (!id || isNaN(parseInt(id))) {
         return res.status(400).json({
           success: false,
@@ -405,11 +403,13 @@ const pujaController = {
         });
       }
 
-      // Llamar al servicio que maneja toda la lógica
       const resultado = await pujaService.cancelarPujaGanadoraAnticipada(
         parseInt(id),
         motivo_cancelacion ||
           "Cancelación administrativa - Usuario notificó incapacidad de pago",
+        adminId,
+        ip,
+        userAgent,
       );
 
       return res.status(200).json({
@@ -419,8 +419,6 @@ const pujaController = {
       });
     } catch (error) {
       console.error(`[${CONTROLLER_NAME}] ERROR:`, error.message);
-      console.error(`[${CONTROLLER_NAME}] Stack:`, error.stack);
-
       return res.status(error.statusCode || 500).json({
         success: false,
         message: error.message || "Error al cancelar la puja ganadora.",

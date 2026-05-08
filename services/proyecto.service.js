@@ -192,7 +192,7 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }], 
+          include: [{ model: Imagen, as: "imagenes" }],
         },
         { model: Imagen, as: "imagenes" },
       ],
@@ -208,10 +208,10 @@ const proyectoService = {
     return await Proyecto.findOne({
       where: { id: id, activo: true },
       include: [
-       {
+        {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }], 
+          include: [{ model: Imagen, as: "imagenes" }],
         },
         { model: Imagen, as: "imagenes" },
       ],
@@ -235,7 +235,7 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }], 
+          include: [{ model: Imagen, as: "imagenes" }],
         },
         { model: Imagen, as: "imagenes" },
       ],
@@ -477,7 +477,7 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }], 
+          include: [{ model: Imagen, as: "imagenes" }],
         },
         { model: Imagen, as: "imagenes" },
       ],
@@ -499,7 +499,7 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }], 
+          include: [{ model: Imagen, as: "imagenes" }],
         },
         { model: Imagen, as: "imagenes" },
       ],
@@ -592,24 +592,26 @@ const proyectoService = {
     });
   },
   /**
-   * @async
-   * @function getProjectCompletionRate
-   * @description Calcula la Tasa de Culminación de Proyectos (número de proyectos Finalizados vs. total iniciado/activo).
-   * @returns {Promise<object>} Objeto con las métricas agregadas.
+   * Calcula la Tasa de Culminación de Proyectos (KPI 4), filtrando por fecha de inicio del proyecto (fecha_inicio_proceso)
+   * @param {Date|null} fechaInicio
+   * @param {Date|null} fechaFin
+   * @returns {Promise<object>}
    */
-  async getProjectCompletionRate() {
-    // 1. Contar el total de proyectos que han pasado de "En Espera" (Iniciado o Activo).
-    // Consideramos todos los que NO están en 'En Espera' como "Proyectos Iniciados".
-    const totalProyectosIniciados = await Proyecto.count({
-      where: {
-        // No incluimos 'En Espera' o 'Finalizado'. Los que están en 'En proceso' o 'Pausado' son Iniciados.
-        estado_proyecto: {
-          [Op.ne]: "En Espera", // Total de proyectos que han sido activados al menos una vez
-        },
-      },
-    });
+  async getProjectCompletionRate(fechaInicio = null, fechaFin = null) {
+    const whereIniciados = {
+      estado_proyecto: { [Op.ne]: "En Espera" },
+    };
+    if (fechaInicio)
+      whereIniciados.fecha_inicio_proceso = { [Op.gte]: fechaInicio };
+    if (fechaFin)
+      whereIniciados.fecha_inicio_proceso = {
+        ...whereIniciados.fecha_inicio_proceso,
+        [Op.lte]: fechaFin,
+      };
 
-    if (totalProyectosIniciados === 0) {
+    const totalIniciados = await Proyecto.count({ where: whereIniciados });
+
+    if (totalIniciados === 0) {
       return {
         tasa_culminacion: 0.0,
         total_iniciados: 0,
@@ -617,20 +619,25 @@ const proyectoService = {
       };
     }
 
-    // 2. Contar el total de proyectos 'Finalizado' (Numerador del KPI 4).
-    const totalProyectosFinalizados = await Proyecto.count({
-      where: {
-        estado_proyecto: "Finalizado",
-      },
-    });
+    const whereFinalizados = {
+      estado_proyecto: "Finalizado",
+    };
+    if (fechaInicio)
+      whereFinalizados.fecha_inicio_proceso = { [Op.gte]: fechaInicio };
+    if (fechaFin)
+      whereFinalizados.fecha_inicio_proceso = {
+        ...whereFinalizados.fecha_inicio_proceso,
+        [Op.lte]: fechaFin,
+      };
 
-    const tasaCulminacion =
-      (totalProyectosFinalizados / totalProyectosIniciados) * 100;
+    const totalFinalizados = await Proyecto.count({ where: whereFinalizados });
+
+    const tasaCulminacion = (totalFinalizados / totalIniciados) * 100;
 
     return {
-      total_iniciados: totalProyectosIniciados,
-      total_finalizados: totalProyectosFinalizados,
-      tasa_culminacion: tasaCulminacion.toFixed(2), // KPI 4
+      total_iniciados: totalIniciados,
+      total_finalizados: totalFinalizados,
+      tasa_culminacion: tasaCulminacion.toFixed(2),
     };
   },
   /**

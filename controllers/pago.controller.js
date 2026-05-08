@@ -58,34 +58,6 @@ const pagoController = {
       return res.status(500).json({ error: error.message });
     }
   },
-  async updatePaymentStatus(req, res) {
-    try {
-      const pagoId = parseInt(req.params.id);
-      const { estado_pago, motivo } = req.body;
-      if (!estado_pago) {
-        return res
-          .status(400)
-          .json({ error: "El campo 'estado_pago' es requerido." });
-      }
-
-      const pagoActualizado = await pagoService.updatePaymentStatus(
-        pagoId,
-        estado_pago,
-        motivo,
-      );
-
-      return res.status(200).json({
-        message: `Estado del Pago ID ${pagoId} actualizado a '${pagoActualizado.estado_pago}'.`,
-        pago: {
-          id: pagoActualizado.id,
-          estado_pago: pagoActualizado.estado_pago,
-          motivo: motivo || "N/A",
-        },
-      });
-    } catch (error) {
-      return res.status(400).json({ error: error.message });
-    }
-  },
 
   // ===================================================================
   // 🚀 FUNCIÓN MODIFICADA: INICIAR CHECKOUT (Bifurcación 2FA) 🚦
@@ -538,6 +510,94 @@ const pagoController = {
       console.error("Error en updatePaymentAmount:", error.message);
       return res.status(400).json({
         error: error.message || "Error al actualizar el monto del pago.",
+      });
+    }
+  },
+  async updatePaymentStatus(req, res) {
+    try {
+      const pagoId = parseInt(req.params.id);
+      const { estado_pago, motivo } = req.body;
+      const adminId = req.user.id;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
+
+      if (!estado_pago) {
+        return res
+          .status(400)
+          .json({ error: "El campo 'estado_pago' es requerido." });
+      }
+
+      const pagoActualizado = await pagoService.updatePaymentStatus(
+        pagoId,
+        estado_pago,
+        motivo,
+        adminId,
+        ip,
+        userAgent,
+      );
+
+      return res.status(200).json({
+        message: `Estado del Pago ID ${pagoId} actualizado a '${pagoActualizado.estado_pago}'.`,
+        pago: {
+          id: pagoActualizado.id,
+          estado_pago: pagoActualizado.estado_pago,
+          motivo: motivo || "N/A",
+        },
+      });
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  },
+  /**
+   * @async
+   * @function getPaymentMetricsByDateRange
+   * @description Obtiene métricas de pagos (recaudación, morosidad) dentro de un rango de fechas.
+   * @param {object} req - Query params: fechaInicio (YYYY-MM-DD), fechaFin (YYYY-MM-DD)
+   * @param {object} res - Objeto de respuesta de Express.
+   */
+  async getPaymentMetricsByDateRange(req, res) {
+    try {
+      const { fechaInicio, fechaFin } = req.query;
+
+      // Validar que ambos parámetros existan
+      if (!fechaInicio || !fechaFin) {
+        return res.status(400).json({
+          error:
+            "Se requieren los parámetros 'fechaInicio' y 'fechaFin' (formato YYYY-MM-DD).",
+        });
+      }
+
+      const startDate = new Date(fechaInicio);
+      const endDate = new Date(fechaFin);
+
+      // Validar fechas válidas
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({
+          error:
+            "Las fechas proporcionadas no son válidas. Use el formato YYYY-MM-DD.",
+        });
+      }
+
+      // Asegurar que endDate incluya todo el día (23:59:59)
+      endDate.setHours(23, 59, 59, 999);
+
+      const metrics = await pagoService.getPaymentMetricsByDateRange(
+        startDate,
+        endDate,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: metrics,
+      });
+    } catch (error) {
+      console.error(
+        "Error al obtener métricas por rango de fechas:",
+        error.message,
+      );
+      res.status(500).json({
+        success: false,
+        error: "Error interno al procesar las métricas de pagos.",
       });
     }
   },
