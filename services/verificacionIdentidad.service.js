@@ -1,6 +1,6 @@
 const VerificacionIdentidad = require("../models/verificacion_identidad");
 const Usuario = require("../models/usuario");
-const localFileStorageService = require("./localFileStorage.service");
+const storageService = require("./storage"); // ✅ reemplazo
 
 const verificacionIdentidadService = {
   /**
@@ -23,8 +23,8 @@ const verificacionIdentidadService = {
           selfie_length: files?.selfie_con_documento?.length,
         },
         null,
-        2
-      )
+        2,
+      ),
     );
 
     // 1. 🔍 VERIFICACIÓN: Consultar estado actual del usuario
@@ -45,7 +45,7 @@ const verificacionIdentidadService = {
             "No es necesario enviar nueva documentación. Tu cuenta ya está completamente verificada.",
           estado_actual: "APROBADA",
           fecha_verificacion: registroExistente.fecha_verificacion,
-        })
+        }),
       );
     }
 
@@ -62,7 +62,7 @@ const verificacionIdentidadService = {
             "Por favor espera a que un administrador revise tu documentación antes de enviar una nueva solicitud.",
           estado_actual: "PENDIENTE",
           fecha_envio: registroExistente.createdAt,
-        })
+        }),
       );
     }
 
@@ -73,7 +73,7 @@ const verificacionIdentidadService = {
 
     if (esReintento) {
       console.log(
-        `🔄 Usuario ${id_usuario} está reenviando después de rechazo. Motivo anterior: ${registroExistente.motivo_rechazo}`
+        `🔄 Usuario ${id_usuario} está reenviando después de rechazo. Motivo anterior: ${registroExistente.motivo_rechazo}`,
       );
     }
 
@@ -85,7 +85,7 @@ const verificacionIdentidadService = {
           mensaje: "No se recibieron archivos.",
           detalles:
             "Asegúrate de enviar los documentos requeridos: foto frontal del documento y selfie con documento.",
-        })
+        }),
       );
     }
 
@@ -105,14 +105,14 @@ const verificacionIdentidadService = {
           tipo: "ARCHIVOS_FALTANTES",
           mensaje: "Faltan archivos obligatorios",
           detalles: `Los siguientes archivos son requeridos: ${errores.join(
-            ", "
+            ", ",
           )}`,
           archivos_faltantes: errores,
-        })
+        }),
       );
     }
 
-    // 3. Subir archivos al almacenamiento local
+    // 3. Subir archivos al almacenamiento (usando storageService)
     const timestamp = Date.now();
     const basePath = `kyc/${id_usuario}`;
 
@@ -121,11 +121,10 @@ const verificacionIdentidadService = {
     const documentoFrentePath = `${basePath}/documento-frente-${timestamp}.${documentoFrenteExt}`;
 
     console.log(`📤 Subiendo documento frente: ${documentoFrentePath}`);
-    const url_foto_documento_frente =
-      await localFileStorageService.uploadBuffer(
-        documentoFrenteBuffer,
-        documentoFrentePath
-      );
+    const url_foto_documento_frente = await storageService.saveFile(
+      documentoFrenteBuffer,
+      documentoFrentePath,
+    );
 
     let url_foto_documento_dorso = null;
     if (files.documento_dorso && files.documento_dorso[0]) {
@@ -134,9 +133,9 @@ const verificacionIdentidadService = {
       const documentoDorsoPath = `${basePath}/documento-dorso-${timestamp}.${documentoDorsoExt}`;
 
       console.log(`📤 Subiendo documento dorso: ${documentoDorsoPath}`);
-      url_foto_documento_dorso = await localFileStorageService.uploadBuffer(
+      url_foto_documento_dorso = await storageService.saveFile(
         documentoDorsoBuffer,
-        documentoDorsoPath
+        documentoDorsoPath,
       );
     }
 
@@ -145,8 +144,10 @@ const verificacionIdentidadService = {
     const selfiePath = `${basePath}/selfie-${timestamp}.${selfieExt}`;
 
     console.log(`📤 Subiendo selfie: ${selfiePath}`);
-    const url_foto_selfie_con_documento =
-      await localFileStorageService.uploadBuffer(selfieBuffer, selfiePath);
+    const url_foto_selfie_con_documento = await storageService.saveFile(
+      selfieBuffer,
+      selfiePath,
+    );
 
     let url_video_verificacion = null;
     if (files.video_verificacion && files.video_verificacion[0]) {
@@ -155,9 +156,9 @@ const verificacionIdentidadService = {
       const videoPath = `${basePath}/video-${timestamp}.${videoExt}`;
 
       console.log(`📤 Subiendo video: ${videoPath}`);
-      url_video_verificacion = await localFileStorageService.uploadBuffer(
+      url_video_verificacion = await storageService.saveFile(
         videoBuffer,
-        videoPath
+        videoPath,
       );
     }
 
@@ -179,7 +180,7 @@ const verificacionIdentidadService = {
 
     if (registroExistente) {
       console.log(
-        `✅ Actualizando registro rechazado para usuario ${id_usuario}`
+        `✅ Actualizando registro rechazado para usuario ${id_usuario}`,
       );
       registro = await registroExistente.update(submissionData);
     } else {
@@ -234,11 +235,11 @@ const verificacionIdentidadService = {
     id_usuario,
     estado,
     id_verificador,
-    motivo_rechazo = null
+    motivo_rechazo = null,
   ) {
     if (estado !== "APROBADA" && estado !== "RECHAZADA") {
       throw new Error(
-        "Estado de verificación no válido. Debe ser 'APROBADA' o 'RECHAZADA'."
+        "Estado de verificación no válido. Debe ser 'APROBADA' o 'RECHAZADA'.",
       );
     }
 
@@ -247,7 +248,7 @@ const verificacionIdentidadService = {
       (!motivo_rechazo || motivo_rechazo.trim() === "")
     ) {
       throw new Error(
-        "El motivo de rechazo es obligatorio para rechazar la verificación."
+        "El motivo de rechazo es obligatorio para rechazar la verificación.",
       );
     }
 
@@ -257,13 +258,13 @@ const verificacionIdentidadService = {
 
     if (!registro) {
       throw new Error(
-        "No se encontró solicitud de verificación para este usuario."
+        "No se encontró solicitud de verificación para este usuario.",
       );
     }
 
     if (registro.estado_verificacion !== "PENDIENTE") {
       throw new Error(
-        `❌ Esta solicitud ya fue ${registro.estado_verificacion.toLowerCase()}. Solo se pueden revisar solicitudes PENDIENTES.`
+        `❌ Esta solicitud ya fue ${registro.estado_verificacion.toLowerCase()}. Solo se pueden revisar solicitudes PENDIENTES.`,
       );
     }
 
@@ -287,7 +288,6 @@ const verificacionIdentidadService = {
       where: {
         estado_verificacion: "PENDIENTE",
       },
-      // 🆕 Incluir información completa del usuario que envió la solicitud
       include: [
         {
           model: Usuario,
@@ -320,7 +320,6 @@ const verificacionIdentidadService = {
       where: {
         estado_verificacion: "APROBADA",
       },
-      // 🆕 Incluir tanto el usuario como el verificador
       include: [
         {
           model: Usuario,
@@ -365,7 +364,6 @@ const verificacionIdentidadService = {
       where: {
         estado_verificacion: "RECHAZADA",
       },
-      // 🆕 Incluir tanto el usuario como el verificador
       include: [
         {
           model: Usuario,
@@ -410,7 +408,6 @@ const verificacionIdentidadService = {
       where: {
         estado_verificacion: ["APROBADA", "RECHAZADA"],
       },
-      // 🆕 Incluir tanto el usuario como el verificador
       include: [
         {
           model: Usuario,

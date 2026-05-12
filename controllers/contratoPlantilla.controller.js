@@ -1,7 +1,7 @@
 // controllers/contratoPlantillaController.js
 
 const contratoPlantillaService = require("../services/contratoPlantilla.service");
-const localFileStorageService = require("../services/localFileStorage.service");
+const storageService = require("../services/storage");
 const { formatErrorResponse } = require("../utils/responseUtils");
 
 const contratoPlantillaController = {
@@ -29,14 +29,15 @@ const contratoPlantillaController = {
       }
 
       // 1. Calcular Hash
-      const hash_archivo_original =
-        localFileStorageService.calculateHashFromBuffer(pdfFile.buffer);
+      const hash_archivo_original = storageService.calculateHashFromBuffer(
+        pdfFile.buffer,
+      );
 
       // 2. Subir archivo
       const relativeFilePath = `plantillas/base/${nombre_archivo}-${Date.now()}.pdf`;
-      const url_archivo = await localFileStorageService.uploadBuffer(
+      const url_archivo = await storageService.saveFile(
         pdfFile.buffer,
-        relativeFilePath
+        relativeFilePath,
       );
 
       // 3. Crear el registro
@@ -49,9 +50,8 @@ const contratoPlantillaController = {
         id_usuario_creacion,
       };
 
-      const nuevaPlantilla = await contratoPlantillaService.create(
-        plantillaData
-      );
+      const nuevaPlantilla =
+        await contratoPlantillaService.create(plantillaData);
 
       return res.status(201).json({
         message: "Plantilla de contrato creada y registrada con éxito.",
@@ -90,7 +90,7 @@ const contratoPlantillaController = {
       const plantillaActualizada =
         await contratoPlantillaService.updatePlantillaData(
           parseInt(id),
-          updateData
+          updateData,
         );
 
       return res.status(200).json({
@@ -102,8 +102,8 @@ const contratoPlantillaController = {
       const statusCode = error.message.includes("no encontrada")
         ? 404
         : error.message.includes("Ya existe")
-        ? 409
-        : 500;
+          ? 409
+          : 500;
       return res.status(statusCode).json(formatErrorResponse(error.message));
     }
   },
@@ -131,7 +131,7 @@ const contratoPlantillaController = {
       const plantillaActualizada = await contratoPlantillaService.updatePdf(
         parseInt(id),
         pdfFile.buffer,
-        relativeFilePath
+        relativeFilePath,
       );
 
       return res.status(200).json({
@@ -162,7 +162,7 @@ const contratoPlantillaController = {
 
       const plantillaActualizada = await contratoPlantillaService.toggleActive(
         parseInt(id),
-        activo
+        activo,
       );
 
       const accion = activo ? "activada" : "desactivada";
@@ -213,7 +213,7 @@ const contratoPlantillaController = {
       return res
         .status(500)
         .json(
-          formatErrorResponse("Fallo interno al listar todas las plantillas.")
+          formatErrorResponse("Fallo interno al listar todas las plantillas."),
         );
     }
   },
@@ -230,7 +230,7 @@ const contratoPlantillaController = {
       return res
         .status(500)
         .json(
-          formatErrorResponse("Fallo interno al listar plantillas activas.")
+          formatErrorResponse("Fallo interno al listar plantillas activas."),
         );
     }
   },
@@ -247,7 +247,9 @@ const contratoPlantillaController = {
       return res
         .status(500)
         .json(
-          formatErrorResponse("Fallo interno al listar plantillas sin asociar.")
+          formatErrorResponse(
+            "Fallo interno al listar plantillas sin asociar.",
+          ),
         );
     }
   },
@@ -260,7 +262,7 @@ const contratoPlantillaController = {
     try {
       const { idProyecto } = req.params;
       const plantillas = await contratoPlantillaService.findByProjectId(
-        parseInt(idProyecto)
+        parseInt(idProyecto),
       );
       return res.status(200).json(plantillas);
     } catch (error) {
@@ -268,8 +270,8 @@ const contratoPlantillaController = {
         .status(500)
         .json(
           formatErrorResponse(
-            "Fallo interno al listar plantillas por proyecto."
-          )
+            "Fallo interno al listar plantillas por proyecto.",
+          ),
         );
     }
   },
@@ -288,7 +290,7 @@ const contratoPlantillaController = {
 
       const plantilla = await contratoPlantillaService.findByProyectoAndVersion(
         parseInt(idProyecto),
-        parseInt(version)
+        parseInt(version),
       );
 
       if (!plantilla) {
@@ -300,7 +302,7 @@ const contratoPlantillaController = {
       // Chequeo de seguridad: integridad del hash
       if (plantilla.dataValues.integrity_compromised) {
         console.error(
-          `Acceso denegado a plantilla comprometida ID: ${plantilla.id}`
+          `Acceso denegado a plantilla comprometida ID: ${plantilla.id}`,
         );
         return res.status(500).json({
           message:

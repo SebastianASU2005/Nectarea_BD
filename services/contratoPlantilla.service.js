@@ -1,7 +1,7 @@
 // services/contratoPlantillaService.js
 
 const ContratoPlantilla = require("../models/ContratoPlantilla");
-const localFileStorageService = require("./localFileStorage.service");
+const storageService = require("./storage");
 
 /**
  * Servicio de lógica de negocio para la gestión de Contratos Plantilla.
@@ -40,13 +40,13 @@ const contratoPlantillaService = {
     }
 
     try {
-      const hashActual = await localFileStorageService.calculateHashFromFile(
-        plantilla.url_archivo
-      );
+      const hashActual = await storageService.calculateHashFromFile(
+        plantilla.url_archivo,
+      ); // ✅
 
       if (hashActual !== plantilla.hash_archivo_original) {
         console.warn(
-          `🚨 ALERTA DE INTEGRIDAD: Plantilla ID ${plantilla.id} manipulada. Hash esperado: ${plantilla.hash_archivo_original}, Hash actual: ${hashActual}`
+          `🚨 ALERTA DE INTEGRIDAD: Plantilla ID ${plantilla.id} manipulada. Hash esperado: ${plantilla.hash_archivo_original}, Hash actual: ${hashActual}`,
         );
         plantilla.dataValues.integrity_compromised = true;
       } else {
@@ -55,7 +55,7 @@ const contratoPlantillaService = {
     } catch (error) {
       console.error(
         `Error al verificar integridad del archivo plantilla ${plantilla.id} (Archivo físico no encontrado/leíble):`,
-        error.message
+        error.message,
       );
       plantilla.dataValues.integrity_compromised = true;
     }
@@ -173,7 +173,7 @@ const contratoPlantillaService = {
 
       if (existingPlantilla) {
         throw new Error(
-          `Ya existe una plantilla activa con versión ${version} para el proyecto ${dataToUpdate.id_proyecto}.`
+          `Ya existe una plantilla activa con versión ${version} para el proyecto ${dataToUpdate.id_proyecto}.`,
         );
       }
     }
@@ -185,7 +185,7 @@ const contratoPlantillaService = {
       {
         where: { id },
         returning: true,
-      }
+      },
     );
 
     return updatedPlantilla;
@@ -207,13 +207,8 @@ const contratoPlantillaService = {
       throw new Error(`Plantilla con ID ${id} no encontrada.`);
     }
 
-    const newHash =
-      localFileStorageService.calculateHashFromBuffer(newPdfBuffer);
-
-    const newUrl = await localFileStorageService.uploadBuffer(
-      newPdfBuffer,
-      relativePath
-    );
+    const newHash = storageService.calculateHashFromBuffer(newPdfBuffer); // ✅
+    const newUrl = await storageService.saveFile(newPdfBuffer, relativePath); // ✅
 
     const [, [updatedPlantilla]] = await ContratoPlantilla.update(
       {
@@ -224,7 +219,7 @@ const contratoPlantillaService = {
       {
         where: { id },
         returning: true,
-      }
+      },
     );
 
     return updatedPlantilla;
@@ -252,7 +247,7 @@ const contratoPlantillaService = {
       {
         where: { id },
         returning: true,
-      }
+      },
     );
 
     return updatedPlantilla;
@@ -271,15 +266,15 @@ const contratoPlantillaService = {
       },
       {
         where: { id, activo: true },
-      }
+      },
     );
 
     if (updatedCount === 0) {
       throw new Error(
-        `No se pudo realizar el borrado lógico a la plantilla con ID ${id} (ya inactiva o no existe).`
+        `No se pudo realizar el borrado lógico a la plantilla con ID ${id} (ya inactiva o no existe).`,
       );
     }
-    
+
     return true;
   },
 };

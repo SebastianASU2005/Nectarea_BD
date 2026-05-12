@@ -1,33 +1,12 @@
+// middlewares/imageUpload.middleware.js
 const multer = require("multer");
 const path = require("path");
-// No es estrictamente necesaria aquí, pero la mantenemos si es una utilidad común
-// Asumimos que esta importación ya funciona gracias al paso anterior.
 const { formatErrorResponse } = require("../utils/responseUtils");
 
 // ===================================================================
-// 1. 💾 Configuración de Almacenamiento
+// 1. 💾 Configuración de Almacenamiento (todo en memoria)
 // ===================================================================
-
-// A. ALMACENAMIENTO EN MEMORIA (Para Contratos y KYC)
-// Almacena el archivo como un Buffer en req.file.buffer
-const memoryStorage = multer.memoryStorage();
-
-// B. ALMACENAMIENTO EN DISCO (Para Imágenes de Proyectos/Lotes)
-// Debe ser consistente con la configuración de /uploads/imagenes en app.js
-const diskStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    // Usa la ruta de subida de imágenes definida globalmente
-    cb(null, "uploads/imagenes/");
-  },
-  filename: function (req, file, cb) {
-    // Genera un nombre de archivo único
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(
-      null,
-      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
-    );
-  },
-});
+const memoryStorage = multer.memoryStorage(); // 🔥 Ahora todas las subidas usan memoria
 
 // ===================================================================
 // 2. 📝 Filtros de Archivo
@@ -40,7 +19,7 @@ const pdfFilter = (req, file, cb) => {
   } else {
     cb(
       new Error("Solo se permiten archivos PDF para contratos y plantillas."),
-      false
+      false,
     );
   }
 };
@@ -56,9 +35,9 @@ const kycFilter = (req, file, cb) => {
   } else {
     cb(
       new Error(
-        "Tipo de archivo no permitido para Verificación de Identidad (KYC)."
+        "Tipo de archivo no permitido para Verificación de Identidad (KYC).",
       ),
-      false
+      false,
     );
   }
 };
@@ -73,29 +52,25 @@ const imageFilter = (req, file, cb) => {
 };
 
 // ===================================================================
-// 3. 📦 Configuraciones de Subida Base
+// 3. 📦 Configuraciones de Subida Base (todo con memoryStorage)
 // ===================================================================
 
-// Limite de tamaño: 15MB
-const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
 
-// Base para la subida de PDF (Contratos Firmados y Plantillas) -> USA MEMORIA
 const pdfUploadBase = multer({
   storage: memoryStorage,
   fileFilter: pdfFilter,
   limits: { fileSize: MAX_FILE_SIZE },
 });
 
-// Base para la subida de archivos KYC -> USA MEMORIA
 const kycUploadBase = multer({
   storage: memoryStorage,
   fileFilter: kycFilter,
   limits: { fileSize: MAX_FILE_SIZE },
 });
 
-// Base para la subida de IMAGENES -> USA DISCO
 const imageUploadBase = multer({
-  storage: diskStorage,
+  storage: memoryStorage, // ✅ Antes usaba diskStorage, ahora memoria
   fileFilter: imageFilter,
   limits: { fileSize: MAX_FILE_SIZE },
 });
@@ -105,7 +80,6 @@ const imageUploadBase = multer({
 // ===================================================================
 
 module.exports = {
-  // SUBIDAS EN MEMORIA (CONTRATOS/KYC)
   uploadSignedContract: pdfUploadBase.single("pdfFile"),
   uploadPlantilla: pdfUploadBase.single("plantillaFile"),
   uploadKYCData: kycUploadBase.fields([
@@ -113,7 +87,6 @@ module.exports = {
     { name: "documento_dorso", maxCount: 1 },
     { name: "selfie_con_documento", maxCount: 1 },
     { name: "video_verificacion", maxCount: 1 },
-  ]), // 🚨 NUEVA FUNCIÓN: SUBIDA EN DISCO (IMAGENES) // Campo esperado en el formulario: 'image'
-
-  uploadImage: imageUploadBase.single("image"),
+  ]),
+  uploadImage: imageUploadBase.single("image"), // ✅ Ahora también en memoria
 };

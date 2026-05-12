@@ -1,8 +1,7 @@
 const Contrato = require("../models/contrato");
 const Proyecto = require("../models/proyecto");
 const Inversion = require("../models/inversion");
-// Importa la función de utilidad para generar el hash criptográfico de un archivo.
-const { generateFileHash } = require("../utils/generateFileHash");
+const storageService = require("./storage"); // ✅
 
 /**
  * Servicio de lógica de negocio para la gestión de Contratos.
@@ -28,35 +27,17 @@ const contratoService = {
    * @returns {Promise<Contrato|null>} El contrato con el campo `integrity_compromised` (booleano) añadido para indicar manipulación.
    */
   async findAndVerifyById(id) {
-    // 1. Obtiene el contrato de la base de datos, incluyendo la información del proyecto asociado.
     const contrato = await Contrato.findByPk(id, {
       include: [{ model: Proyecto, as: "proyecto" }],
     });
-
-    // 2. Procede con la verificación solo si el contrato existe y tiene un hash de referencia.
     if (contrato && contrato.hash_archivo_original) {
       try {
-        // Calcula el hash actual del archivo físico usando su URL.
-        const hashActual = await generateFileHash(contrato.url_archivo);
-
-        // Lógica de validación: Compara el hash guardado vs. el hash calculado.
-        if (hashActual !== contrato.hash_archivo_original) {
-          console.warn(
-            `🚨 ALERTA DE INTEGRIDAD: Contrato ID ${id} manipulado. Hash esperado: ${contrato.hash_archivo_original}, Hash actual: ${hashActual}`
-          );
-          // Marca el contrato si se detecta alteración.
-          contrato.dataValues.integrity_compromised = true;
-        } else {
-          // Marca el contrato si la integridad es correcta.
-          contrato.dataValues.integrity_compromised = false;
-        }
-      } catch (error) {
-        // Maneja errores de acceso al archivo (e.g., archivo no encontrado o inaccesible),
-        // y por seguridad, lo marca como comprometido.
-        console.error(
-          `Error al verificar integridad del archivo ${contrato.id}:`,
-          error.message
+        const hashActual = await storageService.calculateHashFromFile(
+          contrato.url_archivo,
         );
+        contrato.dataValues.integrity_compromised =
+          hashActual !== contrato.hash_archivo_original;
+      } catch (error) {
         contrato.dataValues.integrity_compromised = true;
       }
     }
@@ -169,7 +150,7 @@ const contratoService = {
 
       if (rowsAffected === 0) {
         throw new Error(
-          `No se pudo encontrar o actualizar el contrato base con ID ${id_contrato_base}.`
+          `No se pudo encontrar o actualizar el contrato base con ID ${id_contrato_base}.`,
         );
       }
 
