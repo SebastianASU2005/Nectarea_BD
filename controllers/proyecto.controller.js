@@ -138,22 +138,24 @@ const proyectoController = {
   async update(req, res) {
     try {
       const { id } = req.params;
-      // Asegurar que no se intenten pasar lotes a esta función
       const { lotes, lotesIds, ...proyectoData } = req.body;
 
-      // 1. Actualizar el Proyecto (sin transacción, ya que es una operación simple)
+      // 🆕 Contexto de administrador
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+
       const proyectoActualizado = await proyectoService.update(
         id,
         proyectoData,
+        null,
+        adminContext,
       );
-
-      if (!proyectoActualizado) {
+      if (!proyectoActualizado)
         return res.status(404).json({ error: "Proyecto no encontrado." });
-      }
-
-      // 2. Obtener el proyecto actualizado para la respuesta (incluyendo relaciones existentes)
       const proyectoFinal = await proyectoService.findById(id);
-
       res.status(200).json(proyectoFinal);
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -172,27 +174,27 @@ const proyectoController = {
     try {
       const { id } = req.params;
       const { lotesIds } = req.body;
-
       if (!lotesIds || lotesIds.length === 0) {
         return res
           .status(400)
           .json({ error: "Se requiere un array de lotesIds." });
       }
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
       const proyectoActualizado = await proyectoService.asignarLotesAProyecto(
         Number(id),
         lotesIds,
+        adminContext,
       );
-
-      // Obtener el proyecto completo para la respuesta (incluyendo los nuevos lotes)
       const proyectoConLotes = await proyectoService.findById(id);
-
       res.status(200).json({
         mensaje: `Lotes asignados exitosamente al proyecto ID ${id}.`,
         proyecto: proyectoConLotes,
       });
     } catch (error) {
-      // Los errores de validación (lotes ya asignados, proyecto no encontrado) se manejan aquí.
       res.status(400).json({ error: error.message });
     }
   },
@@ -207,10 +209,17 @@ const proyectoController = {
   async softDelete(req, res) {
     try {
       const { id } = req.params;
-      const proyectoEliminado = await proyectoService.softDelete(id);
-      if (!proyectoEliminado) {
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+      const proyectoEliminado = await proyectoService.softDelete(
+        id,
+        adminContext,
+      );
+      if (!proyectoEliminado)
         return res.status(404).json({ error: "Proyecto no encontrado." });
-      }
       res.status(200).json({ mensaje: "Proyecto eliminado exitosamente." });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -231,9 +240,15 @@ const proyectoController = {
   async iniciarProceso(req, res) {
     try {
       const { id } = req.params;
-      const proyectoActualizado =
-        await proyectoService.iniciarConteoMensual(id);
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+      const proyectoActualizado = await proyectoService.iniciarConteoMensual(
+        id,
+        adminContext,
+      );
       res.status(200).json({
         mensaje: `Proyecto ID ${id} iniciado/reanudado. Estado: En proceso. Meses restantes: ${proyectoActualizado.meses_restantes}`,
         proyecto: proyectoActualizado,

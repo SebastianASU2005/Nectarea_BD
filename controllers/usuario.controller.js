@@ -132,28 +132,31 @@ const usuarioController = {
         "nombre_usuario",
         "dni",
       ];
-
-      // Creamos un nuevo objeto solo con las propiedades permitidas.
       const filteredData = Object.keys(req.body).reduce((acc, key) => {
-        if (allowedAdminFields.includes(key)) {
-          acc[key] = req.body[key];
-        }
+        if (allowedAdminFields.includes(key)) acc[key] = req.body[key];
         return acc;
       }, {});
-
       if (Object.keys(filteredData).length === 0) {
         return res.status(400).json({
           error: "No se proporcionaron campos válidos para la actualización.",
         });
       }
 
+      // 🆕 Preparar contexto de administrador
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        motivo: req.body.motivo || null, // opcional, puede venir del body
+      };
+
       const usuarioActualizado = await usuarioService.update(
         req.params.id,
-        filteredData, // <-- Usamos los datos filtrados
+        filteredData,
+        adminContext,
       );
-      if (!usuarioActualizado) {
+      if (!usuarioActualizado)
         return res.status(404).json({ error: "Usuario no encontrado" });
-      }
       res.status(200).json(usuarioActualizado);
     } catch (error) {
       res.status(400).json({ error: error.message });
@@ -245,19 +248,24 @@ const usuarioController = {
   async adminResetPassword(req, res) {
     try {
       const userId = parseInt(req.params.id);
-      if (isNaN(userId)) {
+      if (isNaN(userId))
         return res.status(400).json({ error: "ID de usuario inválido." });
-      }
-
       const { newPassword } = req.body;
-      if (!newPassword) {
+      if (!newPassword)
         return res
           .status(400)
           .json({ error: "Debes proporcionar la nueva contraseña." });
-      }
 
-      await usuarioService.adminResetPassword(userId, newPassword);
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+      await usuarioService.adminResetPassword(
+        userId,
+        newPassword,
+        adminContext,
+      );
       res.status(200).json({
         message: `✅ Contraseña del usuario ID ${userId} actualizada exitosamente.`,
       });
@@ -293,14 +301,21 @@ const usuarioController = {
    */
   async softDelete(req, res) {
     try {
-      const usuarioEliminado = await usuarioService.softDelete(req.params.id);
-      if (!usuarioEliminado) {
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        motivo: req.body.motivo || null,
+      };
+      const usuarioEliminado = await usuarioService.softDelete(
+        req.params.id,
+        adminContext,
+      );
+      if (!usuarioEliminado)
         return res.status(404).json({ error: "Usuario no encontrado" });
-      }
-      res.status(200).json({
-        message: "Usuario desactivado exitosamente",
-        success: true,
-      });
+      res
+        .status(200)
+        .json({ message: "Usuario desactivado exitosamente", success: true });
     } catch (error) {
       const statusCode = error.message.includes("suscripción") ? 409 : 500;
       res.status(statusCode).json({ error: error.message });
@@ -347,23 +362,21 @@ const usuarioController = {
   async adminReset2FA(req, res) {
     try {
       const userIdToReset = parseInt(req.params.id);
-
-      if (isNaN(userIdToReset)) {
+      if (isNaN(userIdToReset))
         return res.status(400).json({ error: "ID de usuario inválido." });
-      } // Llama a la nueva función del servicio
-
-      await usuarioService.adminReset2FA(userIdToReset);
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+      await usuarioService.adminReset2FA(userIdToReset, adminContext);
       res.status(200).json({
-        message: `✅ 2FA deshabilitado para el usuario ID ${userIdToReset}. El usuario deberá volver a activarlo.`,
+        message: `✅ 2FA deshabilitado para el usuario ID ${userIdToReset}.`,
       });
     } catch (error) {
-      // Maneja el error específico de "Usuario no encontrado" (404)
       const statusCode = error.message.includes("Usuario no encontrado")
         ? 404
         : 500;
-
-      console.error("Error al resetear 2FA por admin:", error.message);
       res.status(statusCode).json({ error: error.message });
     }
   },
@@ -377,34 +390,33 @@ const usuarioController = {
   async prepareForReactivation(req, res) {
     try {
       const userId = parseInt(req.params.id);
-
-      if (isNaN(userId)) {
+      if (isNaN(userId))
         return res.status(400).json({ error: "ID de usuario inválido." });
-      } // ✅ CAMBIO: Incluir 'dni' en la desestructuración
-
-      const { email, nombre_usuario, dni } = req.body || {}; // ✅ CAMBIO: Validar si al menos un campo es proporcionado
-
+      const { email, nombre_usuario, dni } = req.body || {};
       if (!email && !nombre_usuario && !dni) {
         return res.status(400).json({
           error:
             "Debes proporcionar al menos un campo para actualizar (email, nombre_usuario o dni).",
         });
       }
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        motivo: req.body.motivo || null,
+      };
       const usuarioActualizado =
-        await usuarioService.prepareAccountForReactivation(userId, {
-          email,
-          nombre_usuario,
-          dni, // ✅ Agregar DNI al objeto de datos para el servicio
-        });
-
+        await usuarioService.prepareAccountForReactivation(
+          userId,
+          { email, nombre_usuario, dni },
+          adminContext,
+        );
       return res.status(200).json({
         message:
           "Datos actualizados exitosamente. Ahora el usuario puede reactivar su cuenta.",
         usuario: usuarioActualizado,
       });
     } catch (error) {
-      // Se asume que el servicio lanza errores con mensajes útiles
       const statusCode = error.message.startsWith("❌") ? 409 : 404;
       return res.status(statusCode).json({ error: error.message });
     }
@@ -419,13 +431,18 @@ const usuarioController = {
   async reactivateAccount(req, res) {
     try {
       const userId = parseInt(req.params.id);
-
-      if (isNaN(userId)) {
+      if (isNaN(userId))
         return res.status(400).json({ error: "ID de usuario inválido." });
-      }
-
-      const usuarioReactivado = await usuarioService.reactivateAccount(userId);
-
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        motivo: req.body.motivo || null,
+      };
+      const usuarioReactivado = await usuarioService.reactivateAccount(
+        userId,
+        adminContext,
+      );
       res.status(200).json({
         message: "✅ Cuenta reactivada exitosamente.",
         usuario: {
@@ -478,31 +495,25 @@ const usuarioController = {
     try {
       const userId = req.user.id;
       const { codigo_2fa } = req.body;
-      if (!codigo_2fa) {
+      if (!codigo_2fa)
         return res.status(400).json({ error: "Falta el código 2FA." });
-      }
-
       const user = await usuarioService.findById(userId);
       if (!user || !user.is_2fa_enabled || !user.twofa_secret) {
         return res
           .status(403)
           .json({ error: "2FA no activo o configuración inválida." });
       }
-
       const isVerified = auth2faService.verifyToken(
         user.twofa_secret,
         codigo_2fa,
       );
-      if (!isVerified) {
+      if (!isVerified)
         return res.status(401).json({ error: "Código 2FA incorrecto." });
-      }
-
+      // Llamada sin adminContext (el usuario se desactiva a sí mismo)
       const usuarioDesactivado = await usuarioService.softDelete(userId);
-      res.status(200).json({
-        message:
-          "Cuenta desactivada exitosamente. Se ha enviado una notificación por email.",
-        success: true,
-      });
+      res
+        .status(200)
+        .json({ message: "Cuenta desactivada exitosamente.", success: true });
     } catch (error) {
       console.error("Error en confirmarCancelacionCuenta:", error.message);
       res.status(400).json({ error: error.message });

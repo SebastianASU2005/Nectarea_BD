@@ -34,11 +34,20 @@ const auditService = {
     userAgent = null,
     transaccion = null,
   }) {
-    if (!usuarioId || !accion || !entidadTipo || !entidadId) {
-      throw new Error("Faltan campos obligatorios para auditoría");
+    // ✅ Validación detallada
+    const faltantes = [];
+    if (!usuarioId) faltantes.push("usuarioId");
+    if (!accion) faltantes.push("accion");
+    if (!entidadTipo) faltantes.push("entidadTipo");
+    if (!entidadId) faltantes.push("entidadId");
+
+    if (faltantes.length > 0) {
+      throw new Error(
+        `Faltan campos obligatorios para auditoría: ${faltantes.join(", ")}`,
+      );
     }
 
-    // Sanitizar datos sensibles (opcional)
+    // Sanitizar datos sensibles
     const sanitizar = (obj) => {
       if (!obj) return null;
       const copia = { ...obj };
@@ -72,20 +81,9 @@ const auditService = {
 
   /**
    * Obtiene logs con filtros opcionales (paginado).
-   * @param {Object} filtros
-   * @param {number} [filtros.usuarioId]
-   * @param {string} [filtros.accion]
-   * @param {string} [filtros.entidadTipo]
-   * @param {number} [filtros.entidadId]
-   * @param {Date} [filtros.fechaDesde]
-   * @param {Date} [filtros.fechaHasta]
-   * @param {number} [page=1]
-   * @param {number} [limit=50]
-   * @returns {Promise<{rows: AuditLog[], count: number}>}
    */
   async listar(filtros = {}, page = 1, limit = 50) {
     const where = {};
-
     if (filtros.usuarioId) where.usuario_id = filtros.usuarioId;
     if (filtros.accion) where.accion = filtros.accion;
     if (filtros.entidadTipo) where.entidad_tipo = filtros.entidadTipo;
@@ -95,7 +93,6 @@ const auditService = {
       if (filtros.fechaDesde) where.created_at[Op.gte] = filtros.fechaDesde;
       if (filtros.fechaHasta) where.created_at[Op.lte] = filtros.fechaHasta;
     }
-
     const offset = (page - 1) * limit;
     const { count, rows } = await AuditLog.findAndCountAll({
       where,
@@ -103,15 +100,11 @@ const auditService = {
       limit,
       offset,
     });
-
     return { rows, count };
   },
 
   /**
    * Obtiene todos los logs de una entidad específica.
-   * @param {string} entidadTipo - Modelo (ej. 'Adhesion')
-   * @param {number} entidadId
-   * @returns {Promise<AuditLog[]>}
    */
   async findByEntidad(entidadTipo, entidadId) {
     return AuditLog.findAll({
@@ -122,19 +115,13 @@ const auditService = {
 
   /**
    * Elimina logs más antiguos que `dias` días.
-   * @param {number} dias - Días de retención (default 365)
-   * @returns {Promise<number>} Cantidad de registros eliminados
    */
   async limpiarLogsAntiguos(dias = 365) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - dias);
-
     const deleted = await AuditLog.destroy({
-      where: {
-        created_at: { [Op.lt]: cutoffDate },
-      },
+      where: { created_at: { [Op.lt]: cutoffDate } },
     });
-
     console.log(
       `🧹 AuditLog: ${deleted} registros eliminados (anteriores a ${cutoffDate.toISOString()})`,
     );
