@@ -452,19 +452,21 @@ const adhesionService = {
       };
       await adhesion.update({ estado: "cancelada" }, { transaction: t });
 
-      // Registrar auditoría
-      await auditService.registrar({
-        usuarioId: esAdmin ? userId : null,
-        accion: "CANCELAR_ADHESION",
-        entidadTipo: "Adhesion",
-        entidadId: adhesion.id,
-        datosPrevios,
-        datosNuevos: { estado: "cancelada" },
-        motivo: motivo || "Cancelación por administrador",
-        ip,
-        userAgent,
-        transaccion: t,
-      });
+      // ✅ Solo registrar auditoría si es un administrador
+      if (esAdmin && userId) {
+        await auditService.registrar({
+          usuarioId: userId, // ID del admin
+          accion: "CANCELAR_ADHESION",
+          entidadTipo: "Adhesion",
+          entidadId: adhesion.id,
+          datosPrevios,
+          datosNuevos: { estado: "cancelada" },
+          motivo: motivo || "Cancelación por administrador",
+          ip,
+          userAgent,
+          transaccion: t,
+        });
+      }
 
       if (shouldCommit) await t.commit();
 
