@@ -236,7 +236,51 @@ Nectárea es una **plataforma digital de crowdfunding** (financiamiento colectiv
 - Si nadie paga después de 3 intentos, el lote vuelve a subasta
 
 ---
+## 🤝 Adhesión a Proyectos (Nuevo flujo desde 2025)
 
+### ¿Qué es la adhesión?
+
+Es una forma **económica y sin compromiso de inversión total** de apoyar un proyecto. El usuario paga solo el **4% del valor móvil** (un indicador que sube y baja según el costo del cemento) en cuotas fijas.
+
+**Ejemplo**: Si el valor móvil es $100.000, la adhesión cuesta $4.000. El usuario puede pagarlo de contado, en 3 cuotas de $1.334 o en 6 cuotas de $667.
+
+### ¿Para qué sirve?
+
+- **Reserva tu cupo** en el proyecto (aunque no hayas pagado la inversión completa).
+- **Al completar el pago**, obtienes **1 token de puja** y pasas a ser suscriptor completo (puedes pujar en lotes, recibir resumen de cuenta, etc.).
+- **No requiere verificación de identidad (KYC)** ni 2FA para crear la adhesión (sí para pagar o cancelar si activaste 2FA).
+
+### Flujo para el usuario
+
+1. **Entra al proyecto** y elige “Adherirme”.
+2. **Selecciona el plan** de pago (contado, 3 o 6 cuotas).
+3. **El sistema**:
+   - Reserva un cupo en el proyecto.
+   - Le muestra las cuotas con fechas de vencimiento (día 10 del mes siguiente, y subsiguientes).
+4. **Para pagar una cuota**:
+   - Si tiene 2FA activado, se le pedirá el código de Google Authenticator.
+   - Si no, irá directamente a Mercado Pago.
+5. **Cuando paga la última cuota**, recibe un email de confirmación y ¡ya puede participar en subastas como cualquier suscriptor!
+
+### ¿Puedo cancelar la adhesión antes de completarla?
+
+**Sí**, pero con condiciones:
+
+- **Debes tener 2FA activado** (si no, no podrás cancelar; es una medida de seguridad).
+- Solo se cancelan las cuotas **pendientes**. Las ya pagadas **no se reembolsan** (porque ya reservaron tu cupo y el proyecto ha gastado recursos).
+- Al cancelar, se libera tu cupo y la suscripción se desactiva. Ya no podrás pujar ni recibir beneficios.
+
+### ¿Qué pasa si no pago una cuota?
+
+- El sistema la marca como **vencida** después del día 10.
+- Puedes pagarla después (con el mismo flujo), pero si acumulas muchas cuotas vencidas, el administrador puede cancelar tu adhesión.
+- **No se generan intereses** (a diferencia de las suscripciones normales).
+
+### ¿Los administradores pueden forzar el pago de una cuota?
+
+Sí, desde el panel de administración pueden marcar una cuota como **pagada forzadamente** (por ejemplo, si el usuario pagó por transferencia bancaria y necesita acreditarlo manualmente). Queda registro en la bitácora de auditoría.
+
+---
 ## 🔐 Sistema de Seguridad
 
 ### 1. Autenticación de Dos Factores (2FA)
@@ -364,7 +408,16 @@ Las notificaciones automáticas que envía Mercado Pago cuando un pago se comple
 | Código 2FA o reset contraseña   | 3 por min por IP    | No (son flujos de un paso)  |
 | Notificaciones de Mercado Pago  | Sin límite          | No aplica (es automático)   |
 
+### Cancelación de adhesión con 2FA obligatorio
+
+Para proteger al usuario, **cancelar una adhesión requiere tener 2FA activado**. El flujo es:
+1. El usuario solicita cancelar → el sistema responde `requires2FA: true`.
+2. El usuario ingresa el código de su app (Google Authenticator).
+3. Si el código es correcto, se cancela la adhesión y se notifica por email.
+
+Esta medida evita que alguien con la contraseña robada cancele una adhesión ajena.
 ---
+
 
 ## 💳 Gestión de Pagos
 
