@@ -577,7 +577,7 @@ const usuarioService = {
         entidadId: usuario.id,
         datosPrevios,
         datosNuevos: usuarioReactivado.toJSON(),
-        motivo,
+        motivo=adminContext.motivo || "Reactivación de cuenta",
         ip,
         userAgent,
       });
