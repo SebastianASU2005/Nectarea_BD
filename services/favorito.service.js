@@ -3,6 +3,7 @@ const Lote = require("../models/lote");
 const Imagen = require("../models/imagen");
 const Proyecto = require("../models/proyecto");
 const { sequelize } = require("../config/database");
+const { Op } = require("sequelize");
 
 const favoritoService = {
   async toggleFavorito(idUsuario, idLote) {
@@ -224,6 +225,37 @@ const favoritoService = {
         ? "Lote excluido de estadísticas y rankings."
         : "Lote incluido nuevamente en estadísticas y rankings.",
     };
+  },
+  /**
+   * Elimina todos los favoritos de un usuario para los lotes de un proyecto específico.
+   * @param {number} usuarioId - ID del usuario.
+   * @param {number} proyectoId - ID del proyecto.
+   * @param {object} [transaction] - Transacción de Sequelize.
+   * @returns {Promise<number>} Cantidad de registros eliminados.
+   */
+  async eliminarFavoritosPorUsuarioYProyecto(
+    usuarioId,
+    proyectoId,
+    transaction = null,
+  ) {
+    // Obtener todos los IDs de lotes del proyecto
+    const lotes = await Lote.findAll({
+      where: { id_proyecto: proyectoId },
+      attributes: ["id"],
+      transaction,
+    });
+    const idsLotes = lotes.map((l) => l.id);
+    if (idsLotes.length === 0) return 0;
+
+    // Eliminar favoritos del usuario en esos lotes
+    const eliminados = await Favorito.destroy({
+      where: {
+        id_usuario: usuarioId,
+        id_lote: { [Op.in]: idsLotes },
+      },
+      transaction,
+    });
+    return eliminados;
   },
 };
 

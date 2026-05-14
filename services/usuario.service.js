@@ -477,13 +477,17 @@ const usuarioService = {
   },
 
   async prepareAccountForReactivation(userId, newData, adminContext = {}) {
+    adminContext = adminContext || {};
     const { adminId, ip, userAgent, motivo } = adminContext;
+
     const usuario = await Usuario.findByPk(userId);
     if (!usuario)
       throw new Error(`❌ No se encontró un usuario con ID ${userId}.`);
     if (usuario.activo)
       throw new Error(`❌ La cuenta con ID ${userId} ya está activa.`);
+
     const { email, nombre_usuario, dni } = newData;
+
     if (email && email !== usuario.email) {
       const existingEmail = await Usuario.findOne({
         where: { email: email, activo: true, id: { [Op.ne]: userId } },
@@ -518,14 +522,18 @@ const usuarioService = {
         );
       }
     }
+
     const allowedFields = ["email", "nombre_usuario", "dni"];
     const filteredData = {};
     for (const field of allowedFields) {
       if (newData[field]) filteredData[field] = newData[field];
     }
+
     if (Object.keys(filteredData).length === 0) return usuario;
+
     const datosPrevios = usuario.toJSON();
     const usuarioActualizado = await usuario.update(filteredData);
+
     if (adminId) {
       await auditService.registrar({
         usuarioId: adminId,
@@ -543,10 +551,13 @@ const usuarioService = {
   },
 
   async reactivateAccount(userId, adminContext = {}) {
+    adminContext = adminContext || {};
     const { adminId, ip, userAgent, motivo } = adminContext;
+
     const usuario = await this.findById(userId);
     if (!usuario) throw new Error("Usuario no encontrado.");
     if (usuario.activo) throw new Error("❌ Esta cuenta ya está activa.");
+
     const conflictoEmail = await Usuario.findOne({
       where: { email: usuario.email, activo: true, id: { [Op.ne]: userId } },
     });
@@ -555,6 +566,7 @@ const usuarioService = {
         `❌ No se puede reactivar. El email "${usuario.email}" ya está en uso por una cuenta activa (ID: ${conflictoEmail.id}). Debes cambiar el email antes de reactivar.`,
       );
     }
+
     const conflictoUsername = await Usuario.findOne({
       where: {
         nombre_usuario: usuario.nombre_usuario,
@@ -567,8 +579,10 @@ const usuarioService = {
         `❌ No se puede reactivar. El nombre de usuario "${usuario.nombre_usuario}" ya está en uso por una cuenta activa (ID: ${conflictoUsername.id}). Debes cambiar el username antes de reactivar.`,
       );
     }
+
     const datosPrevios = usuario.toJSON();
     const usuarioReactivado = await usuario.update({ activo: true });
+
     if (adminId) {
       await auditService.registrar({
         usuarioId: adminId,
@@ -577,11 +591,12 @@ const usuarioService = {
         entidadId: usuario.id,
         datosPrevios,
         datosNuevos: usuarioReactivado.toJSON(),
-        motivo=adminContext.motivo || "Reactivación de cuenta",
+        motivo,
         ip,
         userAgent,
       });
     }
+
     try {
       if (usuario.email) {
         await emailService.notificarReactivacionCuenta(usuarioReactivado);

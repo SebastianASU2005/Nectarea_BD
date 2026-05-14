@@ -429,6 +429,28 @@ const adhesionService = {
           { activo: false },
           { transaction: t },
         );
+        const otrasActivas = await SuscripcionProyecto.count({
+          where: {
+            id_usuario: adhesion.id_usuario,
+            id_proyecto: adhesion.id_proyecto,
+            activo: true,
+          },
+          transaction: t,
+        });
+        if (otrasActivas === 0) {
+          const favoritoService = require("./favorito.service");
+          const eliminados =
+            await favoritoService.eliminarFavoritosPorUsuarioYProyecto(
+              adhesion.id_usuario,
+              adhesion.id_proyecto,
+              t,
+            );
+          if (eliminados > 0) {
+            console.log(
+              `[cancelarAdhesion] Se eliminaron ${eliminados} favoritos del usuario ${adhesion.id_usuario} para el proyecto ${adhesion.id_proyecto}`,
+            );
+          }
+        }
         if (adhesion.proyecto) {
           await adhesion.proyecto.decrement("suscripciones_actuales", {
             by: 1,

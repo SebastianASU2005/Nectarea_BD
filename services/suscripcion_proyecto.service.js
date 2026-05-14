@@ -331,7 +331,28 @@ const suscripcionProyectoService = {
 
       const datosPreviosSuscripcion = suscripcion.toJSON();
       await suscripcion.update({ activo: false }, { transaction: t });
-
+      const otrasActivas = await SuscripcionProyecto.count({
+        where: {
+          id_usuario: suscripcion.id_usuario,
+          id_proyecto: suscripcion.id_proyecto,
+          activo: true,
+        },
+        transaction: t,
+      });
+      if (otrasActivas === 0) {
+        const favoritoService = require("./favorito.service");
+        const eliminados =
+          await favoritoService.eliminarFavoritosPorUsuarioYProyecto(
+            suscripcion.id_usuario,
+            suscripcion.id_proyecto,
+            t,
+          );
+        if (eliminados > 0) {
+          console.log(
+            `[softDelete] Se eliminaron ${eliminados} favoritos del usuario ${suscripcion.id_usuario} para el proyecto ${suscripcion.id_proyecto}`,
+          );
+        }
+      }
       const proyecto = await Proyecto.findByPk(suscripcion.id_proyecto, {
         transaction: t,
       });
