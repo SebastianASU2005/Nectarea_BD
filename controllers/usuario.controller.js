@@ -147,7 +147,7 @@ const usuarioController = {
         adminId: req.user.id,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
-        motivo: req.body.motivo || null, // opcional, puede venir del body
+        motivo: req.body.motivo || req.body.motivo_cambio || null,
       };
 
       const usuarioActualizado = await usuarioService.update(
@@ -305,7 +305,7 @@ const usuarioController = {
         adminId: req.user.id,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
-        motivo: req.body.motivo || null,
+        motivo: req.body.motivo || req.body.motivo_cambio || null,
       };
       const usuarioEliminado = await usuarioService.softDelete(
         req.params.id,
@@ -403,7 +403,7 @@ const usuarioController = {
         adminId: req.user.id,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
-        motivo: req.body.motivo || null,
+        motivo: req.body.motivo || req.body.motivo_cambio || null,
       };
       const usuarioActualizado =
         await usuarioService.prepareAccountForReactivation(
@@ -437,7 +437,7 @@ const usuarioController = {
         adminId: req.user.id,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
-        motivo: req.body.motivo || null,
+        motivo: req.body.motivo || req.body.motivo_cambio || null,
       };
       const usuarioReactivado = await usuarioService.reactivateAccount(
         userId,
