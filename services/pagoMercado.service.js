@@ -15,7 +15,6 @@ require("dotenv").config();
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 
-
 // MODIFICACIÓN 1: Usar MP_LIVE_ACCESS_TOKEN y añadir MP_TEST_ACCESS_TOKEN
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN; // Usamos la variable existente para el token LIVE
 const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN; // Nueva variable para el token TEST
@@ -62,17 +61,17 @@ if (
     merchantOrderService = new MerchantOrder(client);
     console.log("✅ [MP Service] Mercado Pago SDK configurado.");
     console.log(
-      "⚠️ [MP Service] Reembolsos se manejan vía API REST con Axios (fallback)."
+      "⚠️ [MP Service] Reembolsos se manejan vía API REST con Axios (fallback).",
     );
   } catch (error) {
     console.error(
       "❌ [MP Service] Error al inicializar Mercado Pago:",
-      error.message
+      error.message,
     );
   }
 } else {
   console.error(
-    "⚠️ [MP Service] MP_ACCESS_TOKEN no configurado o es el valor por defecto. El servicio de MP no funcionará."
+    "⚠️ [MP Service] MP_ACCESS_TOKEN no configurado o es el valor por defecto. El servicio de MP no funcionará.",
   );
 }
 
@@ -128,7 +127,7 @@ const paymentService = {
   async createPaymentSession(datos, transaccionId) {
     if (!preferenceService) {
       throw new Error(
-        "El servicio de Mercado Pago (Preference) no está inicializado."
+        "El servicio de Mercado Pago (Preference) no está inicializado.",
       );
     }
 
@@ -151,13 +150,13 @@ const paymentService = {
       const webhookUrl = `${HOST_URL}${webhookPath}`;
 
       console.log(
-        `➡️ [MP Service] Creando preferencia para Transacción ID: ${transaccionId}. Webhook: ${webhookUrl}`
+        `➡️ [MP Service] Creando preferencia para Transacción ID: ${transaccionId}. Webhook: ${webhookUrl}`,
       );
 
       // ✅ Validación final por seguridad
       if (!monto || isNaN(monto) || monto <= 0) {
         throw new Error(
-          `Monto inválido recibido: ${monto} (tipo: ${typeof monto})`
+          `Monto inválido recibido: ${monto} (tipo: ${typeof monto})`,
         );
       }
 
@@ -172,16 +171,16 @@ const paymentService = {
             currency_id: CURRENCY_ID,
             description: this._generarDescripcionDetallada(
               datos,
-              transaccionId
+              transaccionId,
             ),
             picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
           },
         ],
         external_reference: String(transaccionId),
         back_urls: {
-          success: `${HOST_URL}/pago/exito/${transaccionId}`,
-          failure: `${HOST_URL}/pago/fallo/${transaccionId}`,
-          pending: `${HOST_URL}/pago/pendiente/${transaccionId}`,
+          success: `${process.env.FRONTEND_URL}`,
+          failure: `${process.env.FRONTEND_URL}`,
+          pending: `${process.env.FRONTEND_URL}`,
         },
         notification_url: webhookUrl,
         auto_return: "approved",
@@ -194,7 +193,7 @@ const paymentService = {
               title: titulo,
               description: this._generarDescripcionDetallada(
                 datos,
-                transaccionId
+                transaccionId,
               ),
               picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
               category_id: "services",
@@ -256,7 +255,7 @@ const paymentService = {
       });
 
       console.log(
-        `✅ [MP Service] Preferencia creada. ID: ${response.id}, URL: ${response.init_point}`
+        `✅ [MP Service] Preferencia creada. ID: ${response.id}, URL: ${response.init_point}`,
       );
 
       return {
@@ -266,7 +265,7 @@ const paymentService = {
     } catch (error) {
       console.error(
         "❌ [MP Service] Error al crear preferencia en MP:",
-        error.message
+        error.message,
       );
       // ✅ Agregar más detalles del error
       console.error("Datos recibidos:", {
@@ -302,16 +301,16 @@ const paymentService = {
     }
 
     console.log(
-      `➡️ [MP Service] ID extraído antes de validación: ${paymentId}`
+      `➡️ [MP Service] ID extraído antes de validación: ${paymentId}`,
     );
 
     console.log(
-      `➡️ [MP Service] Webhook recibido. Tipo: ${topicType}, ID Pasarela: ${paymentId}`
+      `➡️ [MP Service] Webhook recibido. Tipo: ${topicType}, ID Pasarela: ${paymentId}`,
     ); // 🛑 Solo se procesan notificaciones de tipo 'payment' con un ID de pago válido
 
     if (topicType !== "payment" || !paymentId) {
       console.warn(
-        `⚠️ [MP Service] Webhook ignorado. Topic: ${topicType}, ID: ${paymentId}`
+        `⚠️ [MP Service] Webhook ignorado. Topic: ${topicType}, ID: ${paymentId}`,
       );
       return null;
     }
@@ -322,12 +321,12 @@ const paymentService = {
       const transaccionId = paymentData.external_reference;
 
       console.log(
-        `🔍 [MP Service] Pago ID ${paymentId} fetcheado. Ref. Externa: ${transaccionId}, Estado MP: ${paymentData.status}`
+        `🔍 [MP Service] Pago ID ${paymentId} fetcheado. Ref. Externa: ${transaccionId}, Estado MP: ${paymentData.status}`,
       );
 
       if (!transaccionId) {
         console.warn(
-          `⚠️ [MP Service] Pago ID ${paymentId} sin external_reference.`
+          `⚠️ [MP Service] Pago ID ${paymentId} sin external_reference.`,
         );
         return null;
       }
@@ -346,7 +345,7 @@ const paymentService = {
     } catch (error) {
       console.error(
         `❌ [MP Service] Error al fetchear pago ${paymentId}:`,
-        error.message
+        error.message,
       );
       return null;
     }
@@ -364,7 +363,7 @@ const paymentService = {
     console.log(
       `➡️ [MP Service] Solicitando reembolso para Payment ID: ${paymentId}. Monto: ${
         monto ?? "Total"
-      }`
+      }`,
     ); // 🔄 Prioridad de Tokens: Probamos TEST primero, luego LIVE.
 
     const tokens = [
@@ -393,7 +392,7 @@ const paymentService = {
         const response = await axios.post(url, body, { headers }); // Éxito:
 
         console.log(
-          `✅ [MP Service] Reembolso de MP exitoso (${tokenName}) para Payment ID ${paymentId}. Refund ID: ${response.data.id}, Estado: ${response.data.status}`
+          `✅ [MP Service] Reembolso de MP exitoso (${tokenName}) para Payment ID ${paymentId}. Refund ID: ${response.data.id}, Estado: ${response.data.status}`,
         );
 
         return {
@@ -414,7 +413,7 @@ const paymentService = {
           (tokenName === "TEST" || tokenName === "LIVE")
         ) {
           console.warn(
-            `   - ⚠️ Fallo con Token ${tokenName} (Status ${errorStatus}). Reintentando con el otro token.`
+            `   - ⚠️ Fallo con Token ${tokenName} (Status ${errorStatus}). Reintentando con el otro token.`,
           );
           continue; // Pasa al siguiente token
         } // Manejo de pagos ya reembolsados, no elegibles o no encontrados (400, 404)
@@ -426,7 +425,7 @@ const paymentService = {
           errorStatus === 404
         ) {
           console.warn(
-            `⚠️ [MP Service] El pago ${paymentId} ya fue reembolsado, no puede ser reembolsado o no fue encontrado (Status ${errorStatus}).`
+            `⚠️ [MP Service] El pago ${paymentId} ya fue reembolsado, no puede ser reembolsado o no fue encontrado (Status ${errorStatus}).`,
           );
           return {
             success: false,
@@ -437,7 +436,7 @@ const paymentService = {
 
         console.error(
           `❌ [MP Service] Fallo crítico en realizarReembolso con ${tokenName}:`,
-          errorData || error.message
+          errorData || error.message,
         );
 
         const finalErrorMsg =
@@ -445,7 +444,7 @@ const paymentService = {
           error.message ||
           "Fallo desconocido al solicitar reembolso.";
         throw new Error(
-          `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`
+          `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`,
         );
       }
     } // Si llegamos aquí, es porque el bucle terminó sin éxito tras probar ambos.
@@ -457,7 +456,7 @@ const paymentService = {
     const finalErrorMsg =
       lastError?.message || "Fallo desconocido tras intentos con ambos tokens.";
     throw new Error(
-      `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`
+      `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`,
     );
   },
   /**
@@ -469,15 +468,15 @@ const paymentService = {
    * @returns {Promise<void>}
    * @throws {Error} Si falla la obtención de la MO, la referencia externa es inválida, o falla la transacción local.
    */ async procesarPagosDeMerchantOrder(merchantOrderId) {
-     const transaccionService = require("../services/transaccion.service");
+    const transaccionService = require("../services/transaccion.service");
     if (!merchantOrderService) {
       throw new Error(
-        "El servicio de MerchantOrder no está inicializado. Revise MP_ACCESS_TOKEN."
+        "El servicio de MerchantOrder no está inicializado. Revise MP_ACCESS_TOKEN.",
       );
     }
 
     console.log(
-      `➡️ [MP Service] Procesando Merchant Order ID: ${merchantOrderId}`
+      `➡️ [MP Service] Procesando Merchant Order ID: ${merchantOrderId}`,
     ); // 1. Iniciar Transacción de base de datos local para garantizar atomicidad
 
     const t = await sequelize.transaction({
@@ -494,7 +493,7 @@ const paymentService = {
 
       if (!transaccionId) {
         throw new Error(
-          "Merchant Order sin referencia de Transacción externa."
+          "Merchant Order sin referencia de Transacción externa.",
         );
       } // 3. Procesar cada pago asociado a la Merchant Order
 
@@ -502,7 +501,7 @@ const paymentService = {
         const internalStatus = MP_STATUS_MAP[mpPayment.status];
 
         console.log(
-          `   - [MP Payment] ID: ${mpPayment.id}, Estado MP: ${mpPayment.status} -> Estado Interno: ${internalStatus}`
+          `   - [MP Payment] ID: ${mpPayment.id}, Estado MP: ${mpPayment.status} -> Estado Interno: ${internalStatus}`,
         ); // Solo procesar pagos en estado final que requieran un cambio de estado en la Transacción
 
         if (
@@ -523,7 +522,7 @@ const paymentService = {
             transaccion.estado_transaccion === "reembolsado"
           ) {
             console.log(
-              `   - [MP Payment] Transacción ${transaccionId} ya en estado final. Saltando...`
+              `   - [MP Payment] Transacción ${transaccionId} ya en estado final. Saltando...`,
             );
             continue;
           } // Crear o actualizar el registro de PagoMercado
@@ -542,14 +541,14 @@ const paymentService = {
               transaccionId,
               "fallido",
               "Rechazado por MO",
-              { transaction: t }
+              { transaction: t },
             );
           } else if (internalStatus === "devuelto") {
             await transaccionService.procesarFalloTransaccion(
               transaccionId,
               "reembolsado",
               "Devuelto por MO",
-              { transaction: t }
+              { transaction: t },
             );
           }
         }
@@ -557,13 +556,13 @@ const paymentService = {
 
       await t.commit();
       console.log(
-        `✅ [MP Service] Merchant Order ${merchantOrderId} procesada y transacción commiteada.`
+        `✅ [MP Service] Merchant Order ${merchantOrderId} procesada y transacción commiteada.`,
       );
     } catch (error) {
       await t.rollback();
       console.error(
         `❌ [MP Service] Error CRÍTICO al procesar Merchant Order ${merchantOrderId}:`,
-        error.message
+        error.message,
       );
       throw error;
     }
@@ -618,7 +617,7 @@ const paymentService = {
     if (!paymentAPI) return null;
 
     console.log(
-      `➡️ [MP Service] Refrescando estado para Transacción ID: ${transaccionId}, Pago MP ID: ${mpTransactionId}`
+      `➡️ [MP Service] Refrescando estado para Transacción ID: ${transaccionId}, Pago MP ID: ${mpTransactionId}`,
     );
 
     try {
@@ -628,7 +627,7 @@ const paymentService = {
 
       if (!transaccion) {
         console.warn(
-          `⚠️ [MP Service] Transacción ${transaccionId} no encontrada para refresh.`
+          `⚠️ [MP Service] Transacción ${transaccionId} no encontrada para refresh.`,
         );
         return null;
       }
@@ -640,7 +639,7 @@ const paymentService = {
       const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
 
       console.log(
-        `🔍 [MP Service] Estado actual MP: ${paymentData.status} -> Interno: ${internalStatus}. Estado Transacción: ${transaccion.estado_transaccion}`
+        `🔍 [MP Service] Estado actual MP: ${paymentData.status} -> Interno: ${internalStatus}. Estado Transacción: ${transaccion.estado_transaccion}`,
       );
 
       const pagoData = {
@@ -654,7 +653,7 @@ const paymentService = {
         await pagoMercado.update(pagoData);
       } else {
         console.warn(
-          `   - [MP Service] No se encontró registro PagoMercado para Transacción ${transaccionId}.`
+          `   - [MP Service] No se encontró registro PagoMercado para Transacción ${transaccionId}.`,
         );
       } // 3. Confirmar la Transacción local si el pago fue aprobado
 
@@ -666,7 +665,7 @@ const paymentService = {
         await transaccionService.confirmarTransaccion(transaccionId);
         await transaccion.reload();
         console.log(
-          `   - [MP Service] Transacción ${transaccionId} CONFIRMADA por refresh.`
+          `   - [MP Service] Transacción ${transaccionId} CONFIRMADA por refresh.`,
         );
       }
 
@@ -677,7 +676,7 @@ const paymentService = {
     } catch (error) {
       console.error(
         `❌ [MP Service] Error al refrescar estado de pago ${mpTransactionId}:`,
-        error.message
+        error.message,
       );
       return null;
     }
