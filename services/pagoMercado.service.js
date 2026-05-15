@@ -19,6 +19,9 @@ const PagoMercado = require("../models/pagoMercado");
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN; // Usamos la variable existente para el token LIVE
 const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN; // Nueva variable para el token TEST
 const HOST_URL = (process.env.HOST_URL || "http://localhost:3000").trim();
+const FRONTEND_URL = (
+  process.env.FRONTEND_URL || "http://localhost:5173"
+).trim();
 const CURRENCY_ID = process.env.MP_CURRENCY_ID || "ARS";
 
 /**
@@ -145,6 +148,7 @@ const paymentService = {
     } = datos;
 
     try {
+      console.log("🔍 FRONTEND_URL cargado:", FRONTEND_URL);
       const isDevOrTest = process.env.NODE_ENV !== "production";
       const webhookPath = "/api/payment/webhook/mercadopago";
       const webhookUrl = `${HOST_URL}${webhookPath}`;
@@ -178,9 +182,9 @@ const paymentService = {
         ],
         external_reference: String(transaccionId),
         back_urls: {
-          success: `${process.env.FRONTEND_URL}/pago/exito/${transaccionId}`,
-          failure: `${process.env.FRONTEND_URL}/pago/fallo/${transaccionId}`,
-          pending: `${process.env.FRONTEND_URL}/pago/pendiente/${transaccionId}`,
+          success: `${FRONTEND_URL}/pago/exito/${transaccionId}`,
+          failure: `${FRONTEND_URL}/pago/fallo/${transaccionId}`,
+          pending: `${FRONTEND_URL}/pago/pendiente/${transaccionId}`,
         },
         notification_url: webhookUrl,
         auto_return: "approved",
