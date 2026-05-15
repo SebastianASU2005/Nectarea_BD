@@ -187,7 +187,7 @@ const paymentService = {
           pending: `${FRONTEND_URL}/pago/pendiente/${transaccionId}`,
         },
         notification_url: webhookUrl,
-        auto_return: "approved",
+        //auto_return: "approved",
         statement_descriptor: "LOTEPLAN",
 
         additional_info: {
