@@ -1,6 +1,6 @@
 // tasks/vencerCuotasAdhesion.js (versión corregida)
 const { sequelize, Op } = require("../config/database");
-const PagoAdhesion = require("../models/pagoAdhesion");
+const PagoAdhesion = require("../models/PagoAdhesion");
 const Adhesion = require("../models/adhesion");
 const Proyecto = require("../models/proyecto"); // ✅ Importar Proyecto
 const emailService = require("../services/email.service");
