@@ -10,7 +10,7 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const Inversion = require("../models/inversion");
 const Puja = require("../models/puja");
-const PagoAdhesion = require("../models/pagoAdhesion");
+const PagoAdhesion = require("../models/PagoAdhesion");
 const Adhesion = require("../models/adhesion");
 
 const paymentService = require("./pagoMercado.service");

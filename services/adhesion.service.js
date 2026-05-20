@@ -1,6 +1,6 @@
 // services/adhesion.service.js
 const Adhesion = require("../models/adhesion");
-const PagoAdhesion = require("../models/pagoAdhesion");
+const PagoAdhesion = require("../models/PagoAdhesion");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Proyecto = require("../models/proyecto");
 const CuotaMensual = require("../models/CuotaMensual");

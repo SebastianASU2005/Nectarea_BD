@@ -21,7 +21,7 @@ const ContratoPlantilla = require("./ContratoPlantilla"); // Este SÍ tiene may�
 const ContratoFirmado = require("./ContratoFirmado"); // Este SÍ tiene mayúscula
 const VerificacionIdentidad = require("./verificacion_identidad");
 const Adhesion = require("./adhesion");
-const PagoAdhesion = require("./pagoAdhesion");
+const PagoAdhesion = require("./PagoAdhesion");
 
 const configureAssociations = () => {
   // -------------------------------------------------------------------

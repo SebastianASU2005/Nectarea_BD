@@ -3,7 +3,7 @@ const adhesionService = require("../services/adhesion.service");
 const transaccionService = require("../services/transaccion.service");
 const auth2faService = require("../services/auth2fa.service");
 const usuarioService = require("../services/usuario.service");
-const PagoAdhesion = require("../models/pagoAdhesion");
+const PagoAdhesion = require("../models/PagoAdhesion");
 
 /**
  * POST /api/adhesion
