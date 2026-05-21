@@ -57,29 +57,39 @@ const usuarioService = {
   },
 
   async resendConfirmationEmail(email) {
-  // Buscar SOLO usuarios activos (que pueden recibir confirmación)
-  const usuario = await Usuario.findOne({ 
-    where: { email, activo: true }   // ✅ Ahora filtra por activo
-  });
-  
-  if (!usuario) {
-    throw new Error("Si la cuenta existe y está activa, recibirá un correo electrónico pronto.");
-  }
-  if (usuario.confirmado_email) {
-    throw new Error("Su cuenta ya ha sido confirmada.");
-  }
+    // 1. Buscar cualquier cuenta con ese email (activa o inactiva)
+    const usuario = await Usuario.findOne({ where: { email } });
+    if (!usuario) {
+      throw new Error("No existe una cuenta con ese correo electrónico.");
+    }
+
+    // 2. Si la cuenta ya está confirmada y activa, no se puede reenviar
+    if (usuario.confirmado_email && usuario.activo) {
+      throw new Error("Su cuenta ya ha sido confirmada y está activa.");
+    }
+
+    // 3. Si la cuenta está inactiva, la reactivamos automáticamente
+    if (!usuario.activo) {
+      console.log(`Reactivando cuenta inactiva para email ${email}`);
+      await usuario.update({ activo: true });
+    }
+
+    // 4. Generar nuevo token (incluso si ya tenía uno, lo renovamos)
     const nuevoToken = generateToken();
     const expiracion = new Date();
     expiracion.setHours(expiracion.getHours() + 24);
     await usuario.update({
       confirmacion_token: nuevoToken,
       confirmacion_token_expiracion: expiracion,
+      confirmado_email: false, // Por si estaba confirmada pero inactiva? No debería.
     });
+
+    // 5. Enviar email
     try {
       await emailService.sendConfirmationEmail(usuario, nuevoToken);
       return true;
     } catch (e) {
-      console.error("Error al reenviar email de confirmación:", e);
+      console.error(`Error al reenviar email a ${email}:`, e);
       throw new Error("Error al enviar el correo. Intente de nuevo más tarde.");
     }
   },
