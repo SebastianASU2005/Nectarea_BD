@@ -95,8 +95,9 @@ const usuarioService = {
   },
 
   async generatePasswordResetToken(email) {
-    const user = await Usuario.findOne({ where: { email } });
-    if (!user) return;
+    // Buscar solo usuarios ACTIVOS
+    const user = await Usuario.findOne({ where: { email, activo: true } });
+    if (!user) return; // No lanzamos error explícito por seguridad (evitar enumeración)
     const resetToken = crypto.randomBytes(20).toString("hex");
     const expirationDate = new Date();
     expirationDate.setHours(expirationDate.getHours() + 1);
@@ -108,7 +109,7 @@ const usuarioService = {
       await emailService.sendPasswordResetEmail(user, resetToken);
     } catch (e) {
       console.error(
-        `ERROR: Fallo al enviar el email de restablecimiento a ${user.email}.`,
+        `ERROR: Fallo al enviar email de restablecimiento a ${user.email}.`,
         e,
       );
     }

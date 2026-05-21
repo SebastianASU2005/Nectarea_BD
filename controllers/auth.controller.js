@@ -26,18 +26,18 @@ const authController = {
     try {
       // 🔒 WHITELIST DE CAMPOS PERMITIDOS - Previene Mass Assignment
       const allowedFields = [
-        'email',
-        'nombre_usuario', 
-        'contraseña',
-        'dni',
-        'nombre',
-        'apellido',
-        'numero_telefono'
+        "email",
+        "nombre_usuario",
+        "contraseña",
+        "dni",
+        "nombre",
+        "apellido",
+        "numero_telefono",
       ];
 
       // Extraer SOLO los campos permitidos
       const sanitizedData = {};
-      allowedFields.forEach(field => {
+      allowedFields.forEach((field) => {
         if (req.body[field] !== undefined) {
           sanitizedData[field] = req.body[field];
         }
@@ -48,7 +48,8 @@ const authController = {
       // 🎯 1. VALIDACIÓN DE CAMPOS REQUERIDOS
       if (!email || !nombre_usuario || !contraseña || !dni) {
         return res.status(400).json({
-          error: "Faltan campos requeridos: email, nombre_usuario, contraseña, dni"
+          error:
+            "Faltan campos requeridos: email, nombre_usuario, contraseña, dni",
         });
       }
 
@@ -63,9 +64,8 @@ const authController = {
       }
 
       // B. Verificar Nombre de Usuario
-      const existingUserByUsername = await usuarioService.findByUsername(
-        nombre_usuario
-      );
+      const existingUserByUsername =
+        await usuarioService.findByUsername(nombre_usuario);
       if (existingUserByUsername) {
         return res.status(409).json({
           error: "El nombre de usuario ya está en uso.",
@@ -87,10 +87,10 @@ const authController = {
       const userData = {
         ...sanitizedData,
         contraseña_hash: hashedPassword,
-        rol: 'cliente', // 🔒 SIEMPRE cliente por defecto - No se puede cambiar en registro
+        rol: "cliente", // 🔒 SIEMPRE cliente por defecto - No se puede cambiar en registro
         activo: false, // Por defecto desactivado hasta confirmar email
         confirmado_email: false,
-        is_2fa_enabled: false
+        is_2fa_enabled: false,
       };
 
       // Eliminar la contraseña en texto plano del objeto
@@ -98,7 +98,7 @@ const authController = {
 
       // 5. Crear el usuario en la base de datos
       const newUser = await usuarioService.create(userData);
-      
+
       res.status(201).json({
         message:
           "Usuario registrado exitosamente. Se ha enviado un enlace de confirmación a su correo.",
@@ -106,7 +106,7 @@ const authController = {
           id: newUser.id,
           nombre_usuario: newUser.nombre_usuario,
           email: newUser.email,
-          rol: newUser.rol // Mostrar que se creó como cliente
+          rol: newUser.rol, // Mostrar que se creó como cliente
         },
       });
     } catch (error) {
@@ -184,7 +184,7 @@ const authController = {
       // 1. Verificación de contraseña
       const isMatch = await authService.comparePassword(
         contraseña,
-        user.contraseña_hash
+        user.contraseña_hash,
       );
 
       if (!isMatch) {
@@ -213,7 +213,7 @@ const authController = {
       if (user.is_2fa_enabled) {
         // Verificar si han pasado más de 15 días desde la última verificación 2FA
         const necesita2FA = authController._necesitaVerificacion2FA(
-          user.last_2fa_verification
+          user.last_2fa_verification,
         );
 
         if (necesita2FA) {
@@ -376,37 +376,29 @@ const authController = {
     }
   },
 
-  /**
-   * @async
-   * @function resetPassword
-   * @description Restablece la contraseña del usuario usando el token.
-   * @param {object} req - Objeto de solicitud de Express (con `token` en `params` y `nueva_contraseña` en `body`).
-   * @param {object} res - Objeto de respuesta de Express.
-   */
   async resetPassword(req, res) {
     try {
-      const { token } = req.params; // Token del enlace
+      const { token } = req.params;
       const { nueva_contraseña } = req.body;
-
-      // 1. Verificar el token y su expiración
       const user = await usuarioService.findByResetToken(token);
-
       if (!user) {
         return res
           .status(400)
           .json({ error: "Token de restablecimiento inválido o expirado." });
       }
-
-      // 2. Hashear la nueva contraseña
+      // ✅ Si la cuenta está inactiva, la reactivamos automáticamente (como en resendConfirmation)
+      if (!user.activo) {
+        console.log(
+          `Reactivando cuenta inactiva durante restablecimiento de contraseña: ${user.email}`,
+        );
+        await user.update({ activo: true });
+      }
       const hashedPassword = await authService.hashPassword(nueva_contraseña);
-
-      // 3. Actualizar la contraseña y limpiar el token/expiración en la BD
       await user.update({
         contraseña_hash: hashedPassword,
-        reset_password_token: null, // Limpiar
-        reset_password_expires: null, // Limpiar
+        reset_password_token: null,
+        reset_password_expires: null,
       });
-
       res.status(200).json({
         message:
           "Contraseña restablecida exitosamente. Ya puedes iniciar sesión.",
