@@ -290,13 +290,13 @@ const paymentController = {
       }
     }
 
-    // const isValid = verifySignature(req);
-    // if (!isValid) {
-    //   console.error("🚫 FIRMA INVÁLIDA - RECHAZANDO WEBHOOK");
-    //   return res.status(401).send("Unauthorized");
-    // }
-    // console.log("✅ Firma válida - Procesando webhook");
-    console.log("⚠️ VERIFICACIÓN DE FIRMA DESACTIVADA (modo pruebas)");
+    const isValid = verifySignature(req);
+    if (!isValid) {
+      console.error("🚫 FIRMA INVÁLIDA - RECHAZANDO WEBHOOK");
+      return res.status(401).send("Unauthorized");
+    }
+
+    console.log("✅ Firma válida - Procesando webhook");
 
     const topic =
       req.query.topic || req.body?.topic || req.query.type || req.body?.type;
@@ -307,18 +307,10 @@ const paymentController = {
     let pagoMercado = null;
 
     if (topic === "merchant_order") {
-      console.log(`🔄 Merchant Order ${id} recibida. Procesando...`);
-      try {
-        await pagoMercadoService.procesarPagosDeMerchantOrder(id);
-        console.log(`✅ Merchant Order ${id} procesada.`);
-        return res.status(200).send("OK");
-      } catch (error) {
-        console.error(
-          `❌ Error al procesar Merchant Order ${id}:`,
-          error.message,
-        );
-        return res.status(200).send("OK - Error procesando MO");
-      }
+      console.log(
+        `⚠️ Webhook merchant_order (formato antiguo) ignorado. ID: ${id}`,
+      );
+      return res.status(200).send("OK - Formato antiguo ignorado");
     }
 
     if (topic === "topic_merchant_order_wh" && id) {
