@@ -189,7 +189,7 @@ const paymentService = {
         notification_url: webhookUrl,
         auto_return: "approved",
         statement_descriptor: "LOTEPLAN",
-
+        purpose: "wallet_purchase",
         additional_info: {
           items: [
             {
