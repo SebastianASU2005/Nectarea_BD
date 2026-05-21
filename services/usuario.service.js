@@ -57,15 +57,17 @@ const usuarioService = {
   },
 
   async resendConfirmationEmail(email) {
-    const usuario = await Usuario.findOne({ where: { email } });
-    if (!usuario) {
-      throw new Error(
-        "Si la cuenta existe, recibirá un correo electrónico pronto.",
-      );
-    }
-    if (usuario.confirmado_email) {
-      throw new Error("Su cuenta ya ha sido confirmada.");
-    }
+  // Buscar SOLO usuarios activos (que pueden recibir confirmación)
+  const usuario = await Usuario.findOne({ 
+    where: { email, activo: true }   // ✅ Ahora filtra por activo
+  });
+  
+  if (!usuario) {
+    throw new Error("Si la cuenta existe y está activa, recibirá un correo electrónico pronto.");
+  }
+  if (usuario.confirmado_email) {
+    throw new Error("Su cuenta ya ha sido confirmada.");
+  }
     const nuevoToken = generateToken();
     const expiracion = new Date();
     expiracion.setHours(expiracion.getHours() + 24);
