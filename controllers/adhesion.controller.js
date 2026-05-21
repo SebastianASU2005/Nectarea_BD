@@ -98,7 +98,7 @@ exports.listarAdhesionesUsuario = async (req, res) => {
           attributes: ["id", "nombre_proyecto"],
         },
         {
-          model: require("../models/pagoAdhesion"),
+          model: require("../models/PagoAdhesion"),
           as: "pagos",
           order: [["numero_cuota", "ASC"]],
         },
