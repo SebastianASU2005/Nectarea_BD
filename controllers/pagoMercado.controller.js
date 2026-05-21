@@ -37,64 +37,75 @@ function verifySignature(req) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   const signatureHeader = req.headers["x-signature"];
   const requestId = req.headers["x-request-id"];
-  const topic =
-    req.query.topic || req.body?.topic || req.query.type || req.body?.type;
 
   if (!secret) {
     console.error("❌ CRÍTICO: MP_WEBHOOK_SECRET no configurado");
     return false;
   }
 
-  if (topic === "merchant_order" && signatureHeader) {
-    return true;
-  }
-
+  // Si no hay firma, rechazar (por seguridad)
   if (!signatureHeader) {
-    if (topic === "merchant_order" || topic === "order") return true;
-    if (topic === "payment") {
-      const hasBasicData = !!(
-        req.query.id ||
-        req.body?.data?.id ||
-        req.query["data.id"]
-      );
-      if (hasBasicData) return true;
-    }
+    console.warn("⚠️ Webhook sin firma - rechazado");
     return false;
   }
 
-  if (!requestId) return false;
-
+  // Extraer ts y v1 de la firma
   const parts = signatureHeader.split(",");
-  let ts, v1;
+  let ts = null,
+    v1 = null;
   for (const part of parts) {
     const [key, value] = part.split("=");
     if (key?.trim() === "ts") ts = value?.trim();
     if (key?.trim() === "v1") v1 = value?.trim();
   }
-  if (!ts || !v1) return false;
+  if (!ts || !v1) {
+    console.warn("⚠️ Firma sin ts o v1", { signatureHeader });
+    return false;
+  }
 
+  // Obtener posibles IDs del pago (data.id)
   const candidateIds = [
     req.body?.data?.id,
     req.query.id,
     req.query["data.id"],
+    req.body?.id, // a veces viene directamente
   ].filter(Boolean);
 
-  for (const candidateId of candidateIds) {
-    const manifest = `id:${candidateId};request-id:${requestId};ts:${ts};`;
-    const localHash = crypto
-      .createHmac("sha256", secret)
-      .update(manifest)
-      .digest("hex");
+  if (candidateIds.length === 0) {
+    console.warn("⚠️ No se encontró ID de pago en el webhook");
+    return false;
+  }
 
-    if (localHash === v1) {
-      console.log(`✅ Firma válida con dataId: ${candidateId}`);
+  // Función helper para calcular hash
+  const computeHash = (manifest) => {
+    return crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  };
+
+  // Probar cada candidateId
+  for (const candidateId of candidateIds) {
+    // Intento 1: con request-id (si existe)
+    if (requestId) {
+      const manifest = `id:${candidateId};request-id:${requestId};ts:${ts};`;
+      if (computeHash(manifest) === v1) {
+        console.log(
+          `✅ Firma válida (con request-id) para pago ${candidateId}`,
+        );
+        return true;
+      }
+    }
+    // Intento 2: sin request-id (MP a veces no lo envía)
+    const manifestNoReq = `id:${candidateId};ts:${ts};`;
+    if (computeHash(manifestNoReq) === v1) {
+      console.log(`✅ Firma válida (sin request-id) para pago ${candidateId}`);
       return true;
     }
   }
 
-  console.error("❌ Firma inválida con todos los candidatos", {
+  console.error("❌ Firma inválida para todos los candidatos", {
     candidateIds,
     ts,
+    v1,
+    requestId,
   });
   return false;
 }
