@@ -5,6 +5,7 @@ const ResumenCuenta = require("../models/resumen_cuenta");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { sequelize } = require("../config/database");
 const auditService = require("./audit.service");
+const emailService = require("./email.service");
 
 const cuotaMensualService = {
   _roundTo2(num) {
@@ -96,6 +97,65 @@ const cuotaMensualService = {
   },
 
   /**
+   * Compara dos versiones de una cuota y notifica a los suscriptores si hubo cambios relevantes.
+   * @param {object} oldCuota - Cuota anterior (como objeto plano)
+   * @param {object} newCuota - Cuota actualizada
+   * @param {string|null} customMessage - Mensaje personalizado del administrador
+   */
+  async _notifySubscribersIfChanged(oldCuota, newCuota, customMessage = null) {
+    const cambios = [];
+
+    const compare = (oldVal, newVal, desc) => {
+      if (Number(oldVal) !== Number(newVal)) {
+        cambios.push(desc);
+      }
+    };
+
+    compare(
+      oldCuota.valor_mensual_final,
+      newCuota.valor_mensual_final,
+      `Monto mensual final: $${Number(oldCuota.valor_mensual_final).toFixed(2)} → $${Number(newCuota.valor_mensual_final).toFixed(2)}`,
+    );
+
+    compare(
+      oldCuota.porcentaje_plan,
+      newCuota.porcentaje_plan,
+      `Porcentaje del plan: ${(Number(oldCuota.porcentaje_plan) * 100).toFixed(2)}% → ${(Number(newCuota.porcentaje_plan) * 100).toFixed(2)}%`,
+    );
+
+    compare(
+      oldCuota.porcentaje_administrativo,
+      newCuota.porcentaje_administrativo,
+      `Carga administrativa: ${(Number(oldCuota.porcentaje_administrativo) * 100).toFixed(2)}% → ${(Number(newCuota.porcentaje_administrativo) * 100).toFixed(2)}%`,
+    );
+
+    compare(
+      oldCuota.valor_cemento,
+      newCuota.valor_cemento,
+      `Valor del cemento: $${Number(oldCuota.valor_cemento).toFixed(2)} → $${Number(newCuota.valor_cemento).toFixed(2)}`,
+    );
+
+    compare(
+      oldCuota.valor_cemento_unidades,
+      newCuota.valor_cemento_unidades,
+      `Unidades de cemento: ${oldCuota.valor_cemento_unidades} → ${newCuota.valor_cemento_unidades}`,
+    );
+
+    if (cambios.length === 0) return;
+
+    const proyecto = await Proyecto.findByPk(newCuota.id_proyecto, {
+      attributes: ["id", "nombre_proyecto"],
+    });
+    if (!proyecto) return;
+
+    await emailService.notificarCambioCuotaProyecto(
+      proyecto,
+      cambios,
+      customMessage,
+    );
+  },
+
+  /**
    * Crea una nueva cuota mensual con auditoría
    */
   async createAndSetProjectAmount(data, adminContext = {}) {
@@ -147,7 +207,6 @@ const cuotaMensualService = {
         t,
       );
 
-      // ✅ Auditoría
       if (adminId) {
         await auditService.registrar({
           usuarioId: adminId,
@@ -175,10 +234,11 @@ const cuotaMensualService = {
   },
 
   /**
-   * Actualiza una cuota existente con auditoría
+   * Actualiza una cuota existente con auditoría y notifica cambios a suscriptores
    */
   async update(id, data, adminContext = {}) {
-    const { adminId, ip, userAgent } = adminContext;
+    const { adminId, ip, userAgent, mensajeEmail, motivoAuditoria } =
+      adminContext;
     const t = await sequelize.transaction();
     try {
       const cuota = await CuotaMensual.findByPk(id, { transaction: t });
@@ -217,7 +277,7 @@ const cuotaMensualService = {
         t,
       );
 
-      // ✅ Auditoría
+      // Auditoría con motivo corto
       if (adminId) {
         await auditService.registrar({
           usuarioId: adminId,
@@ -226,12 +286,26 @@ const cuotaMensualService = {
           entidadId: cuota.id,
           datosPrevios,
           datosNuevos: cuota.toJSON(),
-          motivo: null,
+          motivo: motivoAuditoria || "Actualización de cuota mensual", // ← texto corto
           ip,
           userAgent,
           transaccion: t,
         });
       }
+
+      // Notificación a usuarios con mensaje largo
+      t.afterCommit(() => {
+        this._notifySubscribersIfChanged(
+          datosPrevios,
+          cuota,
+          mensajeEmail,
+        ).catch((err) => {
+          console.error(
+            `Error al notificar cambio de cuota (proyecto ${cuota.id_proyecto}):`,
+            err,
+          );
+        });
+      });
 
       await t.commit();
       return { cuota, resumenes_actualizados: resumenesActualizados };
@@ -256,9 +330,6 @@ const cuotaMensualService = {
     });
   },
 
-  /**
-   * Soft delete con auditoría
-   */
   async softDelete(id, adminContext = {}) {
     const { adminId, ip, userAgent } = adminContext;
     const t = await sequelize.transaction();

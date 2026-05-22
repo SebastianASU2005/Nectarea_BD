@@ -143,7 +143,6 @@ const pagoService = {
   async generarPagoMensualConDescuento(suscripcionId, options = {}) {
     const t = options.transaction || (await sequelize.transaction());
     try {
-      // 1. Buscar Suscripción y Proyecto asociado
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
         include: [{ model: Proyecto, as: "proyectoAsociado" }],
@@ -159,7 +158,6 @@ const pagoService = {
         throw new Error("Suscripción, proyecto o IDs asociados faltantes.");
       }
 
-      // 🆕 VALIDACIÓN: Solo generar pagos si la adhesión está completada
       if (!suscripcion.adhesion_completada) {
         if (!options.transaction) await t.commit();
         return {
@@ -168,40 +166,31 @@ const pagoService = {
         };
       }
 
-      // 🆕 VALIDACIÓN DE STANDBY
+      // Verificar standby
       if (suscripcion.standby_active) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const endDate = suscripcion.standby_end_date
           ? new Date(suscripcion.standby_end_date)
           : null;
-
         if (endDate && endDate >= today) {
-          // Aún en período de pausa
           if (!options.transaction) await t.commit();
           return {
             message: `Suscripción en período de pausa hasta ${endDate.toISOString().slice(0, 10)}. No se generan nuevas cuotas durante este tiempo.`,
           };
         } else {
-          // El período de pausa ya expiró, desactivar automáticamente
           await suscripcion.update(
-            {
-              standby_active: false,
-              standby_end_date: null,
-            },
+            { standby_active: false, standby_end_date: null },
             { transaction: t },
           );
-          // Continuar con la generación del pago
         }
       }
 
-      // 2. Verificar meses restantes
       if (suscripcion.meses_a_pagar <= 0) {
         if (!options.transaction) await t.commit();
         return { message: "No hay más meses por pagar en esta suscripción." };
       }
 
-      // 3. Determinar el número de mes del pago
       const ultimoPago = await Pago.findOne({
         where: { id_suscripcion: suscripcionId },
         order: [["mes", "DESC"]],
@@ -209,7 +198,6 @@ const pagoService = {
       });
       const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
 
-      // 4. Aplicar saldo a favor
       const cuotaMensual = parseFloat(
         suscripcion.proyectoAsociado.monto_inversion,
       );
@@ -221,23 +209,20 @@ const pagoService = {
         const descuentoAplicado = Math.min(cuotaMensual, saldoAFavor);
         montoAPagar = cuotaMensual - descuentoAplicado;
         saldoAFavor -= descuentoAplicado;
-
         await suscripcion.update(
           { saldo_a_favor: saldoAFavor.toFixed(2) },
           { transaction: t },
         );
-
         if (montoAPagar === 0) {
           estado_pago = "cubierto_por_puja";
         }
       }
 
-      // 5. Calcular fecha de vencimiento (Día 10 del mes en que se crea)
-      const now = new Date();
-      const fechaVencimiento = new Date(now.getFullYear(), now.getMonth(), 10);
+      // ✅ CORRECCIÓN: usar la fecha base (próximo día 10)
+      const fechaBase = this._getProximoVencimientoBase();
+      const fechaVencimiento = new Date(fechaBase);
       fechaVencimiento.setHours(0, 0, 0, 0);
 
-      // 6. Crear el nuevo registro de Pago
       const nuevoPago = await Pago.create(
         {
           id_suscripcion: suscripcion.id,
@@ -251,9 +236,7 @@ const pagoService = {
         { transaction: t },
       );
 
-      // 7. Decrementar meses restantes a pagar
       await suscripcion.decrement("meses_a_pagar", { by: 1, transaction: t });
-
       if (!options.transaction) await t.commit();
       return nuevoPago;
     } catch (error) {
@@ -731,96 +714,69 @@ const pagoService = {
     options = {},
   ) {
     const t = options.transaction || (await sequelize.transaction());
-
     try {
-      // 1. Validar la suscripción
+      // Validar suscripción y proyecto
       const suscripcion = await SuscripcionProyecto.findByPk(suscripcionId, {
         transaction: t,
         include: [{ model: Proyecto, as: "proyectoAsociado" }],
       });
-
       if (!suscripcion || !suscripcion.proyectoAsociado) {
         if (!options.transaction) await t.rollback();
         throw new Error(
           `Suscripción ID ${suscripcionId} no encontrada o sin proyecto asociado.`,
         );
       }
-
       if (!suscripcion.activo) {
         if (!options.transaction) await t.rollback();
         throw new Error(`La suscripción ID ${suscripcionId} no está activa.`);
       }
-
-      // 2. Validar parámetros
       if (!cantidadMeses || cantidadMeses < 1 || cantidadMeses > 12) {
         if (!options.transaction) await t.rollback();
         throw new Error("La cantidad de meses debe estar entre 1 y 12.");
       }
-
       if (suscripcion.meses_a_pagar <= 0) {
         if (!options.transaction) await t.rollback();
         throw new Error("Esta suscripción no tiene meses restantes por pagar.");
       }
-
-      // Limitar la cantidad de meses a generar por los meses restantes
       const mesesAGenerar = Math.min(cantidadMeses, suscripcion.meses_a_pagar);
-
-      if (mesesAGenerar < cantidadMeses) {
-        console.warn(
-          `⚠️ Solo se generarán ${mesesAGenerar} pagos (meses restantes en la suscripción).`,
-        );
-      }
-
-      // 3. Determinar el monto por mes
       const montoBase = montoPorMes
         ? parseFloat(montoPorMes)
         : parseFloat(suscripcion.proyectoAsociado.monto_inversion);
-
       if (montoBase <= 0 || isNaN(montoBase)) {
         if (!options.transaction) await t.rollback();
         throw new Error("El monto por mes debe ser un número positivo válido.");
       }
 
-      // 4. Encontrar el último mes pagado/generado
+      // Obtener último mes pagado/generado
       const ultimoPago = await Pago.findOne({
         where: { id_suscripcion: suscripcionId },
         order: [["mes", "DESC"]],
         transaction: t,
       });
-
       const proximoMes = ultimoPago ? ultimoPago.mes + 1 : 1;
 
-      // 5. Generar los pagos
+      // ✅ CORRECCIÓN: usar fecha base (próximo día 10)
+      const fechaBase = this._getProximoVencimientoBase();
       const pagosGenerados = [];
       let saldoRestante = parseFloat(suscripcion.saldo_a_favor);
 
       for (let i = 0; i < mesesAGenerar; i++) {
         const numeroMes = proximoMes + i;
 
-        // Aplicar saldo a favor si existe
         let montoAPagar = montoBase;
         let estadoPago = "pendiente";
-
         if (saldoRestante > 0) {
           const descuentoAplicado = Math.min(montoBase, saldoRestante);
           montoAPagar = montoBase - descuentoAplicado;
           saldoRestante -= descuentoAplicado;
-
-          if (montoAPagar === 0) {
-            estadoPago = "cubierto_por_puja";
-          }
+          if (montoAPagar === 0) estadoPago = "cubierto_por_puja";
         }
 
-        // Calcular fecha de vencimiento (día 10 del mes correspondiente)
-        const now = new Date();
-        const fechaVencimiento = new Date(
-          now.getFullYear(),
-          now.getMonth() + i,
-          10,
-        );
+        // Fecha de vencimiento: fechaBase + i meses
+        const fechaVencimiento = new Date(fechaBase);
+        fechaVencimiento.setMonth(fechaBase.getMonth() + i);
         fechaVencimiento.setHours(0, 0, 0, 0);
 
-        // Crear el pago
         const nuevoPago = await Pago.create(
           {
             id_suscripcion: suscripcion.id,
@@ -835,12 +791,9 @@ const pagoService = {
         );
 
         pagosGenerados.push(nuevoPago);
-
-        // Decrementar meses_a_pagar de la suscripción
         await suscripcion.decrement("meses_a_pagar", { by: 1, transaction: t });
       }
 
-      // 6. Actualizar el saldo a favor si cambió
       if (saldoRestante !== parseFloat(suscripcion.saldo_a_favor)) {
         await suscripcion.update(
           { saldo_a_favor: saldoRestante.toFixed(2) },
@@ -849,11 +802,9 @@ const pagoService = {
       }
 
       if (!options.transaction) await t.commit();
-
       console.log(
         `✅ Generados ${pagosGenerados.length} pagos adelantados para la Suscripción ID ${suscripcionId}`,
       );
-
       return pagosGenerados;
     } catch (error) {
       if (t && !options.transaction) await t.rollback();
@@ -989,6 +940,32 @@ const pagoService = {
       ],
       order: [["mes", "ASC"]], // Ordenar cronológicamente por cuota
     });
+  },
+  /**
+   * Calcula la próxima fecha de vencimiento (día 10) a partir de hoy.
+   * Si hoy es después del día 10, la primera fecha será el día 10 del próximo mes.
+   * Si hoy es antes o igual al día 10, la primera fecha será el día 10 del mes actual.
+   * @returns {Date} Fecha base para el primer pago
+   */
+  _getProximoVencimientoBase() {
+    const hoy = new Date();
+    const anio = hoy.getFullYear();
+    const mes = hoy.getMonth();
+    const dia = hoy.getDate();
+
+    let anioBase = anio;
+    let mesBase = mes;
+
+    if (dia > 10) {
+      // ya pasó el día 10: el próximo vencimiento es el mes siguiente
+      mesBase += 1;
+      if (mesBase > 11) {
+        mesBase = 0;
+        anioBase += 1;
+      }
+    }
+    // el día siempre es 10
+    return new Date(anioBase, mesBase, 10);
   },
   /**
    * @async

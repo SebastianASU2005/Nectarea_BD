@@ -122,6 +122,70 @@ const emailService = {
       throw error;
     }
   },
+  /**
+   * Notifica a todos los suscriptores activos de un proyecto sobre un cambio en la cuota mensual.
+   * @param {object} proyecto - Objeto del proyecto (debe tener id y nombre_proyecto)
+   * @param {string[]} cambios - Array de strings describiendo cada cambio (ej. "Monto mensual final: $100 → $110")
+   * @param {string|null} mensajeAdmin - Mensaje personalizado del administrador (opcional)
+   */
+  async notificarCambioCuotaProyecto(proyecto, cambios, mensajeAdmin = null) {
+    if (!proyecto || !proyecto.id) return;
+
+    // Importar modelos dentro de la función para evitar dependencias circulares
+    const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+    const Usuario = require("../models/usuario");
+
+    const suscripciones = await SuscripcionProyecto.findAll({
+      where: { id_proyecto: proyecto.id, activo: true },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "email", "nombre"],
+        },
+      ],
+    });
+
+    if (suscripciones.length === 0) {
+      console.log(
+        `No hay suscriptores activos para el proyecto ${proyecto.id}, no se envían notificaciones.`,
+      );
+      return;
+    }
+
+    const asunto = `📢 Cambio en la cuota mensual del proyecto "${proyecto.nombre_proyecto}"`;
+
+    const listaCambiosHtml = cambios.map((c) => `<li>${c}</li>`).join("");
+    const mensajePersonalizadoHtml = mensajeAdmin
+      ? `<div style="background-color: #fff3e0; padding: 15px; margin: 20px 0; border-left: 4px solid #FF5733;">
+         <p><strong>📝 Mensaje del administrador:</strong><br>${mensajeAdmin}</p>
+       </div>`
+      : "";
+
+    const contenidoHtml = `
+    <h2 style="color: #0b1b36;">Actualización de cuota mensual</h2>
+    <p>El proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha actualizado su valor de cuota mensual.</p>
+    <h3>Cambios detectados:</h3>
+    <ul>${listaCambiosHtml}</ul>
+    ${mensajePersonalizadoHtml}
+    <p>El nuevo monto se aplicará automáticamente a tus próximos pagos mensuales. Si tienes alguna duda, contacta con soporte.</p>
+    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px;">Ver mis suscripciones</a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoHtml);
+    const textPlain = `El proyecto ${proyecto.nombre_proyecto} ha actualizado su cuota mensual. Ingresa para ver los detalles.`;
+
+    // Enviar a cada suscriptor
+    for (const sus of suscripciones) {
+      const usuario = sus.usuario;
+      if (usuario && usuario.email) {
+        await this.sendEmail(usuario.email, asunto, textPlain, html);
+      }
+    }
+    console.log(
+      `✅ Notificaciones de cambio de cuota enviadas a ${suscripciones.length} suscriptores del proyecto ${proyecto.id}`,
+    );
+  },
 
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
