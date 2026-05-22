@@ -1,5 +1,6 @@
 // services/cuota_mensual.service.js
 // Refactorizado: un correo por usuario (no por suscripción) y formateo correcto de porcentajes.
+// Validación: no se permite crear más de una cuota por proyecto.
 
 const CuotaMensual = require("../models/CuotaMensual");
 const Proyecto = require("../models/proyecto");
@@ -196,6 +197,10 @@ const cuotaMensualService = {
     }
   },
 
+  /**
+   * Crea una nueva cuota mensual y actualiza el monto del proyecto.
+   * Valida que no exista ya una cuota para el proyecto.
+   */
   async createAndSetProjectAmount(data, adminContext = {}) {
     const { adminId, ip, userAgent } = adminContext;
     const t = await sequelize.transaction();
@@ -205,6 +210,17 @@ const cuotaMensualService = {
       });
       if (!proyecto)
         throw new Error("El proyecto especificado no fue encontrado.");
+
+      // ✅ VALIDACIÓN: impedir crear más de una cuota por proyecto
+      const cuotaExistente = await CuotaMensual.findOne({
+        where: { id_proyecto: data.id_proyecto },
+        transaction: t,
+      });
+      if (cuotaExistente) {
+        throw new Error(
+          `Ya existe una cuota mensual para el proyecto ID ${data.id_proyecto}. Utilice el método de actualización (PUT) para modificar la cuota existente.`,
+        );
+      }
 
       const totalCuotasProyecto = proyecto.plazo_inversion;
       if (!totalCuotasProyecto)

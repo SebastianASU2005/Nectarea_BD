@@ -50,48 +50,11 @@ const cuotaMensualController = {
       res.status(400).json({ success: false, error: error.message });
     }
   },
-  async update(req, res) {
-    try {
-      const { id } = req.params;
-      const { mensaje_cambio, ...updateData } = req.body;
 
-      const adminContext = {
-        adminId: req.user.id,
-        ip: req.ip || req.headers["x-forwarded-for"] || null,
-        userAgent: req.get("user-agent") || null,
-        motivo: mensaje_cambio || null,
-      };
-
-      const resultado = await cuotaMensualService.update(
-        id,
-        updateData,
-        adminContext,
-      );
-
-      if (!resultado) {
-        return res
-          .status(404)
-          .json({ success: false, error: "Cuota no encontrada." });
-      }
-
-      res.status(200).json({
-        success: true,
-        mensaje: "Cuota mensual actualizada exitosamente",
-        cuota: resultado.cuota,
-        sincronizacion: {
-          resumenes_actualizados: resultado.resumenes_actualizados,
-          mensaje:
-            resultado.resumenes_actualizados > 0
-              ? `✅ Se actualizaron ${resultado.resumenes_actualizados} resúmenes de cuenta`
-              : "⚠️ No hay resúmenes de cuenta activos para este proyecto",
-        },
-      });
-    } catch (error) {
-      console.error("❌ Error al actualizar cuota mensual:", error);
-      res.status(400).json({ success: false, error: error.message });
-    }
-  },
-
+  /**
+   * Actualiza una cuota existente.
+   * Permite enviar mensaje largo para usuarios y motivo corto para auditoría.
+   */
   async update(req, res) {
     try {
       const { id } = req.params;
@@ -102,8 +65,8 @@ const cuotaMensualController = {
         adminId: req.user.id,
         ip: req.ip || req.headers["x-forwarded-for"] || null,
         userAgent: req.get("user-agent") || null,
-        mensajeEmail: mensaje_cambio_usuarios || null, // para el email
-        motivoAuditoria: motivo_auditoria || null, // para el log
+        mensajeEmail: mensaje_cambio_usuarios || null,
+        motivoAuditoria: motivo_auditoria || null,
       };
 
       const resultado = await cuotaMensualService.update(
@@ -135,7 +98,6 @@ const cuotaMensualController = {
       res.status(400).json({ success: false, error: error.message });
     }
   },
-
   async softDelete(req, res) {
     try {
       const { id } = req.params;
