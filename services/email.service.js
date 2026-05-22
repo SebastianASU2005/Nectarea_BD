@@ -123,38 +123,52 @@ const emailService = {
     }
   },
   /**
-   * Notifica a todos los suscriptores activos de un proyecto sobre un cambio en la cuota mensual.
+   * Notifica a los suscriptores activos de un proyecto sobre un cambio en la cuota mensual.
+   * Si se pasa `usuarioDestinatario`, envía solo a ese usuario (útil para evitar duplicados).
    * @param {object} proyecto - Objeto del proyecto (debe tener id y nombre_proyecto)
-   * @param {string[]} cambios - Array de strings describiendo cada cambio (ej. "Monto mensual final: $100 → $110")
+   * @param {string[]} cambios - Array de strings describiendo cada cambio
    * @param {string|null} mensajeAdmin - Mensaje personalizado del administrador (opcional)
+   * @param {object|null} usuarioDestinatario - Usuario específico (opcional, si se pasa solo envía a él)
    */
-  async notificarCambioCuotaProyecto(proyecto, cambios, mensajeAdmin = null) {
+  async notificarCambioCuotaProyecto(
+    proyecto,
+    cambios,
+    mensajeAdmin = null,
+    usuarioDestinatario = null,
+  ) {
     if (!proyecto || !proyecto.id) return;
 
-    // Importar modelos dentro de la función para evitar dependencias circulares
-    const SuscripcionProyecto = require("../models/suscripcion_proyecto");
-    const Usuario = require("../models/usuario");
+    let destinatarios = [];
 
-    const suscripciones = await SuscripcionProyecto.findAll({
-      where: { id_proyecto: proyecto.id, activo: true },
-      include: [
-        {
-          model: Usuario,
-          as: "usuario",
-          attributes: ["id", "email", "nombre"],
-        },
-      ],
-    });
-
-    if (suscripciones.length === 0) {
-      console.log(
-        `No hay suscriptores activos para el proyecto ${proyecto.id}, no se envían notificaciones.`,
-      );
-      return;
+    if (usuarioDestinatario) {
+      destinatarios = [usuarioDestinatario];
+    } else {
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+      const Usuario = require("../models/usuario");
+      const suscripciones = await SuscripcionProyecto.findAll({
+        where: { id_proyecto: proyecto.id, activo: true },
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "email", "nombre"],
+          },
+        ],
+      });
+      // Agrupar por email para evitar duplicados
+      const map = new Map();
+      for (const sus of suscripciones) {
+        const usuario = sus.usuario;
+        if (usuario && usuario.email && !map.has(usuario.email)) {
+          map.set(usuario.email, usuario);
+        }
+      }
+      destinatarios = Array.from(map.values());
     }
 
-    const asunto = `📢 Cambio en la cuota mensual del proyecto "${proyecto.nombre_proyecto}"`;
+    if (destinatarios.length === 0) return;
 
+    const asunto = `📢 Cambio en la cuota mensual del proyecto "${proyecto.nombre_proyecto}"`;
     const listaCambiosHtml = cambios.map((c) => `<li>${c}</li>`).join("");
     const mensajePersonalizadoHtml = mensajeAdmin
       ? `<div style="background-color: #fff3e0; padding: 15px; margin: 20px 0; border-left: 4px solid #FF5733;">
@@ -175,15 +189,13 @@ const emailService = {
     const html = obtenerPlantillaHtml(contenidoHtml);
     const textPlain = `El proyecto ${proyecto.nombre_proyecto} ha actualizado su cuota mensual. Ingresa para ver los detalles.`;
 
-    // Enviar a cada suscriptor
-    for (const sus of suscripciones) {
-      const usuario = sus.usuario;
+    for (const usuario of destinatarios) {
       if (usuario && usuario.email) {
         await this.sendEmail(usuario.email, asunto, textPlain, html);
       }
     }
     console.log(
-      `✅ Notificaciones de cambio de cuota enviadas a ${suscripciones.length} suscriptores del proyecto ${proyecto.id}`,
+      `✅ Notificaciones de cambio de cuota enviadas a ${destinatarios.length} destinatario(s) del proyecto ${proyecto.id}`,
     );
   },
 

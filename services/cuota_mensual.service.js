@@ -1,17 +1,38 @@
 // services/cuota_mensual.service.js
+// Refactorizado: un correo por usuario (no por suscripción) y formateo correcto de porcentajes.
+
 const CuotaMensual = require("../models/CuotaMensual");
 const Proyecto = require("../models/proyecto");
 const ResumenCuenta = require("../models/resumen_cuenta");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+const Usuario = require("../models/usuario");
 const { sequelize } = require("../config/database");
 const auditService = require("./audit.service");
 const emailService = require("./email.service");
 
-const cuotaMensualService = {
-  _roundTo2(num) {
-    return Math.round(num * 100) / 100;
-  },
+// ============================================================================
+// FUNCIONES AUXILIARES PRIVADAS
+// ============================================================================
 
+const roundTo2 = (num) => Math.round(num * 100) / 100;
+
+/**
+ * Formatea un porcentaje almacenado como decimal o entero.
+ * - Si > 1: asume que ya es porcentaje (ej. 70 → "70.00%")
+ * - Si ≤ 1: asume decimal y multiplica (ej. 0.7 → "70.00%")
+ */
+const formatearPorcentaje = (valor) => {
+  const num = Number(valor);
+  if (isNaN(num)) return "0%";
+  if (num > 1) return `${num.toFixed(2)}%`;
+  return `${(num * 100).toFixed(2)}%`;
+};
+
+// ============================================================================
+// SERVICIO PRINCIPAL
+// ============================================================================
+
+const cuotaMensualService = {
   _calculateValues(data) {
     const porcentaje_plan = Number(data.porcentaje_plan);
     const porcentaje_administrativo = Number(data.porcentaje_administrativo);
@@ -27,7 +48,7 @@ const cuotaMensualService = {
     const iva_carga_administrativa = carga_administrativa * porcentaje_iva;
     const valor_mensual_final_exacto =
       valor_mensual + carga_administrativa + iva_carga_administrativa;
-    const valor_mensual_final = this._roundTo2(valor_mensual_final_exacto);
+    const valor_mensual_final = roundTo2(valor_mensual_final_exacto);
 
     return {
       valor_movil,
@@ -97,10 +118,7 @@ const cuotaMensualService = {
   },
 
   /**
-   * Compara dos versiones de una cuota y notifica a los suscriptores si hubo cambios relevantes.
-   * @param {object} oldCuota - Cuota anterior (como objeto plano)
-   * @param {object} newCuota - Cuota actualizada
-   * @param {string|null} customMessage - Mensaje personalizado del administrador
+   * Compara dos versiones de una cuota y envía UN correo por usuario (no por suscripción).
    */
   async _notifySubscribersIfChanged(oldCuota, newCuota, customMessage = null) {
     const cambios = [];
@@ -116,25 +134,21 @@ const cuotaMensualService = {
       newCuota.valor_mensual_final,
       `Monto mensual final: $${Number(oldCuota.valor_mensual_final).toFixed(2)} → $${Number(newCuota.valor_mensual_final).toFixed(2)}`,
     );
-
     compare(
       oldCuota.porcentaje_plan,
       newCuota.porcentaje_plan,
-      `Porcentaje del plan: ${(Number(oldCuota.porcentaje_plan) * 100).toFixed(2)}% → ${(Number(newCuota.porcentaje_plan) * 100).toFixed(2)}%`,
+      `Porcentaje del plan: ${formatearPorcentaje(oldCuota.porcentaje_plan)} → ${formatearPorcentaje(newCuota.porcentaje_plan)}`,
     );
-
     compare(
       oldCuota.porcentaje_administrativo,
       newCuota.porcentaje_administrativo,
-      `Carga administrativa: ${(Number(oldCuota.porcentaje_administrativo) * 100).toFixed(2)}% → ${(Number(newCuota.porcentaje_administrativo) * 100).toFixed(2)}%`,
+      `Carga administrativa: ${formatearPorcentaje(oldCuota.porcentaje_administrativo)} → ${formatearPorcentaje(newCuota.porcentaje_administrativo)}`,
     );
-
     compare(
       oldCuota.valor_cemento,
       newCuota.valor_cemento,
       `Valor del cemento: $${Number(oldCuota.valor_cemento).toFixed(2)} → $${Number(newCuota.valor_cemento).toFixed(2)}`,
     );
-
     compare(
       oldCuota.valor_cemento_unidades,
       newCuota.valor_cemento_unidades,
@@ -148,16 +162,40 @@ const cuotaMensualService = {
     });
     if (!proyecto) return;
 
-    await emailService.notificarCambioCuotaProyecto(
-      proyecto,
-      cambios,
-      customMessage,
-    );
+    // Obtener suscripciones activas del proyecto, pero agrupar por usuario
+    const suscripciones = await SuscripcionProyecto.findAll({
+      where: { id_proyecto: proyecto.id, activo: true },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "email", "nombre"],
+        },
+      ],
+    });
+
+    // Usar un Set/Mapeo para evitar duplicados por email
+    const usuariosUnicos = new Map();
+    for (const sus of suscripciones) {
+      const usuario = sus.usuario;
+      if (usuario && usuario.email && !usuariosUnicos.has(usuario.email)) {
+        usuariosUnicos.set(usuario.email, usuario);
+      }
+    }
+
+    if (usuariosUnicos.size === 0) return;
+
+    // Enviar un correo por usuario (no por suscripción)
+    for (const usuario of usuariosUnicos.values()) {
+      await emailService.notificarCambioCuotaProyecto(
+        proyecto,
+        cambios,
+        customMessage,
+        usuario,
+      );
+    }
   },
 
-  /**
-   * Crea una nueva cuota mensual con auditoría
-   */
   async createAndSetProjectAmount(data, adminContext = {}) {
     const { adminId, ip, userAgent } = adminContext;
     const t = await sequelize.transaction();
@@ -233,9 +271,6 @@ const cuotaMensualService = {
     }
   },
 
-  /**
-   * Actualiza una cuota existente con auditoría y notifica cambios a suscriptores
-   */
   async update(id, data, adminContext = {}) {
     const { adminId, ip, userAgent, mensajeEmail, motivoAuditoria } =
       adminContext;
@@ -277,7 +312,6 @@ const cuotaMensualService = {
         t,
       );
 
-      // Auditoría con motivo corto
       if (adminId) {
         await auditService.registrar({
           usuarioId: adminId,
@@ -286,14 +320,13 @@ const cuotaMensualService = {
           entidadId: cuota.id,
           datosPrevios,
           datosNuevos: cuota.toJSON(),
-          motivo: motivoAuditoria || "Actualización de cuota mensual", // ← texto corto
+          motivo: motivoAuditoria || "Actualización de cuota mensual",
           ip,
           userAgent,
           transaccion: t,
         });
       }
 
-      // Notificación a usuarios con mensaje largo
       t.afterCommit(() => {
         this._notifySubscribersIfChanged(
           datosPrevios,
