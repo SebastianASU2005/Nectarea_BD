@@ -587,51 +587,48 @@ const emailService = {
   },
 
   /**
-   * @async
-   * @function notificarPagoVencidoCliente
-   * @description Notifica al usuario sobre su pago vencido, incluyendo el recargo aplicado.
-   * @param {object} usuario - Objeto del usuario.
-   * @param {object} proyecto - Objeto del proyecto asociado.
-   * @param {object} pago - Objeto del pago vencido.
-   * @param {number} montoBase - Monto original sin recargos.
+   * Notifica al **ADMINISTRADOR** sobre un pago vencido, diferenciando si es cuota de adhesión o cuota mensual.
+   * @param {string} adminEmail - Correo del administrador.
+   * @param {object} user - Usuario incumplidor.
+   * @param {object} proyecto - Proyecto asociado.
+   * @param {object} pago - Pago vencido (puede contener campo opcional `tipo: 'adhesion'`).
+   * @param {number} montoBase - Monto base del pago.
    * @param {number} recargoTotal - Recargo aplicado.
    */
-  async notificarPagoVencidoCliente(
-    usuario,
+  async notificarPagoVencidoAdmin(
+    adminEmail,
+    user,
     proyecto,
     pago,
     montoBase,
     recargoTotal,
   ) {
-    if (!usuario || !usuario.email) return;
+    // Determinar tipo de pago (por defecto mensual)
+    const tipo = pago.tipo === "adhesion" ? "adhesion" : "mensual";
+    const tipoPagoTexto =
+      tipo === "adhesion" ? "Cuota de Adhesión" : "Cuota Mensual de Ahorro";
 
-    const subject = `🚨 ALERTA: ¡Tu pago para "${proyecto.nombre_proyecto}" ha VENCIDO!`;
-    const montoBaseTexto = montoBase.toFixed(2);
-    const montoActualTexto = pago.monto.toFixed(2);
-    const recargoTotalTexto = recargoTotal.toFixed(2);
+    const subject = `⚠️ PAGO VENCIDO (${tipoPagoTexto}): Acción Requerida - Usuario ${user.nombre}`;
 
     const contenidoInterno = `
-              <h2 style="color: #d9534f; margin-top: 0;">¡ATENCIÓN, PAGO VENCIDO!</h2>
-              <p>Estimado/a **${usuario.nombre}**:</p>
-              <p>Queremos recordarte que la cuota del **Mes ${pago.mes}** para tu suscripción al proyecto **"${proyecto.nombre_proyecto}"** ha vencido.</p>
-              <h3 style="color: #333;">Detalles del Recargo</h3>
-              <ul style="list-style: none; padding-left: 0; line-height: 2;">
-                  <li><strong style="color: #555;">Monto Original:</strong> $${montoBaseTexto}</li>
-                  <li><strong style="color: #555;">Recargo Diario Acumulado:</strong> $${recargoTotalTexto}</li>
-                  <li><strong style="color: #d9534f; font-size: 1.1em;">NUEVO MONTO A PAGAR:</strong> **$${montoActualTexto}**</li>
-              </ul>
-              <p style="font-weight: bold;">Por favor, realiza el pago a la brevedad para evitar la suspensión de tu inversión y mayores recargos por el interés compuesto diario.</p>
-              <a href="[URL_A_TUS_PAGOS]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #d9534f; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-                  Pagar Ahora
-              </a>
-          `;
+    <h2 style="color: #d9534f; margin-top: 0;">¡ALERTA DE PAGO VENCIDO!</h2>
+    <p>El usuario <strong>${user.nombre}</strong> (Email: ${user.email}) ha incumplido el pago de la <strong>${tipoPagoTexto} #${pago.mes}</strong> para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    ${tipo === "adhesion" ? "<p><strong>Tipo de pago:</strong> Adhesión (4% del valor móvil)</p>" : ""}
+    <h3 style="color: #333;">Detalles</h3>
+    <ul style="list-style: none; padding-left: 0; line-height: 2;">
+        <li><strong style="color: #555;">ID Pago:</strong> ${pago.id}</li>
+        <li><strong style="color: #555;">Monto Base:</strong> $${Number(montoBase).toFixed(2)}</li>
+        <li><strong style="color: #d9534f;">Monto con Recargo:</strong> $${Number(pago.monto).toFixed(2)} (Recargo: $${Number(recargoTotal).toFixed(2)})</li>
+        <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${pago.fecha_vencimiento}</li>
+    </ul>
+    <p style="font-weight: bold;">Se ha enviado una alerta al cliente. Por favor, realice el seguimiento correspondiente.</p>
+  `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
-
     await this.sendEmail(
-      usuario.email,
+      adminEmail,
       subject,
-      `Tu pago de $${montoActualTexto} para el proyecto ${proyecto.nombre_proyecto} ha vencido.`,
+      `Pago vencido (${tipoPagoTexto}) del usuario ${user.nombre} para el proyecto ${proyecto.nombre_proyecto}.`,
       html,
     );
   },
@@ -1407,23 +1404,23 @@ Ingresá al panel de administración para decidir la acción a tomar.
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
   /**
- * Notifica al usuario que un administrador ha activado el período de pausa (standby) de 6 meses.
- * @param {object} usuario - Objeto del usuario (nombre, email)
- * @param {object} proyecto - Proyecto asociado
- * @param {Date|string} fechaFin - Fecha en que finaliza la pausa (YYYY-MM-DD)
- */
-async notificarStandbyActivado(usuario, proyecto, fechaFin) {
-  if (!usuario || !usuario.email) return;
+   * Notifica al usuario que un administrador ha activado el período de pausa (standby) de 6 meses.
+   * @param {object} usuario - Objeto del usuario (nombre, email)
+   * @param {object} proyecto - Proyecto asociado
+   * @param {Date|string} fechaFin - Fecha en que finaliza la pausa (YYYY-MM-DD)
+   */
+  async notificarStandbyActivado(usuario, proyecto, fechaFin) {
+    if (!usuario || !usuario.email) return;
 
-  const fechaFormateada = new Date(fechaFin).toLocaleDateString("es-ES", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+    const fechaFormateada = new Date(fechaFin).toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
 
-  const subject = `🔵 Período de pausa activado - ${proyecto.nombre_proyecto}`;
+    const subject = `🔵 Período de pausa activado - ${proyecto.nombre_proyecto}`;
 
-  const contenidoInterno = `
+    const contenidoInterno = `
     <h2 style="color: #0b1b36; margin-top: 0;">Se ha activado un período de pausa en tu suscripción</h2>
     <p>Hola <strong>${usuario.nombre}</strong>,</p>
     <p>Por gestión administrativa, se ha activado un <strong>período de pausa de 6 meses</strong> en tu suscripción al proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
@@ -1449,11 +1446,11 @@ async notificarStandbyActivado(usuario, proyecto, fechaFin) {
     <p>Saludos,<br>El Equipo de Loteplan.com</p>
   `;
 
-  const html = obtenerPlantillaHtml(contenidoInterno);
-  const textPlain = `Se ha activado una pausa de 6 meses en tu suscripción a ${proyecto.nombre_proyecto}. No se generarán cuotas hasta el ${fechaFormateada}.`;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Se ha activado una pausa de 6 meses en tu suscripción a ${proyecto.nombre_proyecto}. No se generarán cuotas hasta el ${fechaFormateada}.`;
 
-  await this.sendEmail(usuario.email, subject, textPlain, html);
-},
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
 
   /**
    * Notifica al usuario que ha completado todas las cuotas y su suscripción está activa.

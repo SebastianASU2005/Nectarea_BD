@@ -1,8 +1,8 @@
-// tasks/vencerCuotasAdhesion.js (versión corregida)
+// tasks/vencerCuotasAdhesion.js (versión corregida con notificación a administradores)
 const { sequelize, Op } = require("../config/database");
 const PagoAdhesion = require("../models/PagoAdhesion");
 const Adhesion = require("../models/adhesion");
-const Proyecto = require("../models/proyecto"); // ✅ Importar Proyecto
+const Proyecto = require("../models/proyecto");
 const emailService = require("../services/email.service");
 const usuarioService = require("../services/usuario.service");
 
@@ -27,7 +27,7 @@ async function marcarCuotasAdhesionVencidas() {
             {
               model: Proyecto,
               as: "proyecto",
-              attributes: ["id", "nombre_proyecto"], // solo lo necesario
+              attributes: ["id", "nombre_proyecto"],
             },
           ],
         },
@@ -47,13 +47,15 @@ async function marcarCuotasAdhesionVencidas() {
       const diasVencidos = Math.floor(
         (hoy - fechaVenc) / (1000 * 60 * 60 * 24),
       );
-      let nuevoMonto = parseFloat(cuota.monto);
+
+      const montoOriginal = parseFloat(cuota.monto);
+      let nuevoMonto = montoOriginal;
       let recargo = 0;
 
       if (diasVencidos > 0) {
         const factor = Math.pow(1 + DAILY_INTEREST_RATE, diasVencidos);
-        nuevoMonto = nuevoMonto * factor;
-        recargo = nuevoMonto - cuota.monto;
+        nuevoMonto = montoOriginal * factor;
+        recargo = nuevoMonto - montoOriginal;
         await cuota.update(
           {
             estado: "vencido",
@@ -67,27 +69,48 @@ async function marcarCuotasAdhesionVencidas() {
       }
       actualizadas++;
 
-      // Notificar al usuario (solo si hay email)
+      // 1. Notificar al usuario
       const usuario = await usuarioService.findById(adhesion.id_usuario);
-      const proyecto = adhesion.proyecto; // ya viene incluido en la consulta
+      const proyecto = adhesion.proyecto;
       if (usuario && usuario.email && proyecto) {
         await emailService.notificarPagoVencidoCliente(
           usuario,
-          proyecto, // objeto proyecto completo
+          proyecto,
           {
-            monto: cuota.monto,
+            monto: nuevoMonto,
             mes: cuota.numero_cuota,
             fecha_vencimiento: cuota.fecha_vencimiento,
           },
-          cuota.monto, // monto base (sin recargo)
-          recargo, // recargo aplicado
+          montoOriginal,
+          recargo,
         );
+      }
+
+      // 2. Notificar a todos los administradores
+      const administradores = await usuarioService.findAllAdmins();
+      for (const admin of administradores) {
+        if (admin.email) {
+          await emailService.notificarPagoVencidoAdmin(
+            admin.email,
+            usuario,
+            proyecto,
+            {
+              id: cuota.id,
+              mes: cuota.numero_cuota,
+              monto: nuevoMonto,
+              fecha_vencimiento: cuota.fecha_vencimiento,
+              tipo: "adhesion", // <-- NUEVO: identificar como cuota de adhesión
+            },
+            montoOriginal,
+            recargo,
+          );
+        }
       }
     }
 
     await t.commit();
     console.log(
-      `✅ ${actualizadas} cuotas de adhesión marcadas como vencidas y con interés aplicado.`,
+      `✅ ${actualizadas} cuotas de adhesión marcadas como vencidas y con interés aplicado. Notificaciones enviadas a usuarios y administradores.`,
     );
     return actualizadas;
   } catch (error) {
