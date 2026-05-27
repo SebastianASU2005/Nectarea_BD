@@ -8,17 +8,39 @@ const PagoAdhesion = require("../models/PagoAdhesion");
 /**
  * POST /api/adhesion
  * Crea una nueva adhesión (plan de pago del 4% del valor móvil)
- * Body: { proyectoId, planPago }  (planPago: "contado" | "3_cuotas" | "6_cuotas")
+ * Body: { proyectoId, planPago, codigo_2fa }  (codigo_2fa obligatorio si el usuario tiene 2FA activado)
  */
 exports.crearAdhesion = async (req, res) => {
   try {
     const usuarioId = req.user.id;
-    const { proyectoId, planPago } = req.body;
+    const { proyectoId, planPago, codigo_2fa } = req.body;
 
     if (!proyectoId || !planPago) {
       return res
         .status(400)
         .json({ error: "Faltan campos: proyectoId, planPago" });
+    }
+
+    // El middleware checkKYCandTwoFA ya garantiza que el usuario tiene 2FA activado,
+    // por lo que codigo_2fa es obligatorio.
+    if (!codigo_2fa) {
+      return res.status(403).json({
+        error: "Se requiere el código 2FA para crear la adhesión.",
+        requires2FA: true,
+      });
+    }
+
+    const user = await usuarioService.findById(usuarioId);
+    if (!user || !user.twofa_secret) {
+      return res.status(403).json({ error: "Configuración 2FA inválida." });
+    }
+
+    const isVerified = auth2faService.verifyToken(
+      user.twofa_secret,
+      codigo_2fa,
+    );
+    if (!isVerified) {
+      return res.status(401).json({ error: "Código 2FA incorrecto." });
     }
 
     const adhesion = await adhesionService.crearAdhesion(
@@ -32,7 +54,6 @@ exports.crearAdhesion = async (req, res) => {
     res.status(400).json({ success: false, message: error.message });
   }
 };
-
 /**
  * GET /api/adhesion/:id
  * Obtiene los detalles de una adhesión (con sus cuotas)
