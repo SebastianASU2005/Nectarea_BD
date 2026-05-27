@@ -42,11 +42,11 @@ router.get(
   authMiddleware.authenticate,
   transaccionController.findMyTransactionById,
 );
-router.put(
+/*router.put(
   "/mis_transacciones/:id",
   authMiddleware.authenticate,
   transaccionController.updateMyTransaction,
-);
+);*/
 router.get(
   "/por-puja/:pujaId/transaccion-id",
   authMiddleware.authenticate,

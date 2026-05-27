@@ -1419,6 +1419,18 @@ const transaccionService = {
       throw new Error("Error al buscar transacción por ID de puja");
     }
   },
+  /**
+   * Busca una transacción por ID verificando que pertenezca al usuario.
+   * @param {number} id - ID de la transacción.
+   * @param {number} userId - ID del usuario autenticado.
+   * @returns {Promise<Transaccion|null>}
+   */
+  async findByIdAndUserId(id, userId) {
+    const transaccion = await this.findById(id);
+    if (!transaccion) return null;
+    if (transaccion.id_usuario !== userId) return null;
+    return transaccion;
+  },
 };
 
 module.exports = transaccionService;
