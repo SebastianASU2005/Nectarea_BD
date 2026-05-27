@@ -19,6 +19,7 @@ const jwtService = {
       id: user.id,
       nombre_usuario: user.nombre_usuario,
       rol: user.rol,
+      token_version: user.token_version,
     };
     // Token de sesión normal, puede durar más tiempo (ej: 1h)
     return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });

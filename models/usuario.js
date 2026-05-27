@@ -11,6 +11,13 @@ const Usuario = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    token_version: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment:
+        "Se incrementa cada vez que se inicia una nueva sesión (invalida sesiones anteriores)",
+    },
     nombre: {
       type: DataTypes.STRING(100),
       allowNull: false,
@@ -116,7 +123,7 @@ const Usuario = sequelize.define(
         },
       },
     ],
-  }
+  },
 );
 
 module.exports = Usuario;

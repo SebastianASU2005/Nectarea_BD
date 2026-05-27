@@ -229,7 +229,7 @@ const authController = {
         }
         // Si NO han pasado 15 días, continúa con login normal (sin pedir 2FA)
       }
-
+      await user.update({ token_version: user.token_version + 1 });
       // 5. Inicio de Sesión NORMAL (Sin 2FA o dentro del periodo de 15 días)
       const token = jwtService.generateToken(user);
 
@@ -315,6 +315,7 @@ const authController = {
       await user.update({
         last_2fa_verification: new Date(),
       });
+      await user.update({ token_version: user.token_version + 1 });
 
       // 4. ÉXITO: Emitir el token JWT final de sesión
       const finalToken = jwtService.generateToken(user);

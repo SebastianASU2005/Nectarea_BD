@@ -29,6 +29,15 @@ const authMiddleware = {
           .status(404)
           .json({ error: "Usuario asociado al token no encontrado." });
       }
+      if (
+        decodedToken.token_version !== undefined &&
+        usuario.token_version !== decodedToken.token_version
+      ) {
+        return res.status(401).json({
+          error:
+            "Su sesión ha sido cerrada porque otro usuario inició sesión con la misma cuenta.",
+        });
+      }
 
       // 🛑 3. VERIFICACIÓN DE ESTADO ACTIVO (CLAVE PARA SOFT DELETE) 🛑
       if (!usuario.activo) {
@@ -78,11 +87,9 @@ const authMiddleware = {
         next(); // Autorización concedida
       } else {
         // Si el usuario no existe o el rol no es admin (403 Forbidden)
-        res
-          .status(403)
-          .json({
-            error: "Acceso denegado. Se requiere rol de administrador.",
-          });
+        res.status(403).json({
+          error: "Acceso denegado. Se requiere rol de administrador.",
+        });
       }
     } catch (error) {
       // En caso de error de BD, negar el acceso por defecto
