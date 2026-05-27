@@ -1,4 +1,4 @@
-// Archivo: app.js (CORREGIDO)
+// Archivo: app.js (CORREGIDO + ONE-TIME CONVERSION)
 
 const express = require("express");
 const app = express();
@@ -164,6 +164,7 @@ const {
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 const marcarCuotasAdhesionVencidas = require("./tasks/vencerCuotasAdhesion");
 const { startStandbyDeactivator } = require("./tasks/deactivateStandbyTask");
+
 // ====================================================================
 // 5. 🔥 CONFIGURACIÓN DE RUTAS EN ORDEN ESPECÍFICO
 // ====================================================================
@@ -187,24 +188,16 @@ app.use(express.urlencoded({ extended: true }));
 console.log("✅ Body parsing global activado");
 
 // ✅ NUEVO: RATE LIMITER GLOBAL (justo después del body parsing, antes de rutas)
-// Bloquea IPs abusivas (> 100 req/min) antes de que lleguen a cualquier controlador.
-// El webhook de MercadoPago queda automáticamente excluido vía skip interno.
 app.use(globalRateLimiter);
-
 console.log("✅ Rate limiter global activado");
 
 // --------------------------------------------------------------------
 // 5.3. 🔥 RUTAS DE LA API
 // --------------------------------------------------------------------
-
-app.use("/api/kyc", (req, res, next) => {
-  next();
-});
-
+app.use("/api/kyc", (req, res, next) => next());
 app.use("/api/kyc", kycRoutes);
 app.use("/api/contratos", contratoRoutes);
 app.use("/api/imagenes", imagenRoutes);
-
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inversiones", inversionRoutes);
 app.use("/api/lotes", loteRoutes);
@@ -289,9 +282,38 @@ async function synchronizeDatabase() {
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
 
     // ✅ NUEVO: Inicializar rate limiters DESPUÉS de que la DB esté lista.
-    // Crea automáticamente las tablas rate_limit_global_ip, rate_limit_user_default
-    // y rate_limit_user_premium en tu base de datos PostgreSQL.
     await initRateLimiters();
+
+    // ==========================================================
+    // 🚨 CONVERSIÓN ÚNICA: pagos cancelados → vencidos (eliminar después)
+    // ==========================================================
+    if (process.env.RUN_CANCELED_TO_OVERDUE === "true") {
+      console.log(
+        "🔄 [ONE-TIME] Convirtiendo pagos 'cancelado' a 'vencido'...",
+      );
+      try {
+        const PagoModel = require("./models/pago");
+        const [updated] = await PagoModel.update(
+          {
+            estado_pago: "vencido",
+            updatedAt: new Date(), // fuerza recargo en próxima ejecución
+          },
+          {
+            where: {
+              estado_pago: "cancelado",
+            },
+          },
+        );
+        console.log(
+          `✅ [ONE-TIME] ${updated} pagos actualizados de 'cancelado' a 'vencido'.`,
+        );
+      } catch (err) {
+        console.error(
+          "❌ [ONE-TIME] Error al convertir pagos cancelados:",
+          err.message,
+        );
+      }
+    }
 
     // ==========================================================
     // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
@@ -312,7 +334,6 @@ async function synchronizeDatabase() {
       await marcarCuotasAdhesionVencidas();
     });
     const cleanOldAuditLogs = require("./tasks/cleanAuditLogs");
-
     cron.schedule("0 2 * * 0", async () => {
       console.log("🕒 Limpiando logs de auditoría antiguos...");
       await cleanOldAuditLogs();
