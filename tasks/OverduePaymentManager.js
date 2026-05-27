@@ -1,178 +1,113 @@
 // Archivo: overduePaymentManager.js
+// Versión corregida: todos los pagos se vencen y tienen recargos, sin cancelación automática.
 
-// Librerías de terceros
 const cron = require("node-cron");
 const { Op } = require("sequelize");
-
-// Configuración y Modelos
 const { sequelize } = require("../config/database");
 const Pago = require("../models/pago");
-// 🆕 IMPORTAMOS EL SERVICIO CLAVE
 const resumenCuentaService = require("../services/resumen_cuenta.service");
 
-/**
- * Módulo para la gestión diaria de pagos: aplica recargos a recurrentes vencidos
- * y limpia pagos iniciales que quedaron pendientes/atascados.
- */
 const overduePaymentManager = {
-  // La expresión CRON 35 09 * * * se ejecuta a las 9:35 AM (hora del servidor).
   job: cron.schedule(
-    "35 09 * * *",
+    "35 09 * * *", // Se ejecuta a las 9:35 AM (hora del servidor)
     async () => {
-      console.log(
-        "--- Iniciando la gestión de pagos vencidos y limpieza de iniciales ---"
-      );
+      console.log("--- Iniciando la gestión de pagos vencidos y recargos ---");
       const t = await sequelize.transaction();
-
-      // 🆕 Set para almacenar los IDs de suscripciones que necesitan actualización
       const suscripcionIdsToUpdate = new Set();
 
       try {
-        const dailyInterestRate = 0.04265 / 30;
+        const dailyInterestRate = 0.04265 / 30; // 4.265% mensual / 30 días
         const now = new Date();
-        // 🎯 CLAVE: Determinar el inicio del día para evitar dobles recargos
         const inicioDeHoy = new Date(now);
         inicioDeHoy.setHours(0, 0, 0, 0);
 
-        // ----------------------------------------------------------------------
-        // --- 1. PROCESO DE PAGOS RECURRENTES VENCIDOS (MES 2+) ---
-
-        console.log(
-          "-> Buscando y marcando pagos pendientes expirados (Mes 2+) como 'vencido'..."
-        );
-
-        const pagosAPartirDeMesDos = await Pago.findAll({
+        // --------------------------------------------------------------
+        // 1. Marcar como 'vencido' TODOS los pagos pendientes cuya fecha
+        //    de vencimiento ya pasó (sin importar el mes).
+        // --------------------------------------------------------------
+        const pagosPendientesVencidos = await Pago.findAll({
           where: {
             estado_pago: "pendiente",
-            mes: { [Op.gt]: 1 },
-            fecha_vencimiento: { [Op.lt]: now },
+            fecha_vencimiento: { [Op.lt]: now }, // vencidos antes de ahora
           },
           transaction: t,
         });
 
-        let rowsUpdated = 0;
-        for (const pago of pagosAPartirDeMesDos) {
-          // ✅ Actualización individual para preservar todos los campos (id_usuario, id_proyecto, etc.)
+        let marcadosVencidos = 0;
+        for (const pago of pagosPendientesVencidos) {
           await pago.update({ estado_pago: "vencido" }, { transaction: t });
-          rowsUpdated++;
+          marcadosVencidos++;
           suscripcionIdsToUpdate.add(pago.id_suscripcion);
         }
+        console.log(`✅ Se marcaron ${marcadosVencidos} pagos como 'vencido'.`);
 
-        console.log(`Se marcaron ${rowsUpdated} pagos como 'vencido'.`);
-
-        console.log(
-          "-> Búsqueda e inicio de aplicación de recargo diario a pagos ya en estado 'vencido' (Mes 2+)..."
-        );
-
-        // 🚨 PASO B CORREGIDO: Filtramos por updatedAt < inicioDeHoy
-        const pagosRecurrentesVencidos = await Pago.findAll({
+        // --------------------------------------------------------------
+        // 2. Aplicar recargo diario a TODOS los pagos que ya están en
+        //    estado 'vencido' y que no han sido actualizados hoy.
+        // --------------------------------------------------------------
+        const pagosVencidosConRecargo = await Pago.findAll({
           where: {
             estado_pago: "vencido",
-            mes: { [Op.gt]: 1 },
-            // 🎯 SOLO aplica recargo si no se ha aplicado HOY.
-            updatedAt: { [Op.lt]: inicioDeHoy },
+            updatedAt: { [Op.lt]: inicioDeHoy }, // no se ha recargado hoy
           },
           transaction: t,
         });
 
-        for (const pago of pagosRecurrentesVencidos) {
+        for (const pago of pagosVencidosConRecargo) {
           const dailyRecargo = parseFloat(pago.monto) * dailyInterestRate;
           const nuevoMonto = parseFloat(pago.monto) + dailyRecargo;
-
-          // La actualización individual actualiza 'updatedAt', marcándolo como procesado HOY
           await pago.update(
-            {
-              monto: nuevoMonto.toFixed(2), // Se actualiza con el nuevo interés compuesto
-            },
-            { transaction: t }
+            { monto: nuevoMonto.toFixed(2) },
+            { transaction: t },
           );
           console.log(
-            `Pago recurrente ${
-              pago.id
-            } vencido. Se aplicó recargo DIARIO de $${dailyRecargo.toFixed(
-              2
-            )}. Nuevo monto: $${nuevoMonto.toFixed(2)}.`
-          );
-
-          // 🆕 Agregamos la suscripción al set para su actualización
-          suscripcionIdsToUpdate.add(pago.id_suscripcion);
-        }
-
-        // ----------------------------------------------------------------------
-        // --- 2. PROCESO DE LIMPIEZA DE PAGO INICIAL ATASCADO (MES 1) ---
-        const safeTimeLimit = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-
-        console.log(
-          `-> Buscando pagos iniciales atascados (Mes 1) anteriores a ${safeTimeLimit.toLocaleTimeString()}...`
-        );
-
-        const pagosInicialesAtascados = await Pago.findAll({
-          where: {
-            estado_pago: "pendiente",
-            mes: 1,
-            fecha_vencimiento: { [Op.lt]: safeTimeLimit },
-          },
-          transaction: t,
-        });
-
-        for (const pago of pagosInicialesAtascados) {
-          // ✅ Actualización individual para preservar campos
-          await pago.update(
-            {
-              estado_pago: "cancelado",
-            },
-            { transaction: t }
-          );
-          console.log(
-            `Pago inicial ${pago.id} atascado marcado como 'cancelado'.`
+            `💰 Pago ID ${pago.id} (mes ${pago.mes}): recargo diario $${dailyRecargo.toFixed(2)} → nuevo monto $${nuevoMonto.toFixed(2)}`,
           );
           suscripcionIdsToUpdate.add(pago.id_suscripcion);
         }
 
-        // ----------------------------------------------------------------------
-        // --- 3. ACTUALIZAR RESUMEN DE CUENTA PARA LAS SUSCRIPCIONES AFECTADAS ---
-
-        console.log(
-          `-> Actualizando resumen de cuenta para ${suscripcionIdsToUpdate.size} suscripciones afectadas...`
-        );
-
-        for (const suscripcionId of suscripcionIdsToUpdate) {
-          await resumenCuentaService.updateAccountSummaryOnPayment(
-            suscripcionId,
-            { transaction: t }
+        // --------------------------------------------------------------
+        // 3. Actualizar resúmenes de cuenta para las suscripciones afectadas
+        // --------------------------------------------------------------
+        if (suscripcionIdsToUpdate.size > 0) {
+          console.log(
+            `📊 Actualizando ${suscripcionIdsToUpdate.size} resúmenes de cuenta...`,
           );
+          for (const suscripcionId of suscripcionIdsToUpdate) {
+            await resumenCuentaService.updateAccountSummaryOnPayment(
+              suscripcionId,
+              { transaction: t },
+            );
+          }
         }
 
         await t.commit();
-        console.log(
-          "--- Gestión de pagos y resumen de cuenta completada exitosamente. ---"
-        );
+        console.log("--- Gestión de pagos vencidos y recargos completada ---");
       } catch (error) {
         await t.rollback();
-        console.error("Error fatal en el cron job de gestión de pagos:", error);
+        console.error(
+          "❌ Error fatal en el cron job de gestión de pagos:",
+          error,
+        );
       }
     },
     {
       scheduled: false,
-    }
+    },
   ),
 
   /**
-   * @function start
-   * @description Inicia la tarea CRON programada.
+   * Inicia la tarea CRON programada.
    */
   start() {
     this.job.start();
-    // 🟢 MENSAJE CORREGIDO PARA MOSTRAR LA HORA REAL (9:35 AM)
     console.log(
-      "Cron job de pagos vencidos programado para ejecutarse diariamente a las 9:35 AM (hora de tu servidor). 🌅"
+      "✅ Cron job de pagos vencidos y recargos programado para ejecutarse diariamente a las 9:35 AM (hora del servidor).",
     );
   },
 
   /**
-   * @async
-   * @function runManual
-   * @description Ejecuta la lógica central del cron job de forma manual.
+   * Ejecuta la lógica del cron job de forma manual (para pruebas).
    */
   async runManual() {
     console.log("--- EJECUCIÓN MANUAL DE TAREA DE VENCIMIENTO INICIADA ---");
