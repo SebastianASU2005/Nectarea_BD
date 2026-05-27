@@ -284,36 +284,6 @@ async function synchronizeDatabase() {
     // ✅ NUEVO: Inicializar rate limiters DESPUÉS de que la DB esté lista.
     await initRateLimiters();
 
-    // ==========================================================
-    // 🚨 CONVERSIÓN ÚNICA: pagos cancelados → vencidos (eliminar después)
-    // ==========================================================
-    if (process.env.RUN_CANCELED_TO_OVERDUE === "true") {
-      console.log(
-        "🔄 [ONE-TIME] Convirtiendo pagos 'cancelado' a 'vencido'...",
-      );
-      try {
-        const PagoModel = require("./models/pago");
-        const [updated] = await PagoModel.update(
-          {
-            estado_pago: "vencido",
-            updatedAt: new Date(), // fuerza recargo en próxima ejecución
-          },
-          {
-            where: {
-              estado_pago: "cancelado",
-            },
-          },
-        );
-        console.log(
-          `✅ [ONE-TIME] ${updated} pagos actualizados de 'cancelado' a 'vencido'.`,
-        );
-      } catch (err) {
-        console.error(
-          "❌ [ONE-TIME] Error al convertir pagos cancelados:",
-          err.message,
-        );
-      }
-    }
 
     // ==========================================================
     // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
