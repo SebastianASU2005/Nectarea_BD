@@ -29,6 +29,12 @@ const authMiddleware = {
           .status(404)
           .json({ error: "Usuario asociado al token no encontrado." });
       }
+      if (usuario.token_version !== (decodedToken.token_version ?? 0)) {
+        return res.status(401).json({
+          error:
+            "Su sesión ha sido cerrada porque otro usuario inició sesión con la misma cuenta.",
+        });
+      }
       if (
         decodedToken.token_version !== undefined &&
         usuario.token_version !== decodedToken.token_version
