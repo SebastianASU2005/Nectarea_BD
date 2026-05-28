@@ -1487,7 +1487,67 @@ const pujaService = {
       throw error;
     }
   },
+  /**
+   * @async
+   * @function forzarPagoPujaGanadora
+   * @description Permite a un administrador marcar una puja como pagada (ganadora_pagada)
+   * y ejecutar toda la lógica de excedente, sin pasar por la pasarela de pago.
+   * @param {number} pujaId - ID de la puja en estado 'ganadora_pendiente'
+   * @param {number} adminId - ID del administrador que fuerza el pago
+   * @param {string} [motivo] - Razón del forzado (opcional)
+   * @param {string} [ip] - IP del admin
+   * @param {string} [userAgent] - User-Agent
+   * @returns {Promise<object>}
+   */
+  async forzarPagoPujaGanadora(
+    pujaId,
+    adminId,
+    motivo = null,
+    ip = null,
+    userAgent = null,
+  ) {
+    const t = await sequelize.transaction();
+    try {
+      // 1. Obtener la puja con sus relaciones necesarias (similar a procesarPujaGanadora)
+      const puja = await this.findById(pujaId, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!puja) throw new Error(`Puja ID ${pujaId} no encontrada.`);
+      if (puja.estado_puja !== "ganadora_pendiente") {
+        throw new Error(
+          `La puja no está en estado 'ganadora_pendiente'. Estado actual: ${puja.estado_puja}`,
+        );
+      }
 
+      // 2. Ejecutar la lógica de negocio completa (mismo flujo que procesarPujaGanadora)
+      // Se reutiliza la misma función pasándole la transacción ya iniciada
+      await this.procesarPujaGanadora(pujaId, t);
+
+      // 3. Registrar auditoría
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "FORZAR_PAGO_PUJA",
+        entidadTipo: "Puja",
+        entidadId: pujaId,
+        datosPrevios: { estado_puja: "ganadora_pendiente" },
+        datosNuevos: { estado_puja: "ganadora_pagada" },
+        motivo: motivo || "Pago forzado por administrador",
+        ip,
+        userAgent,
+        transaccion: t,
+      });
+
+      await t.commit();
+      return {
+        success: true,
+        message: `Puja ID ${pujaId} marcada como pagada exitosamente.`,
+      };
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  },
   /**
    * @async
    * @function retirarPuja

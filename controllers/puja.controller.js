@@ -544,6 +544,39 @@ const pujaController = {
       res.status(500).json({ error: error.message });
     }
   },
+  /**
+   * @async
+   * @function forzarPagoPuja
+   * @description (ADMIN) Marca una puja ganadora pendiente como pagada manualmente.
+   * @param {object} req - req.params.id (pujaId), req.body.motivo (opcional)
+   * @param {object} res
+   */
+  async forzarPagoPuja(req, res) {
+    try {
+      const { id } = req.params;
+      const { motivo } = req.body;
+      const adminId = req.user.id;
+      const ip = req.ip || req.headers["x-forwarded-for"] || null;
+      const userAgent = req.get("user-agent") || null;
+
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({ error: "ID de puja inválido." });
+      }
+
+      const resultado = await pujaService.forzarPagoPujaGanadora(
+        parseInt(id),
+        adminId,
+        motivo,
+        ip,
+        userAgent,
+      );
+
+      return res.status(200).json(resultado);
+    } catch (error) {
+      console.error("Error en forzarPagoPuja:", error.message);
+      return res.status(400).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = pujaController;

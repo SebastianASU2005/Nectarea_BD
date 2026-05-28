@@ -4,7 +4,10 @@ const pujaController = require("../controllers/puja.controller");
 const authMiddleware = require("../middleware/auth.middleware");
 const { blockAdminTransactions } = require("../middleware/roleValidation");
 const { userRateLimiter } = require("../middleware/rateLimiter");
+
+// ===============================================
 // RUTAS PARA USUARIOS
+// ===============================================
 router.post(
   "/",
   authMiddleware.authenticate,
@@ -48,7 +51,9 @@ router.post(
   pujaController.confirmarPujaCon2FA,
 );
 
+// ===============================================
 // RUTAS PARA ADMINISTRADORES
+// ===============================================
 router.post(
   "/mis_pujas/:id/solicitar-cancelacion",
   authMiddleware.authenticate,
@@ -79,19 +84,29 @@ router.delete(
   authMiddleware.authorizeAdmin,
   pujaController.retirarPujaAdmin,
 );
-
-// Dinámicas al final
-router.get(
-  "/:id",
-  authMiddleware.authenticate,
-  authMiddleware.authorizeAdmin,
-  pujaController.findById,
-);
 router.post(
   "/cancelar_puja_ganadora/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   pujaController.cancelarPujaGanadoraAnticipada,
+);
+
+// ✅ NUEVA RUTA: Forzar pago de puja ganadora (solo admin)
+router.post(
+  "/:id/forzar-pago",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.forzarPagoPuja,
+);
+
+// ===============================================
+// RUTAS DINÁMICAS (siempre al final)
+// ===============================================
+router.get(
+  "/:id",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  pujaController.findById,
 );
 router.put(
   "/:id",
