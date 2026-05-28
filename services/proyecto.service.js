@@ -487,6 +487,7 @@ const proyectoService = {
   },
 
   async getProjectCompletionRate(fechaInicio = null, fechaFin = null) {
+    // 1. Proyectos iniciados (no 'En Espera'), sin filtro de fecha (o filtro opcional sobre fecha_inicio_proceso)
     const whereIniciados = { estado_proyecto: { [Op.ne]: "En Espera" } };
     if (fechaInicio)
       whereIniciados.fecha_inicio_proceso = { [Op.gte]: fechaInicio };
@@ -495,23 +496,27 @@ const proyectoService = {
         ...whereIniciados.fecha_inicio_proceso,
         [Op.lte]: fechaFin,
       };
+
     const totalIniciados = await Proyecto.count({ where: whereIniciados });
     if (totalIniciados === 0) {
       return {
-        tasa_culminacion: 0.0,
         total_iniciados: 0,
         total_finalizados: 0,
+        tasa_culminacion: 0.0,
       };
     }
+
+    // 2. Proyectos finalizados, FILTRADOS POR FECHA DE CIERRE (fecha_cierre)
     const whereFinalizados = { estado_proyecto: "Finalizado" };
-    if (fechaInicio)
-      whereFinalizados.fecha_inicio_proceso = { [Op.gte]: fechaInicio };
+    if (fechaInicio) whereFinalizados.fecha_cierre = { [Op.gte]: fechaInicio };
     if (fechaFin)
-      whereFinalizados.fecha_inicio_proceso = {
-        ...whereFinalizados.fecha_inicio_proceso,
+      whereFinalizados.fecha_cierre = {
+        ...whereFinalizados.fecha_cierre,
         [Op.lte]: fechaFin,
       };
+
     const totalFinalizados = await Proyecto.count({ where: whereFinalizados });
+
     const tasaCulminacion = (totalFinalizados / totalIniciados) * 100;
     return {
       total_iniciados: totalIniciados,
@@ -519,7 +524,6 @@ const proyectoService = {
       tasa_culminacion: tasaCulminacion.toFixed(2),
     };
   },
-
   async getMonthlyProjectProgress() {
     const proyectosMensuales = await Proyecto.findAll({
       where: {
