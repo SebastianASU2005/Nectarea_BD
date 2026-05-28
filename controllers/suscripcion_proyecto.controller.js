@@ -557,34 +557,6 @@ const suscripcionProyectoController = {
   },
 
   /**
-   * GET /api/suscripciones/admin/morosity-metrics
-   * Obtiene las métricas de morosidad (Tasa de Morosidad, Monto en Riesgo) (KPI 4) con filtro por fechas.
-   * Query params: fechaInicio, fechaFin
-   */
-  async getMorosityMetrics(req, res) {
-    try {
-      const { fechaInicio, fechaFin } = req.query;
-      let startDate = null,
-        endDate = null;
-      if (fechaInicio) startDate = new Date(fechaInicio);
-      if (fechaFin) endDate = new Date(fechaFin);
-      const metricas = await suscripcionProyectoService.getMorosityMetrics(
-        startDate,
-        endDate,
-      );
-      res.status(200).json({
-        kpi_name: "Tasa y Monto de Morosidad",
-        ...metricas,
-      });
-    } catch (error) {
-      console.error("Error al obtener métricas de morosidad:", error.message);
-      res
-        .status(500)
-        .json({ error: "Error interno al calcular la morosidad." });
-    }
-  },
-
-  /**
    * GET /api/suscripciones/admin/cancellation-rate
    * Obtiene la Tasa de Cancelación de Suscripciones (Churn Rate) (KPI 5) con filtro por fechas de cancelación.
    * Query params: fechaInicio, fechaFin

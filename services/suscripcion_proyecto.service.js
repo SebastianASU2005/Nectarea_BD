@@ -656,6 +656,7 @@ const suscripcionProyectoService = {
     if (fechaFin)
       wherePagos.createdAt = { ...wherePagos.createdAt, [Op.lte]: fechaFin };
 
+    // 1. TOTAL GENERADO (suma de todos los pagos que debieron generarse, sin importar estado)
     const totalGeneradoResult = await Pago.sum("monto", {
       where: {
         ...wherePagos,
@@ -673,21 +674,41 @@ const suscripcionProyectoService = {
     });
     const totalGenerado = Number(totalGeneradoResult) || 0;
 
-    const totalEnRiesgoResult = await Pago.sum("monto", {
+    // 2. MONTO VENCIDO REAL (estado = 'vencido')
+    const totalVencidoResult = await Pago.sum("monto", {
       where: {
         ...wherePagos,
-        estado_pago: { [Op.in]: ["pendiente", "vencido"] },
+        estado_pago: "vencido",
       },
     });
-    const totalEnRiesgo = Number(totalEnRiesgoResult) || 0;
+    const totalVencido = Number(totalVencidoResult) || 0;
 
-    const tasaMorosidad =
-      totalGenerado > 0 ? (totalEnRiesgo / totalGenerado) * 100 : 0;
+    // 3. MONTO PENDIENTE (estado = 'pendiente', aún no vencidos)
+    const totalPendienteResult = await Pago.sum("monto", {
+      where: {
+        ...wherePagos,
+        estado_pago: "pendiente",
+      },
+    });
+    const totalPendiente = Number(totalPendienteResult) || 0;
+
+    // 4. TASA DE MOROSIDAD REAL (solo vencidos sobre total generado)
+    const tasaMorosidadReal =
+      totalGenerado > 0 ? (totalVencido / totalGenerado) * 100 : 0;
+
+    // 5. TASA DE RIESGO FUTURO (pendientes sobre total generado)
+    const tasaRiesgoFuturo =
+      totalGenerado > 0 ? (totalPendiente / totalGenerado) * 100 : 0;
 
     return {
-      total_pagos_generados: totalGenerado.toFixed(2),
-      total_en_riesgo: totalEnRiesgo.toFixed(2),
-      tasa_morosidad: tasaMorosidad.toFixed(2),
+      total_generado: totalGenerado.toFixed(2),
+      monto_vencido: totalVencido.toFixed(2),
+      monto_pendiente: totalPendiente.toFixed(2),
+      tasa_morosidad_real: tasaMorosidadReal.toFixed(2),
+      tasa_riesgo_futuro: tasaRiesgoFuturo.toFixed(2),
+      // Opcional: mantener el campo antiguo para no romper frontend si se usa
+      tasa_morosidad: tasaMorosidadReal.toFixed(2), // se puede conservar como alias
+      total_en_riesgo: (totalVencido + totalPendiente).toFixed(2), // si se necesita suma
     };
   },
 
