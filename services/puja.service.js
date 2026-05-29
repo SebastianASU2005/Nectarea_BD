@@ -26,7 +26,7 @@ const pujaService = {
    * @description Crea o actualiza una puja para un lote, aplicando validaciones y gestionando el token de subasta.
    * @param {object} data - Datos de la puja ({ id_usuario, id_lote, monto_puja }).
    * @returns {Promise<Puja>} La instancia de la puja creada o actualizada.
-   * @throws {Error} Si el lote no está activo, las pujas no cumplen las reglas, o el usuario no tiene token.
+   * @throws {Error} Si el lote no está activo, las pujas no cumplen las reglas, el usuario no tiene token, o no ha firmado el contrato.
    */
   async create(data) {
     const { id_usuario, id_lote, monto_puja } = data;
@@ -45,6 +45,21 @@ const pujaService = {
         throw new Error("La subasta no está activa.");
 
       const id_proyecto = lote.id_proyecto;
+
+      // 🔥 VALIDACIÓN: Contrato firmado (solo para proyectos que requieren contrato)
+      if (id_proyecto) {
+        const contratoFirmadoService = require("./contratoFirmado.service");
+        const tieneContrato =
+          await contratoFirmadoService.hasUserSignedContractForProject(
+            id_usuario,
+            id_proyecto,
+          );
+        if (!tieneContrato) {
+          throw new Error(
+            "❌ No puedes participar en esta subasta. Debes firmar el contrato del proyecto antes de pujar. Revisa tu panel de usuario.",
+          );
+        }
+      }
 
       const pujaExistente = await Puja.findOne({
         where: {
@@ -140,7 +155,6 @@ const pujaService = {
       throw error;
     }
   },
-
   /**
    * @async
    * @function findHighestBidForLote

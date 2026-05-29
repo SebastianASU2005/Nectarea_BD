@@ -250,6 +250,14 @@ const contratoFirmadoService = {
 
     return { inversionValida, suscripcionValida, proyecto };
   },
+  
+  async hasUserSignedContractForProject(userId, projectId) {
+    const { tiene_contrato_firmado } = await this.trackPaymentAndContract(
+      userId,
+      projectId,
+    );
+    return tiene_contrato_firmado;
+  },
 
   /**
    * Obtiene todos los contratos firmados válidos (activos) de un usuario específico.
