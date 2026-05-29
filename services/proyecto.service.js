@@ -127,9 +127,23 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }],
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              where: { activo: true },
+              required: false,
+              order: [["createdAt", "DESC"]],
+            },
+          ],
         },
-        { model: Imagen, as: "imagenes" },
+        {
+          model: Imagen,
+          as: "imagenes",
+          where: { activo: true },
+          required: false,
+          order: [["createdAt", "DESC"]],
+        },
       ],
     });
   },
@@ -154,9 +168,23 @@ const proyectoService = {
         {
           model: Lote,
           as: "lotes",
-          include: [{ model: Imagen, as: "imagenes" }],
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              where: { activo: true },
+              required: false,
+              order: [["createdAt", "DESC"]],
+            },
+          ],
         },
-        { model: Imagen, as: "imagenes" },
+        {
+          model: Imagen,
+          as: "imagenes",
+          where: { activo: true },
+          required: false,
+          order: [["createdAt", "DESC"]],
+        },
       ],
     });
   },

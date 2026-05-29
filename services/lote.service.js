@@ -55,6 +55,9 @@ const GANADOR_INCLUDE = {
 const IMAGENES_INCLUDE = {
   model: Imagen,
   as: "imagenes",
+  where: { activo: true }, // 👈 filtrar solo activas
+  order: [["createdAt", "DESC"]], // 👈 opcional: más reciente primero
+  required: false, // LEFT JOIN para que el lote aparezca aunque no tenga imágenes activas
 };
 
 /**
@@ -385,7 +388,15 @@ const loteService = {
         {
           model: Proyecto,
           as: "proyectoLote",
-          include: [{ model: Imagen, as: "imagenes" }],
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              where: { activo: true }, // 👈 agregar filtro
+              required: false,
+              order: [["createdAt", "DESC"]],
+            },
+          ],
         },
         GANADOR_INCLUDE,
         PUJA_MAS_ALTA_INCLUDE,
@@ -653,7 +664,7 @@ const loteService = {
           message: `Lote reasignado al siguiente postor (Puja ID: ${siguientePuja.id}).`,
           nuevoGanador: siguientePuja.id_usuario,
         };
-      } 
+      }
 
       // ── 4. No hay más postores — limpiar lote ─────────────────────────────
       console.log(
