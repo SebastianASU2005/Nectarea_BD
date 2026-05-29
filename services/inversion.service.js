@@ -98,47 +98,59 @@ const inversionService = {
     const inversion = await Inversion.findByPk(inversionId, {
       transaction: t,
       lock: t.LOCK.UPDATE,
+      include: [
+        {
+          model: Usuario,
+          as: "inversor",
+          attributes: ["id", "nombre", "apellido", "email"],
+        },
+        {
+          model: Proyecto,
+          as: "proyectoInvertido",
+          attributes: ["id", "nombre_proyecto", "tipo_inversion"],
+        },
+      ],
     });
-    if (!inversion) {
+    if (!inversion)
       throw new Error("Inversión asociada a la transacción no encontrada.");
-    }
-    if (inversion.estado === "pagado") {
-      return inversion;
-    }
+    if (inversion.estado === "pagado") return inversion;
 
-    const proyecto = await Proyecto.findByPk(inversion.id_proyecto, {
-      transaction: t,
-    });
-    if (!proyecto) {
+    const proyecto = inversion.proyectoInvertido;
+    if (!proyecto)
       throw new Error("Proyecto asociado a la inversión no encontrado.");
-    }
 
     const montoInvertido = Number(inversion.monto);
     const montoActual = Number(proyecto.suscripciones_actuales || 0);
     const nuevoMontoTotal = montoActual + montoInvertido;
 
     await proyecto.update(
-      {
-        suscripciones_actuales: nuevoMontoTotal,
-      },
+      { suscripciones_actuales: nuevoMontoTotal },
       { transaction: t },
     );
 
     inversion.estado = "pagado";
-    await inversion.save({
-      transaction: t,
-    });
+    await inversion.save({ transaction: t });
 
     if (proyecto.tipo_inversion === "directo") {
       proyecto.estado_proyecto = "Finalizado";
-      await proyecto.save({
-        transaction: t,
+      await proyecto.save({ transaction: t });
+
+      // 🚨 NOTIFICAR A ADMINISTRADORES (solo para proyectos directos)
+      t.afterCommit(async () => {
+        try {
+          const emailService = require("./email.service");
+          await emailService.notificarInversionDirectaPagada(inversion);
+        } catch (err) {
+          console.error(
+            `Error al notificar administradores sobre inversión ${inversion.id}:`,
+            err.message,
+          );
+        }
       });
     }
 
     return inversion;
   },
-
   // --- Funciones CRUD básicas ---
 
   /**

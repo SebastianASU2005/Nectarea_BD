@@ -198,7 +198,65 @@ const emailService = {
       `✅ Notificaciones de cambio de cuota enviadas a ${destinatarios.length} destinatario(s) del proyecto ${proyecto.id}`,
     );
   },
+  /**
+   * Notifica a todos los administradores que una inversión directa ha sido pagada
+   * y que se debe contactar al inversor para la firma presencial del contrato.
+   * @param {object} inversion - Objeto de la inversión (con proyecto y usuario incluidos)
+   */
+  async notificarInversionDirectaPagada(inversion) {
+    // Obtener todos los administradores activos
+    const administradores = await usuarioService.findAllAdmins();
+    if (administradores.length === 0) return;
 
+    const usuario =
+      inversion.inversor || (await Usuario.findByPk(inversion.id_usuario));
+    const proyecto =
+      inversion.proyectoInvertido ||
+      (await Proyecto.findByPk(inversion.id_proyecto));
+
+    if (!usuario || !proyecto) {
+      console.error(
+        `[notificarInversionDirectaPagada] Datos incompletos para inversión ${inversion.id}`,
+      );
+      return;
+    }
+
+    const asunto = `📄 INVERSIÓN DIRECTA PAGADA - Acción requerida: Proyecto "${proyecto.nombre_proyecto}"`;
+
+    const contenidoHtml = `
+    <h2 style="color: #0b1b36;">Inversión Directa Confirmada</h2>
+    <p>El usuario <strong>${usuario.nombre} ${usuario.apellido}</strong> (${usuario.email}) ha completado el pago de la inversión directa en el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+
+    <h3>📋 Detalles de la inversión</h3>
+    <ul>
+      <li><strong>Monto invertido:</strong> $${Number(inversion.monto).toFixed(2)}</li>
+      <li><strong>Fecha de pago:</strong> ${new Date().toLocaleDateString("es-ES")}</li>
+      <li><strong>ID Inversión:</strong> ${inversion.id}</li>
+      <li><strong>ID Proyecto:</strong> ${proyecto.id}</li>
+    </ul>
+
+    <div style="border-left: 4px solid #FF5733; padding: 15px; background-color: #fff3e0; margin: 20px 0;">
+      <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ ACCIÓN REQUERIDA</p>
+      <p>Por tratarse de una inversión directa que implica la adquisición de un bien inmueble (terreno), <strong>deben contactar al inversor</strong> para coordinar la firma <strong>presencial</strong> del contrato de compra-venta o cesión de derechos.</p>
+      <p>El contrato de fideicomiso ya firmado en plataforma es un paso previo, pero no transfiere la propiedad. La transferencia real requiere documento público ante escribano.</p>
+    </div>
+
+    <a href="${process.env.FRONTEND_URL}/admin/inversiones/${inversion.id}" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles en el panel</a>
+
+    <p style="margin-top: 20px;">Saludos cordiales,<br>El sistema Loteplan</p>
+  `;
+
+    for (const admin of administradores) {
+      if (admin.email) {
+        await this.sendEmail(
+          admin.email,
+          asunto,
+          `Inversión directa pagada por ${usuario.email} en el proyecto ${proyecto.nombre_proyecto}. Contactar para firma presencial.`,
+          obtenerPlantillaHtml(contenidoHtml),
+        );
+      }
+    }
+  },
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
    * LÓGICA DE NEGOCIO: Diferencia entre subasta **Pública** y **Privada**.
