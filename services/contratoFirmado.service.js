@@ -250,7 +250,7 @@ const contratoFirmadoService = {
 
     return { inversionValida, suscripcionValida, proyecto };
   },
-  
+
   async hasUserSignedContractForProject(userId, projectId) {
     const { tiene_contrato_firmado } = await this.trackPaymentAndContract(
       userId,
@@ -258,7 +258,47 @@ const contratoFirmadoService = {
     );
     return tiene_contrato_firmado;
   },
+  /**
+   * Verifica si todas las suscripciones activas de un usuario en un proyecto tienen contrato firmado.
+   * @param {number} userId - ID del usuario.
+   * @param {number} projectId - ID del proyecto.
+   * @returns {Promise<{allSigned: boolean, missingContracts: Array}>}
+   */
+  async checkAllSubscriptionsHaveContract(userId, projectId) {
+    // Obtener todas las suscripciones activas del usuario en este proyecto
+    const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+    const suscripciones = await SuscripcionProyecto.findAll({
+      where: {
+        id_usuario: userId,
+        id_proyecto: projectId,
+        activo: true,
+      },
+      attributes: ["id"],
+    });
 
+    if (suscripciones.length === 0) {
+      // No hay suscripciones, no se puede pujar (pero eso ya lo cubre otro error)
+      return { allSigned: false, missingContracts: [] };
+    }
+
+    const missing = [];
+    for (const sus of suscripciones) {
+      const contrato = await ContratoFirmado.findOne({
+        where: {
+          id_suscripcion_asociada: sus.id,
+          estado_firma: "FIRMADO",
+        },
+      });
+      if (!contrato) {
+        missing.push(sus.id);
+      }
+    }
+
+    return {
+      allSigned: missing.length === 0,
+      missingContracts: missing,
+    };
+  },
   /**
    * Obtiene todos los contratos firmados válidos (activos) de un usuario específico.
    * @param {number} userId - ID del usuario firmante.

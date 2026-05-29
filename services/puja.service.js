@@ -20,14 +20,6 @@ const calculateFloat = (value) => toFloat(value.toFixed(2));
  * Incluye la creación, validación, y el procesamiento de pujas ganadoras y la gestión de tokens.
  */
 const pujaService = {
-  /**
-   * @async
-   * @function create
-   * @description Crea o actualiza una puja para un lote, aplicando validaciones y gestionando el token de subasta.
-   * @param {object} data - Datos de la puja ({ id_usuario, id_lote, monto_puja }).
-   * @returns {Promise<Puja>} La instancia de la puja creada o actualizada.
-   * @throws {Error} Si el lote no está activo, las pujas no cumplen las reglas, el usuario no tiene token, o no ha firmado el contrato.
-   */
   async create(data) {
     const { id_usuario, id_lote, monto_puja } = data;
     const usuario = await require("./usuario.service").findById(id_usuario);
@@ -46,17 +38,17 @@ const pujaService = {
 
       const id_proyecto = lote.id_proyecto;
 
-      // 🔥 VALIDACIÓN: Contrato firmado (solo para proyectos que requieren contrato)
+      // 🔥 VALIDACIÓN DE CONTRATO: Todas las suscripciones activas deben tener contrato firmado
       if (id_proyecto) {
         const contratoFirmadoService = require("./contratoFirmado.service");
-        const tieneContrato =
-          await contratoFirmadoService.hasUserSignedContractForProject(
+        const { allSigned, missingContracts } =
+          await contratoFirmadoService.checkAllSubscriptionsHaveContract(
             id_usuario,
             id_proyecto,
           );
-        if (!tieneContrato) {
+        if (!allSigned) {
           throw new Error(
-            "❌ No puedes participar en esta subasta. Debes firmar el contrato del proyecto antes de pujar. Revisa tu panel de usuario.",
+            `❌ No puedes pujar. El proyecto requiere que todas tus suscripciones activas tengan contrato firmado. Te falta(n) la(s) suscripción(es) ID: ${missingContracts.join(", ")}. Por favor, completa la firma de tus contratos pendientes.`,
           );
         }
       }
