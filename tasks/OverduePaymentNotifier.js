@@ -61,7 +61,7 @@ const overduePaymentNotifier = {
 
             // 4. Envía correo de ALERTA al cliente (suscriptor).
             if (usuario && usuario.email) {
-              await emailService.notificarPagoVencidoCliente(
+              await emailService.notificarPagoVencidoUsuario(
                 usuario,
                 pago.suscripcion.proyectoAsociado,
                 pago,

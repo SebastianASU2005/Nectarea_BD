@@ -601,48 +601,6 @@ const emailService = {
   },
 
   /**
-   * Notifica al **ADMINISTRADOR** sobre un pago vencido.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} user - Usuario incumplidor.
-   * @param {object} proyecto - Proyecto asociado.
-   * @param {object} pago - Pago vencido.
-   * @param {number} montoBase - Monto base del pago.
-   * @param {number} recargoTotal - Recargo aplicado.
-   */
-  async notificarPagoVencidoAdmin(
-    adminEmail,
-    user,
-    proyecto,
-    pago,
-    montoBase,
-    recargoTotal,
-  ) {
-    const subject = `⚠️ PAGO VENCIDO: Acción Requerida - Usuario ${user.nombre}`;
-
-    const contenidoInterno = `
-          <h2 style="color: #d9534f; margin-top: 0;">¡ALERTA DE PAGO VENCIDO!</h2>
-          <p>El usuario **${user.nombre}** (Email: ${user.email}) ha incumplido el pago de la cuota **#${pago.mes}** para el proyecto **"${proyecto.nombre_proyecto}"**.</p>
-          <h3 style="color: #333;">Detalles</h3>
-          <ul style="list-style: none; padding-left: 0; line-height: 2;">
-              <li><strong style="color: #555;">ID Pago:</strong> ${pago.id}</li>
-              <li><strong style="color: #555;">Monto Base:</strong> $${montoBase.toFixed(2)}</li>
-              <li><strong style="color: #d9534f;">Monto con Recargo:</strong> $${pago.monto.toFixed(2)} (Recargo: $${recargoTotal.toFixed(2)})</li>
-              <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${pago.fecha_vencimiento}</li>
-          </ul>
-          <p style="font-weight: bold;">Se ha enviado una alerta al cliente. Por favor, realice el seguimiento correspondiente.</p>
-      `;
-
-    const html = obtenerPlantillaHtml(contenidoInterno);
-
-    await this.sendEmail(
-      adminEmail,
-      subject,
-      `Pago vencido del usuario ${user.nombre} para el proyecto ${proyecto.nombre_proyecto}.`,
-      html,
-    );
-  },
-
-  /**
    * @async
    * @function notificarReembolsoUsuario
    * @description Notifica al usuario que su transacción falló e informa sobre el estado del reembolso.
@@ -765,6 +723,77 @@ const emailService = {
       `Pago vencido (${tipoPagoTexto}) del usuario ${user.nombre} para el proyecto ${proyecto.nombre_proyecto}.`,
       html,
     );
+  },
+  /**
+   * @async
+   * @function notificarPagoVencidoUsuario
+   * @description Notifica al usuario que su pago (mensual o de adhesión) ha vencido,
+   *              informándole el monto con recargos y las consecuencias.
+   * @param {object} usuario - Objeto del usuario (debe contener nombre, email).
+   * @param {object} proyecto - Proyecto asociado.
+   * @param {object} pago - Pago vencido (contiene mes, monto, fecha_vencimiento, y opcional tipo: 'adhesion').
+   * @param {number} montoBase - Monto original sin recargo.
+   * @param {number} recargoTotal - Recargo acumulado aplicado.
+   */
+  async notificarPagoVencidoUsuario(
+    usuario,
+    proyecto,
+    pago,
+    montoBase,
+    recargoTotal,
+  ) {
+    if (!usuario || !usuario.email) return;
+
+    const tipo = pago.tipo === "adhesion" ? "adhesion" : "mensual";
+    const tipoPagoTexto =
+      tipo === "adhesion" ? "Cuota de Adhesión" : "Cuota Mensual de Ahorro";
+    const subject = `⚠️ Pago Vencido - ${tipoPagoTexto} #${pago.mes} - ${proyecto.nombre_proyecto}`;
+
+    const montoTotalConRecargo = Number(pago.monto).toFixed(2);
+    const fechaVencimiento = new Date(
+      pago.fecha_vencimiento,
+    ).toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const contenidoInterno = `
+    <h2 style="color: #d9534f; margin-top: 0;">Tu pago ha vencido</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Lamentamos informarte que tu <strong>${tipoPagoTexto} #${pago.mes}</strong> para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong> <strong style="color: #d9534f;">está vencida</strong>.</p>
+
+    <h3 style="color: #333;">Detalles del adeudo</h3>
+    <ul style="list-style: none; padding-left: 0; line-height: 2;">
+      <li><strong style="color: #555;">Monto original:</strong> $${Number(montoBase).toFixed(2)}</li>
+      <li><strong style="color: #d9534f;">Recargo por mora:</strong> +$${Number(recargoTotal).toFixed(2)}</li>
+      <li><strong style="color: #d9534f;">Total a pagar ahora:</strong> <strong>$${montoTotalConRecargo}</strong></li>
+      <li><strong style="color: #555;">Fecha de vencimiento original:</strong> ${fechaVencimiento}</li>
+    </ul>
+
+    <div style="border-left: 4px solid #d9534f; padding: 15px; background-color: #ffe6e6; margin: 20px 0;">
+      <p style="font-weight: bold; margin: 0 0 10px 0;">⚠️ Consecuencias del retraso</p>
+      <ul style="margin: 0; padding-left: 20px;">
+        <li>Los recargos se siguen acumulando <strong>diariamente</strong> hasta que realices el pago.</li>
+        <li>Si el pago se mantiene vencido por más de 30 días, tu suscripción podría ser suspendida.</li>
+        ${tipo === "mensual" ? "<li>El tiempo sin pago <strong>no descuenta meses</strong> de tu plazo de inversión.</li>" : ""}
+      </ul>
+    </div>
+
+    <p style="margin-top: 20px;">Te recomendamos regularizar tu situación lo antes posible para evitar la pérdida de beneficios.</p>
+
+    <a href="${process.env.FRONTEND_URL}/mis-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Pagar Ahora
+    </a>
+
+    <p style="margin-top: 20px;">Si ya realizaste el pago, por favor ignora este mensaje. En caso de dudas, contacta a soporte.</p>
+    <p>Saludos cordiales,<br>El Equipo de Loteplan.com</p>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Tu pago (${tipoPagoTexto} #${pago.mes}) para el proyecto ${proyecto.nombre_proyecto} ha vencido. Total con recargo: $${montoTotalConRecargo}. Por favor regulariza tu situación.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
   },
 
   /**
