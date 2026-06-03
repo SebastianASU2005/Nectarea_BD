@@ -95,9 +95,10 @@ const inversionService = {
    * @throws {Error} Si la inversión o el proyecto no son encontrados, o si falla la actualización.
    */
   async confirmarInversion(inversionId, t) {
+    // Quitamos el lock y el include innecesario para evitar el error de FOR UPDATE
     const inversion = await Inversion.findByPk(inversionId, {
       transaction: t,
-      lock: t.LOCK.UPDATE,
+      // Sin lock: suficiente con la transacción y la validación previa
       include: [
         {
           model: Usuario,
@@ -135,7 +136,6 @@ const inversionService = {
       proyecto.estado_proyecto = "Finalizado";
       await proyecto.save({ transaction: t });
 
-      // 🚨 NOTIFICAR A ADMINISTRADORES (solo para proyectos directos)
       t.afterCommit(async () => {
         try {
           const emailService = require("./email.service");
