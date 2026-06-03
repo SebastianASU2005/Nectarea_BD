@@ -2,6 +2,10 @@
 const nodemailer = require("nodemailer");
 const { Resend } = require("resend");
 const dotenv = require("dotenv");
+// ✅ Agregar estas tres líneas:
+const usuarioService = require("./usuario.service");
+const Usuario = require("../models/usuario");
+const Proyecto = require("../models/proyecto");
 dotenv.config();
 
 // ✅ CONTROL EXPLÍCITO: Cambia EMAIL_PROVIDER en .env para alternar entre proveedores
