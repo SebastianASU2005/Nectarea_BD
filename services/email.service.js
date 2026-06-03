@@ -64,7 +64,7 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
               <tr>
                 <td align="center" style="background-color: ${FONDO_HEADER_FOOTER}; padding: 30px 40px 20px;">
                   <p style="margin: 0; color: #ffffff; font-size: 14px; font-family: Arial, sans-serif;">
-                    <a href="[URL_SITIO_WEB]" style="color: #ffffff; text-decoration: none;">© ${new Date().getFullYear()} Loteplan.com</a>
+                    <a href="${process.env.FRONTEND_URL}" style="color: #ffffff; text-decoration: none;">© ${new Date().getFullYear()} Loteplan.com</a>
                   </p>
                 </td>
               </tr>
@@ -241,7 +241,7 @@ const emailService = {
       <p>El contrato de fideicomiso ya firmado en plataforma es un paso previo, pero no transfiere la propiedad. La transferencia real requiere documento público ante escribano.</p>
     </div>
 
-    <a href="${process.env.FRONTEND_URL}/admin/inversiones/${inversion.id}" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles en el panel</a>
+    <a href="${process.env.FRONTEND_URL}/admin/inversiones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles en el panel</a>
 
     <p style="margin-top: 20px;">Saludos cordiales,<br>El sistema Loteplan</p>
   `;
@@ -285,13 +285,13 @@ const emailService = {
               }</li>
           </ul>
           <p style="font-weight: bold; color: ${esSubastaPrivada ? "red" : "#333"}">${mensajeExclusividad}</p>
-          <a href="[URL_A_LA_SUBASTA]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/proyectos/rol-seleccion" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ver Lote Ahora
           </a>
       `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
-    const text = `Subasta activa: Lote ${lote.nombre_lote}. Monto Base: $${lote.monto_base_lote}. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
+    const text = `Subasta activa: Lote ${lote.nombre_lote}. Monto Base: $${lote.precio_base}. ${esSubastaPrivada ? "Subasta Privada." : "Subasta Pública."}`;
 
     await this.sendEmail(email, subject, text, html);
   },
@@ -352,7 +352,7 @@ const emailService = {
           <h3 style="color: #333;">Detalles y Plazo de Pago</h3>
           <p>Tienes **90 días** para completar el pago.</p>
           <p style="font-size: 1.1em; font-weight: bold; color: #FF5733;">La fecha límite de pago es: **${fechaLimite}**.</p>
-          <a href="[URL_A_TU_PERFIL_PAGOS]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Gestionar Pago
           </a>
       `;
@@ -380,7 +380,7 @@ const emailService = {
           <p>Lamentamos informarte que has **perdido el Lote #${loteId}** debido a que el plazo de 90 días para realizar el pago ha expirado.</p>
           <p style="font-weight: bold; color: #4CAF50; font-size: 1.1em;">Tu token de subasta ha sido devuelto a tu cuenta.</p>
           <p>El lote ha sido reasignado al siguiente postor.</p>
-          <a href="[URL_A_TU_PERFIL]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ver Mi Cuenta
           </a>
       `;
@@ -438,7 +438,7 @@ const emailService = {
           <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) ha alcanzado el número de suscripciones requerido (**${proyecto.obj_suscripciones}**).</p>
           <p style="font-weight: bold; color: #4CAF50; font-size: 1.1em;">Estado Actual: En proceso</p>
           <p>El sistema ha marcado la fecha de inicio del proceso y comenzará la generación de pagos mensuales.</p>
-          <p>No se requiere acción inmediata, pero por favor, confirme el estado en el <a href="[URL_ADMIN_PANEL]" style="color: #FF5733; text-decoration: none; font-weight: bold;">panel de administración</a>.</p>
+          <p>No se requiere acción inmediata, pero por favor, confirme el estado en el <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="color: #FF5733; text-decoration: none; font-weight: bold;">panel de administración</a>.</p>
       `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -518,7 +518,7 @@ const emailService = {
               <li>Revisar el estado de los **lotes** pendientes de subastar (si aplica).</li>
           </ul>
           <p style="font-weight: bold; color: #d9534f; font-size: 1.1em;">El proyecto ha dejado de contar meses y notificar pagos. **Actúe inmediatamente**.</p>
-          <a href="[URL_ADMIN_PANEL]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir al Panel de Administración
           </a>
       `;
@@ -555,7 +555,7 @@ const emailService = {
               <li><strong style="color: #FF5733;">Fecha Límite de Pago:</strong> **${fechaVencimiento}**</li>
           </ul>
           <p>Por favor, realiza el pago antes de la fecha límite para evitar recargos.</p>
-          <a href="[URL_A_TU_PLATAFORMA]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir a Mis Pagos
           </a>
           <p>Gracias por tu apoyo.</p>
@@ -782,7 +782,7 @@ const emailService = {
 
     <p style="margin-top: 20px;">Te recomendamos regularizar tu situación lo antes posible para evitar la pérdida de beneficios.</p>
 
-    <a href="${process.env.FRONTEND_URL}/mis-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Pagar Ahora
     </a>
 
@@ -824,7 +824,7 @@ const emailService = {
               <p>Tu cuota **#${pago.mes}** de **$${montoCuota}** para el proyecto **"${proyecto.nombre_proyecto}"** está próxima a vencer.</p>
               <h3 style="color: #FF5733;">Fecha Límite: ${fechaVencimiento}</h3>
               <p>Te recomendamos realizar el pago antes de la fecha límite para evitar los recargos por mora que se aplican diariamente.</p>
-              <a href="[URL_A_TUS_PAGOS]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+              <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
                   Revisar y Pagar
               </a>
               <p>Gracias por tu compromiso con la inversión.</p>
@@ -967,7 +967,7 @@ const emailService = {
           </table>
           
           <p style="font-weight: bold; margin-top: 20px;">Mantente atento a las actualizaciones del proyecto en tu panel de control.</p>
-          <a href="[URL_A_PANEL_USUARIO]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          <a href="${process.env.FRONTEND_URL}/client/dashboard" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir a Mi Panel
           </a>
       `;
@@ -1028,7 +1028,7 @@ const emailService = {
 
       <p style="margin-top: 20px;">¡Gracias por tu compromiso con este proyecto!</p>
       
-      <a href="[URL_A_TU_PANEL]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      <a href="${process.env.FRONTEND_URL}/client/finanzas/inversiones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
         Ver Mi Panel de Inversiones
       </a>
     `;
@@ -1227,7 +1227,7 @@ const emailService = {
       </ul>
     </div>
 
-    <a href="${process.env.FRONTEND_URL}/admin/pujas/${puja.id}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+    <a href="${process.env.FRONTEND_URL}/admin/lote-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ir al Panel de Administración
     </a>
 
@@ -1423,7 +1423,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
       <p style="margin-top: 30px; color: #555;">Lamentamos verte partir de este proyecto. Si hay algo que podamos mejorar, no dudes en compartir tu opinión con nosotros.</p>
       
-      <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
         Ver Mis Suscripciones
       </a>
 
@@ -1483,7 +1483,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     </ul>
     <p>Las fechas de vencimiento de cada cuota son el día <strong>10 de cada mes</strong>. Recibirás recordatorios y podrás pagar desde tu panel de usuario.</p>
     <p style="font-weight: bold;">Recuerda que una vez que completes el 100% de las cuotas, tu suscripción al proyecto se activará automáticamente.</p>
-    <a href="${process.env.FRONTEND_URL}/mis-adhesiones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver mis adhesiones</a>
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver mis adhesiones</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
     await this.sendEmail(
@@ -1512,7 +1512,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
       <li><strong>Cuotas restantes:</strong> ${cuotasRestantes}</li>
     </ul>
     ${cuotasRestantes === 0 ? '<p style="color: #4CAF50; font-weight: bold;">🎉 ¡Felicidades! Has completado el pago total de la adhesión. Tu suscripción al proyecto será activada en breve.</p>' : ""}
-    <a href="${process.env.FRONTEND_URL}/mis-adhesiones/${adhesion.id}" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles</a>
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
     await this.sendEmail(
@@ -1554,7 +1554,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
     <p style="margin-top: 20px;">Si deseas <strong>cancelar tu suscripción</strong> o solicitar una nueva pausa, por favor contacta con el equipo de administración.</p>
     
-    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ver Mis Suscripciones
     </a>
 
@@ -1602,7 +1602,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     
     <p style="margin-top: 20px;">Si tienes dudas, contacta con el equipo de soporte.</p>
     
-    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ver Mis Suscripciones
     </a>
 
@@ -1626,7 +1626,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     <p>Has completado el pago total del <strong>${adhesion.cuotas_totales} cuotas</strong> del plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
     <p style="font-weight: bold; font-size: 1.1em;">✅ Tu suscripción ya está activa y cuentas con <strong>1 token de inversión</strong> disponible para participar en las subastas de lotes de este proyecto.</p>
     <p>A partir de ahora, se generarán tus cuotas mensuales de inversión (el monto mensual del proyecto) y deberás pagarlas antes del día 10 de cada mes.</p>
-    <a href="${process.env.FRONTEND_URL}/mis-suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Ir a mis suscripciones</a>
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Ir a mis suscripciones</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
     await this.sendEmail(
