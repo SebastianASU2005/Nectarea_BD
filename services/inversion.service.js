@@ -139,10 +139,19 @@ const inversionService = {
       t.afterCommit(async () => {
         try {
           const emailService = require("./email.service");
+          // Notificar a administradores
           await emailService.notificarInversionDirectaPagada(inversion);
+          // Notificar al usuario inversor
+          if (inversion.inversor && inversion.inversor.email) {
+            await emailService.notificarInversionPagada(
+              inversion.inversor,
+              proyecto,
+              inversion.monto,
+            );
+          }
         } catch (err) {
           console.error(
-            `Error al notificar administradores sobre inversión ${inversion.id}:`,
+            `Error al notificar sobre inversión ${inversion.id}:`,
             err.message,
           );
         }

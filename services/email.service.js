@@ -262,6 +262,57 @@ const emailService = {
     }
   },
   /**
+   * @async
+   * @function notificarInversionPagada
+   * @description Notifica al usuario que su inversión directa ha sido pagada exitosamente.
+   * @param {object} usuario - Objeto del usuario (nombre, email).
+   * @param {object} proyecto - Objeto del proyecto.
+   * @param {number} monto - Monto de la inversión.
+   */
+  async notificarInversionPagada(usuario, proyecto, monto) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = `✅ Inversión Directa Pagada - Proyecto "${proyecto.nombre_proyecto}"`;
+    const montoTexto = parseFloat(monto).toFixed(2);
+
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">¡Inversión Directa Confirmada!</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Te confirmamos que hemos recibido tu inversión directa de <strong style="color: #4CAF50;">$${montoTexto}</strong> en el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    
+    <div style="border: 1px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
+      <p style="margin: 0; font-weight: bold; color: #4CAF50;">✅ Tu inversión ha sido registrada exitosamente</p>
+    </div>
+
+    <h3 style="color: #0b1b36;">Detalles de la Inversión</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Proyecto:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.nombre_proyecto}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Monto Invertido:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">$${montoTexto}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Fecha:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${new Date().toLocaleDateString("es-ES")}</td>
+      </tr>
+    </table>
+
+    <p style="margin-top: 20px;">Gracias por confiar en nosotros. En breve, un administrador se pondrá en contacto para la firma presencial del contrato (si aplica).</p>
+    
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/inversiones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ver Mis Inversiones
+    </a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Hemos recibido tu inversión directa de $${montoTexto} en el proyecto ${proyecto.nombre_proyecto}. Gracias.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
+  /**
    * Notifica a los usuarios que una subasta ha iniciado.
    * LÓGICA DE NEGOCIO: Diferencia entre subasta **Pública** y **Privada**.
    * @param {string} email - Correo del destinatario.
