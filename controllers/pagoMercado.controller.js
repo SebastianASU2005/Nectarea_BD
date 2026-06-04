@@ -214,12 +214,15 @@ const paymentController = {
       return res.status(200).send("OK");
     }
 
-   // if (!verifySignatureForId(req, dataId)) {
-//   console.error(`🚫 FIRMA INVÁLIDA para ${topic} ID ${dataId}`);
-//   return res.status(401).send("Unauthorized");
-// }
-// console.log(`✅ Firma válida para ${topic} ID ${dataId}`);
-console.log(`⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`);
+    // 2. Validar firma (si está activada) - Opcional: puedes comentar mientras pruebas
+    // if (!verifySignatureForId(req, dataId)) {
+    //   console.error(`🚫 FIRMA INVÁLIDA para ${topic} ID ${dataId}`);
+    //   return res.status(401).send("Unauthorized");
+    // }
+    // console.log(`✅ Firma válida para ${topic} ID ${dataId}`);
+    console.log(
+      `⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`,
+    );
 
     // 3. Manejar Merchant Order
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
@@ -280,81 +283,68 @@ console.log(`⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic}
 
       // ----- CASO: Transacción YA PAGADA -----
       if (transaccion.estado_transaccion === "pagado") {
-        const duplicado =
-          await paymentController.verificarDuplicadoPorEntidad(transaccion);
-        if (duplicado) {
-          console.log(
-            `⚠️ Pago duplicado detectado para ${duplicado.tipo}. Reembolsando pago MP ${transactionId}...`,
+        // Cualquier nuevo pago con la misma referencia externa es duplicado
+        console.log(
+          `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionId}...`,
+        );
+        await t.rollback(); // No necesitamos la transacción actual
+
+        // REEMBOLSO DIRECTO
+        let reembolsoExitoso = false;
+        let errorReembolso = null;
+        try {
+          const resultado = await pagoMercadoService.realizarReembolso(
+            transactionId,
+            parseFloat(transaccion.monto),
           );
-          await t.rollback(); // No necesitamos la transacción actual
-
-          // REEMBOLSO DIRECTO
-          let reembolsoExitoso = false;
-          let errorReembolso = null;
-          try {
-            const resultado = await pagoMercadoService.realizarReembolso(
-              transactionId,
-              parseFloat(transaccion.monto),
-            );
-            reembolsoExitoso = resultado?.success === true;
-            if (!reembolsoExitoso && resultado?.alreadyRefunded) {
-              errorReembolso = "El pago ya estaba reembolsado";
-            } else if (!reembolsoExitoso) {
-              errorReembolso = resultado?.message || "Reembolso falló";
-            }
-          } catch (err) {
-            errorReembolso = err.message;
-            console.error(`Error en reembolso duplicado: ${errorReembolso}`);
+          reembolsoExitoso = resultado?.success === true;
+          if (!reembolsoExitoso && resultado?.alreadyRefunded) {
+            errorReembolso = "El pago ya estaba reembolsado";
+          } else if (!reembolsoExitoso) {
+            errorReembolso = resultado?.message || "Reembolso falló";
           }
-
-          // Guardar registro del pago duplicado (auditoría)
-          try {
-            await PagoMercado.create({
-              id_transaccion: transaccion.id,
-              monto_pagado: transaccion.monto,
-              metodo_pasarela: metodo,
-              id_transaccion_pasarela: transactionId,
-              estado: reembolsoExitoso ? "reembolsado" : "fallido",
-              detalles_raw: { error: errorReembolso, duplicado: true },
-            });
-          } catch (dbErr) {
-            console.error(
-              "No se pudo guardar el pago duplicado:",
-              dbErr.message,
-            );
-          }
-
-          // Notificaciones
-          const user = await User.findByPk(transaccion.id_usuario);
-          if (user) {
-            await emailService.notificarReembolsoUsuario(
-              user,
-              transaccion,
-              `Pago duplicado para la misma ${duplicado.tipo}. El sistema intentó reembolsar automáticamente.`,
-              reembolsoExitoso,
-            );
-            const admins = await usuarioService.findAllAdmins();
-            for (const admin of admins) {
-              if (admin.email) {
-                await emailService.notificarReembolsoAdminMejorada(
-                  admin.email,
-                  user,
-                  transaccion,
-                  `PAGO DUPLICADO (misma entidad ${duplicado.tipo}) - Payment MP ${transactionId}`,
-                  { reembolsoExitoso, errorReembolso, idPagoMP: transactionId },
-                );
-              }
-            }
-          }
-          return res.status(200).send("OK - Duplicado reembolsado");
+        } catch (err) {
+          errorReembolso = err.message;
+          console.error(`Error en reembolso duplicado: ${errorReembolso}`);
         }
 
-        // No es duplicado, ignorar
-        await t.commit();
-        console.log(
-          `Transacción ${id_transaccion} ya procesada. Webhook ignorado.`,
-        );
-        return res.status(200).send("OK - Ya procesado");
+        // Guardar registro del pago duplicado (auditoría)
+        try {
+          await PagoMercado.create({
+            id_transaccion: transaccion.id,
+            monto_pagado: transaccion.monto,
+            metodo_pasarela: metodo,
+            id_transaccion_pasarela: transactionId,
+            estado: reembolsoExitoso ? "reembolsado" : "fallido",
+            detalles_raw: { error: errorReembolso, duplicado: true },
+          });
+        } catch (dbErr) {
+          console.error("No se pudo guardar el pago duplicado:", dbErr.message);
+        }
+
+        // Notificaciones
+        const user = await User.findByPk(transaccion.id_usuario);
+        if (user) {
+          await emailService.notificarReembolsoUsuario(
+            user,
+            transaccion,
+            `Pago duplicado para la transacción ya pagada. El sistema intentó reembolsar automáticamente.`,
+            reembolsoExitoso,
+          );
+          const admins = await usuarioService.findAllAdmins();
+          for (const admin of admins) {
+            if (admin.email) {
+              await emailService.notificarReembolsoAdminMejorada(
+                admin.email,
+                user,
+                transaccion,
+                `PAGO DUPLICADO - Transacción #${transaccion.id} - Payment MP ${transactionId}`,
+                { reembolsoExitoso, errorReembolso, idPagoMP: transactionId },
+              );
+            }
+          }
+        }
+        return res.status(200).send("OK - Duplicado reembolsado");
       }
 
       // ----- Transacción NO pagada todavía -----
