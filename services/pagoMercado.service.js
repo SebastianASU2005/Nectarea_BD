@@ -368,35 +368,43 @@ const paymentService = {
       `➡️ [MP Service] Solicitando reembolso para Payment ID: ${paymentId}. Monto: ${
         monto ?? "Total"
       }`,
-    ); // 🔄 Prioridad de Tokens: Probamos TEST primero, luego LIVE.
+    );
 
+    // Prioridad: LIVE primero, luego TEST (porque los pagos reales son con token LIVE)
     const tokens = [
-      { name: "TEST", value: MP_TEST_ACCESS_TOKEN },
       { name: "LIVE", value: MP_LIVE_ACCESS_TOKEN },
+      { name: "TEST", value: MP_TEST_ACCESS_TOKEN },
     ];
 
     let lastError = null;
 
     for (const { name: tokenName, value: accessToken } of tokens) {
-      if (!accessToken) continue;
+      if (!accessToken) {
+        console.log(
+          `   - Saltando token ${tokenName} porque no está configurado.`,
+        );
+        continue;
+      }
 
       try {
-        console.log(`   - Intentando reembolso con Token: ${tokenName}`);
+        console.log(`   - Intentando reembolso con Token: ${tokenName}`);
 
         const url = `https://api.mercadopago.com/v1/payments/${paymentId}/refunds`;
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-        }; // El cuerpo solo incluye el monto si se especifica un reembolso parcial
+        };
         const body =
           monto !== null && monto !== undefined
             ? { amount: parseFloat(monto) }
-            : {}; // ✅ Llamada directa a la API REST con Axios
+            : {};
 
-        const response = await axios.post(url, body, { headers }); // Éxito:
+        const response = await axios.post(url, body, { headers });
 
         console.log(
-          `✅ [MP Service] Reembolso de MP exitoso (${tokenName}) para Payment ID ${paymentId}. Refund ID: ${response.data.id}, Estado: ${response.data.status}`,
+          `✅ [MP Service] Reembolso exitoso con token ${tokenName}. Refund ID: ${
+            response.data.id
+          }, Estado: ${response.data.status}`,
         );
 
         return {
@@ -407,52 +415,43 @@ const paymentService = {
         };
       } catch (error) {
         const errorData = error.response?.data || {};
-        lastError = errorData;
+        const errorMsg = errorData.message || error.message;
+        const errorStatus = error.response?.status;
 
-        const errorMsg = errorData.message || error.message || "";
-        const errorStatus = error.response?.status || error.statusCode; // ⚠️ Manejo de errores de credenciales (401/403) para pasar al siguiente token
-
+        // Si el pago ya fue reembolsado, no seguir probando
         if (
-          (errorStatus === 401 || errorStatus === 403) &&
-          (tokenName === "TEST" || tokenName === "LIVE")
+          errorMsg.toLowerCase().includes("already refunded") ||
+          (errorStatus === 400 && errorMsg.toLowerCase().includes("refund"))
         ) {
           console.warn(
-            `   - ⚠️ Fallo con Token ${tokenName} (Status ${errorStatus}). Reintentando con el otro token.`,
-          );
-          continue; // Pasa al siguiente token
-        } // Manejo de pagos ya reembolsados, no elegibles o no encontrados (400, 404)
-
-        if (
-          errorMsg.includes("already refunded") ||
-          errorMsg.includes("refunded") ||
-          errorStatus === 400 ||
-          errorStatus === 404
-        ) {
-          console.warn(
-            `⚠️ [MP Service] El pago ${paymentId} ya fue reembolsado, no puede ser reembolsado o no fue encontrado (Status ${errorStatus}).`,
+            `⚠️ [MP Service] El pago ${paymentId} ya fue reembolsado (Status ${errorStatus}).`,
           );
           return {
             success: false,
             alreadyRefunded: true,
-            message: "El pago ya fue reembolsado o no puede ser reembolsado",
+            message: "El pago ya fue reembolsado o no puede ser reembolsado.",
           };
-        } // Si es un error crítico y no hay más tokens, lanzar error
+        }
 
+        // Si el token no es válido o no tiene permisos (401/403), probar siguiente token
+        if (errorStatus === 401 || errorStatus === 403) {
+          console.warn(
+            `   - Fallo con token ${tokenName} (Status ${errorStatus}). Reintentando con el otro token.`,
+          );
+          continue;
+        }
+
+        // Otro tipo de error crítico (400 sin mensaje de reembolso, 404, etc.)
         console.error(
           `❌ [MP Service] Fallo crítico en realizarReembolso con ${tokenName}:`,
           errorData || error.message,
         );
-
-        const finalErrorMsg =
-          errorData.message ||
-          error.message ||
-          "Fallo desconocido al solicitar reembolso.";
-        throw new Error(
-          `Fallo al solicitar reembolso a Mercado Pago: ${finalErrorMsg}`,
-        );
+        lastError = errorData;
+        break; // No seguir probando otros tokens, error grave
       }
-    } // Si llegamos aquí, es porque el bucle terminó sin éxito tras probar ambos.
+    }
 
+    // Si llegamos aquí, falló con ambos tokens o hubo error crítico
     if (!MP_LIVE_ACCESS_TOKEN && !MP_TEST_ACCESS_TOKEN) {
       throw new Error("Ningún ACCESS_TOKEN de Mercado Pago está configurado.");
     }

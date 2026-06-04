@@ -8,7 +8,7 @@ const PagoMercado = require("../models/pagoMercado");
 const { sequelize } = require("../config/database");
 const crypto = require("crypto");
 const Inversion = require("../models/inversion");
-const { Transaction } = require("sequelize");
+const { Transaction, Op } = require("sequelize");
 const emailService = require("../services/email.service");
 const usuarioService = require("../services/usuario.service");
 const mensajeService = require("../services/mensaje.service");
@@ -364,6 +364,110 @@ const paymentController = {
       }
 
       if (transaccion.estado_transaccion === "pagado") {
+        // Verificar si este webhook corresponde a un pago duplicado para la misma entidad
+        const duplicado = await this.verificarDuplicadoPorEntidad(transaccion);
+
+        if (duplicado) {
+          console.log(
+            `⚠️ Webhook duplicado detectado para la misma entidad (${duplicado.tipo}). Se intentará reembolsar este pago.`,
+          );
+          await t.rollback(); // No necesitamos la transacción actual porque la original ya está pagada
+
+          // Obtener el pago de Mercado Pago asociado a este webhook (ya lo tenemos en paymentResult)
+          const pagoMercadoDuplicado = await PagoMercado.findOne({
+            where: { id_transaccion_pasarela: transactionId },
+          });
+
+          if (
+            pagoMercadoDuplicado &&
+            pagoMercadoDuplicado.id_transaccion_pasarela
+          ) {
+            let reembolsoExitoso = false;
+            let errorReembolso = null;
+            try {
+              const resultado = await pagoMercadoService.realizarReembolso(
+                pagoMercadoDuplicado.id_transaccion_pasarela,
+                parseFloat(transaccion.monto),
+              );
+              reembolsoExitoso = resultado?.success === true;
+              if (!reembolsoExitoso && resultado?.alreadyRefunded) {
+                errorReembolso = "El pago ya estaba reembolsado";
+              } else if (!reembolsoExitoso) {
+                errorReembolso = resultado?.message || "Reembolso falló";
+              }
+            } catch (err) {
+              errorReembolso = err.message;
+              console.error(`Error en reembolso duplicado: ${errorReembolso}`);
+            }
+
+            // Notificar al usuario y admins
+            const user = await User.findByPk(transaccion.id_usuario);
+            if (user) {
+              await emailService.notificarReembolsoUsuario(
+                user,
+                transaccion,
+                `Pago duplicado para la misma ${duplicado.tipo}. El sistema intentó reembolsar automáticamente.`,
+                reembolsoExitoso,
+              );
+
+              const admins = await usuarioService.findAllAdmins();
+              for (const admin of admins) {
+                if (admin.email) {
+                  await emailService.notificarReembolsoAdminMejorada(
+                    admin.email,
+                    user,
+                    transaccion,
+                    `PAGO DUPLICADO (misma entidad ${duplicado.tipo})`,
+                    {
+                      reembolsoExitoso,
+                      errorReembolso,
+                      idPagoMP: pagoMercadoDuplicado.id_transaccion_pasarela,
+                    },
+                  );
+                }
+              }
+            }
+          } else {
+            // 🛡️ ROBUSTEZ: No se encontró el registro PagoMercado, notificar a administradores manualmente
+            console.warn(
+              `⚠️ No se encontró registro de PagoMercado para el webhook duplicado (paymentId: ${transactionId}). Se requiere revisión manual.`,
+            );
+
+            try {
+              const user = await User.findByPk(transaccion.id_usuario);
+              const admins = await usuarioService.findAllAdmins();
+              for (const admin of admins) {
+                if (admin.email) {
+                  await emailService.sendEmail(
+                    admin.email,
+                    `🚨 PAGO DUPLICADO SIN REGISTRO LOCAL - Payment ID ${transactionId}`,
+                    `Se recibió un webhook de pago duplicado para la transacción ${transaccion.id} (entidad ${duplicado.tipo}), pero no se encontró el registro PagoMercado asociado.\n\nNo se pudo reembolsar automáticamente. Revisión manual requerida.\n\nUsuario afectado: ${user?.email || transaccion.id_usuario}\nMonto: ${transaccion.monto}`,
+                    `<p>Se requiere <strong>revisión manual</strong> para el pago duplicado:</p>
+               <ul>
+                 <li><strong>Payment ID MP:</strong> ${transactionId}</li>
+                 <li><strong>Transacción local:</strong> ${transaccion.id}</li>
+                 <li><strong>Entidad duplicada:</strong> ${duplicado.tipo}</li>
+                 <li><strong>Usuario:</strong> ${user?.email || transaccion.id_usuario}</li>
+                 <li><strong>Monto:</strong> $${transaccion.monto}</li>
+               </ul>
+               <p>Este pago debe ser reembolsado manualmente desde el panel de Mercado Pago.</p>`,
+                  );
+                }
+              }
+            } catch (notifyErr) {
+              console.error(
+                "Error notificando a admins sobre duplicado sin PagoMercado:",
+                notifyErr.message,
+              );
+            }
+          }
+
+          return res
+            .status(200)
+            .send("OK - Duplicado procesado (reembolso intentado)");
+        }
+
+        // Si no es duplicado, simplemente ignorar
         await t.commit();
         console.log(
           `Transacción ${transaccionId} ya procesada. Webhook ignorado.`,
@@ -740,7 +844,60 @@ const paymentController = {
       return res.status(200).send("OK - Error procesado");
     }
   },
+  async verificarDuplicadoPorEntidad(transaccion) {
+    const {
+      tipo_transaccion,
+      id_inversion,
+      id_puja,
+      id_pago_mensual,
+      id_pago_adhesion,
+      id,
+    } = transaccion;
 
+    let whereCondition = null;
+    let tipoEntidad = "";
+
+    switch (tipo_transaccion) {
+      case "directo":
+        if (!id_inversion) return null;
+        whereCondition = { id_inversion, tipo_transaccion: "directo" };
+        tipoEntidad = "inversión";
+        break;
+      case "Puja":
+        if (!id_puja) return null;
+        whereCondition = { id_puja, tipo_transaccion: "Puja" };
+        tipoEntidad = "puja";
+        break;
+      case "mensual":
+        if (!id_pago_mensual) return null;
+        whereCondition = { id_pago_mensual };
+        tipoEntidad = "pago mensual";
+        break;
+      case "adhesion":
+        if (!id_pago_adhesion) return null;
+        whereCondition = { id_pago_adhesion };
+        tipoEntidad = "pago de adhesión";
+        break;
+      default:
+        return null;
+    }
+
+    const otraTransaccion = await Transaccion.findOne({
+      where: {
+        ...whereCondition,
+        id: { [Op.ne]: id },
+        estado_transaccion: "pagado",
+      },
+    });
+
+    if (otraTransaccion) {
+      console.log(
+        `🔍 Duplicado detectado: la ${tipoEntidad} ya tiene transacción pagada ID ${otraTransaccion.id} (actual: ${id})`,
+      );
+      return { tipo: tipoEntidad, id: otraTransaccion.id };
+    }
+    return null;
+  },
   /**
    * @async
    * @function iniciarPagoPorModelo
