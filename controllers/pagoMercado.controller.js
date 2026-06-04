@@ -272,24 +272,32 @@ const paymentController = {
 
       // ----- CASO: Transacción YA PAGADA (posible duplicado) -----
       if (transaccion.estado_transaccion === "pagado") {
-        // Verificar si este pago ya fue registrado (usando string)
-        const pagoExistente = await PagoMercado.findOne({
-          where: { id_transaccion_pasarela: transactionIdStr },
-        });
+        // Verificar si este pago ya fue procesado (duplicado)
+        const transactionIdStr = String(transactionId);
+        let pagoExistente;
+        try {
+          pagoExistente = await PagoMercado.findOne({
+            where: { id_transaccion_pasarela: transactionIdStr },
+            transaction: t,
+            lock: t.LOCK.UPDATE, // evitar concurrencia
+          });
+        } catch (err) {
+          console.error("Error al buscar pago existente:", err.message);
+        }
+
         if (pagoExistente) {
           console.log(
             `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando.`,
           );
-          await t.rollback();
+          await t.commit();
           return res.status(200).send("OK - Pago ya registrado");
         }
 
         console.log(
           `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
         );
-        await t.rollback(); // No necesitamos la transacción actual
 
-        // Reembolso directo
+        // REEMBOLSO DIRECTO (una sola vez)
         let reembolsoExitoso = false;
         let errorReembolso = null;
         try {
@@ -308,22 +316,31 @@ const paymentController = {
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
         }
 
-        // Guardar registro con estado válido del enum
+        // Guardar registro del pago duplicado (auditoría) con estado válido del enum
         const estadoRegistro = reembolsoExitoso ? "devuelto" : "rechazado";
         try {
-          await PagoMercado.create({
-            id_transaccion: transaccion.id,
-            monto_pagado: transaccion.monto,
-            metodo_pasarela: metodo,
-            id_transaccion_pasarela: transactionIdStr,
-            estado: estadoRegistro,
-            detalles_raw: { error: errorReembolso, duplicado: true },
-          });
+          await PagoMercado.create(
+            {
+              id_transaccion: transaccion.id,
+              monto_pagado: transaccion.monto,
+              metodo_pasarela: metodo,
+              id_transaccion_pasarela: transactionIdStr,
+              estado: estadoRegistro,
+              detalles_raw: { error: errorReembolso, duplicado: true },
+            },
+            { transaction: t },
+          );
+          await t.commit();
         } catch (dbErr) {
+          await t.rollback();
           console.error("No se pudo guardar el pago duplicado:", dbErr.message);
+          // No podemos continuar porque el registro es necesario para evitar reintentos
+          return res
+            .status(200)
+            .send("OK - Error interno al guardar duplicado");
         }
 
-        // Notificaciones
+        // Notificaciones (solo si se creó el registro ahora, es decir, primera vez)
         const user = await User.findByPk(transaccion.id_usuario);
         if (user) {
           await emailService.notificarReembolsoUsuario(

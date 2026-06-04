@@ -367,36 +367,27 @@ const paymentService = {
     console.log(
       `➡️ [MP Service] Solicitando reembolso para Payment ID: ${paymentId}. Monto: ${monto ?? "Total"}`,
     );
-
-    // Idempotency key única por pago y timestamp
     const idempotencyKey = `${paymentId}-${Date.now()}`;
-
     const tokens = [
       { name: "LIVE", value: MP_LIVE_ACCESS_TOKEN },
       { name: "TEST", value: MP_TEST_ACCESS_TOKEN },
     ];
-
     let lastError = null;
-
     for (const { name: tokenName, value: accessToken } of tokens) {
       if (!accessToken) continue;
-
       try {
         console.log(`   - Intentando reembolso con Token: ${tokenName}`);
-
         const url = `https://api.mercadopago.com/v1/payments/${paymentId}/refunds`;
         const headers = {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-          "X-Idempotency-Key": idempotencyKey, // ✅ Agregado
+          "X-Idempotency-Key": idempotencyKey,
         };
         const body =
           monto !== null && monto !== undefined
             ? { amount: parseFloat(monto) }
             : {};
-
         const response = await axios.post(url, body, { headers });
-
         console.log(
           `✅ Reembolso exitoso con token ${tokenName}. Refund ID: ${response.data.id}, Estado: ${response.data.status}`,
         );
@@ -410,15 +401,13 @@ const paymentService = {
         const errorData = error.response?.data || {};
         const errorMsg = errorData.message || error.message;
         const errorStatus = error.response?.status;
-
-        // Ver si el pago ya fue reembolsado (códigos comunes: 400 con causa "already refunded", o 423)
         if (
           errorMsg.toLowerCase().includes("already refunded") ||
           errorStatus === 423 ||
           (errorStatus === 400 && errorMsg.toLowerCase().includes("refund"))
         ) {
           console.warn(
-            `⚠️ [MP Service] El pago ${paymentId} ya fue reembolsado o está en proceso (Status ${errorStatus}).`,
+            `⚠️ El pago ${paymentId} ya fue reembolsado (Status ${errorStatus}).`,
           );
           return {
             success: false,
@@ -426,16 +415,12 @@ const paymentService = {
             message: "El pago ya fue reembolsado o está en proceso.",
           };
         }
-
-        // Si el token no es válido (401/403), probar siguiente
         if (errorStatus === 401 || errorStatus === 403) {
           console.warn(
             `   - Fallo con token ${tokenName} (Status ${errorStatus}). Reintentando con otro token.`,
           );
           continue;
         }
-
-        // Error crítico
         console.error(
           `❌ Fallo crítico con token ${tokenName}:`,
           errorData || error.message,
@@ -444,7 +429,6 @@ const paymentService = {
         break;
       }
     }
-
     throw new Error(
       `No se pudo reembolsar. Último error: ${lastError?.message || "Desconocido"}`,
     );
