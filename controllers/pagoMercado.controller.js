@@ -1,5 +1,5 @@
 // Archivo: controllers/pagoMercado.controller.js
-// VERSIÓN CORREGIDA - VALIDACIÓN ÚNICA DE FIRMA Y REEMBOLSO DIRECTO PARA DUPLICADOS
+// VERSIÓN CORREGIDA CON LOGS DE VALIDACIÓN Y REEMBOLSO DE DUPLICADOS
 
 const transaccionService = require("../services/transaccion.service");
 const pagoMercadoService = require("../services/pagoMercado.service");
@@ -35,7 +35,6 @@ function verifySignatureForId(req, dataId) {
     return false;
   }
 
-  // Extraer ts y v1 de la firma
   const parts = signatureHeader.split(",");
   let ts = null,
     v1 = null;
@@ -52,7 +51,6 @@ function verifySignatureForId(req, dataId) {
   const computeHash = (manifest) =>
     crypto.createHmac("sha256", secret).update(manifest).digest("hex");
 
-  // Intentar con request-id (si existe)
   if (requestId) {
     const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
     const hash = computeHash(manifest);
@@ -65,7 +63,6 @@ function verifySignatureForId(req, dataId) {
     }
   }
 
-  // Sin request-id
   const manifestNoReq = `id:${dataId};ts:${ts};`;
   const hashNoReq = computeHash(manifestNoReq);
   console.log(`🔍 DEBUG: manifest sin request-id: ${manifestNoReq}`);
@@ -98,9 +95,6 @@ function extractDataId(req) {
 }
 
 const paymentController = {
-  /**
-   * Crea un nuevo checkout o regenera uno para una transacción existente.
-   */
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
     const { id_transaccion, metodo = "mercadopago" } = req.body;
@@ -167,9 +161,6 @@ const paymentController = {
     }
   },
 
-  /**
-   * Endpoint simplificado para generar un checkout de pago para una Inversión pendiente.
-   */
   async createCheckout(req, res) {
     const userId = req.user.id;
     const { id_inversion, metodo = "mercadopago" } = req.body;
@@ -199,11 +190,7 @@ const paymentController = {
     return this.createCheckoutGenerico(req, res);
   },
 
-  /**
-   * WEBHOOK CRÍTICO: Procesa notificaciones de Mercado Pago.
-   */
   async handleWebhook(req, res) {
-    // 1. Extraer topic e ID real
     const topic =
       req.query.topic || req.body?.topic || req.query.type || req.body?.type;
     let dataId = extractDataId(req);
@@ -218,21 +205,17 @@ const paymentController = {
       `⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`,
     );
 
-    // 2. Ignorar Merchant Orders (evitan errores de SDK)
+    // Ignorar Merchant Orders
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
-      console.log(
-        `ℹ️ Notificación de Merchant Order ${dataId} ignorada (no se procesa automáticamente).`,
-      );
+      console.log(`ℹ️ Notificación de Merchant Order ${dataId} ignorada.`);
       return res.status(200).send("OK - Merchant Order ignorada");
     }
 
-    // 3. Solo pagos
     if (topic !== "payment") {
       console.log(`Topic no soportado: ${topic}, ignorado`);
       return res.status(200).send("OK");
     }
 
-    // 4. Obtener detalles del pago
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
       metodo,
@@ -250,7 +233,6 @@ const paymentController = {
       rawDetails,
     } = paymentResult;
 
-    // ✅ Convertir transactionId a string para evitar error de tipo
     const transactionIdStr = String(transactionId);
     const internalStatus = MP_STATUS_MAP[status] || "en_proceso";
 
@@ -270,139 +252,35 @@ const paymentController = {
         return res.status(404).send("Transacción no encontrada");
       }
 
-      // ----- CASO: Transacción YA PAGADA (posible duplicado) -----
+      // ========== CASO: TRANSACCIÓN YA PAGADA (DUPLICADO) ==========
       if (transaccion.estado_transaccion === "pagado") {
-        const transactionIdStr = String(transactionId);
-        // Usar findOrCreate con un estado válido inicial (pendiente o en_proceso)
-        const [pagoRegistro, created] = await PagoMercado.findOrCreate({
-          where: { id_transaccion_pasarela: transactionIdStr },
-          defaults: {
-            id_transaccion: transaccion.id,
-            monto_pagado: transaccion.monto,
-            metodo_pasarela: metodo,
-            estado: "en_proceso", // ✅ estado válido
-            detalles_raw: { processing: true, fecha: new Date() },
-          },
-          transaction: t,
-          lock: t.LOCK.UPDATE,
-        });
-
-        if (!created) {
-          console.log(
-            `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoRegistro.estado}). Ignorando.`,
-          );
-          await t.commit();
-          return res.status(200).send("OK - Pago ya procesado");
-        }
-
         console.log(
           `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
         );
+        await t.rollback(); // No necesitamos transacción de BD para el reembolso
 
         let reembolsoExitoso = false;
         let errorReembolso = null;
-        let estadoFinal = "rechazado";
-        let reintentar = false;
-
         try {
           const resultado = await pagoMercadoService.realizarReembolso(
             transactionIdStr,
             parseFloat(transaccion.monto),
           );
           reembolsoExitoso = resultado?.success === true;
-          if (reembolsoExitoso) {
-            estadoFinal = "devuelto";
-          } else if (resultado?.alreadyRefunded) {
+          if (!reembolsoExitoso && resultado?.alreadyRefunded) {
             errorReembolso = "El pago ya estaba reembolsado";
-            estadoFinal = "devuelto";
-          } else {
+            reembolsoExitoso = true; // Considerar como éxito para la notificación
+          } else if (!reembolsoExitoso) {
             errorReembolso = resultado?.message || "Reembolso falló";
-            if (
-              errorReembolso &&
-              (errorReembolso.includes("Movement operations pending") ||
-                errorReembolso.includes("409"))
-            ) {
-              reintentar = true;
-              estadoFinal = "pendiente"; // lo dejamos pendiente para reintentar después
-            } else {
-              estadoFinal = "rechazado";
-            }
           }
         } catch (err) {
           errorReembolso = err.message;
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
-          if (
-            errorReembolso &&
-            (errorReembolso.includes("Movement operations pending") ||
-              errorReembolso.includes("409"))
-          ) {
-            reintentar = true;
-            estadoFinal = "pendiente";
-          } else {
-            estadoFinal = "rechazado";
-          }
         }
 
-        // Actualizar el registro con el estado final
-        await pagoRegistro.update(
-          {
-            estado: estadoFinal,
-            detalles_raw: {
-              error: errorReembolso,
-              duplicado: true,
-              reintentar,
-              fecha: new Date(),
-            },
-          },
-          { transaction: t },
-        );
-
-        await t.commit();
-
-        // Si requiere reintento, programar una tarea
-        if (reintentar) {
-          console.log(
-            `⏰ Reembolso pendiente para ${transactionIdStr}. Se reintentará en 10 segundos.`,
-          );
-          setTimeout(async () => {
-            try {
-              const resultado2 = await pagoMercadoService.realizarReembolso(
-                transactionIdStr,
-                parseFloat(transaccion.monto),
-              );
-              const exitoso = resultado2?.success === true;
-              const nuevoEstado = exitoso ? "devuelto" : "rechazado";
-              await PagoMercado.update(
-                {
-                  estado: nuevoEstado,
-                  detalles_raw: {
-                    ...pagoRegistro.detalles_raw,
-                    reintento_exitoso: exitoso,
-                    reintento_fecha: new Date(),
-                  },
-                },
-                { where: { id: pagoRegistro.id } },
-              );
-              if (exitoso)
-                console.log(
-                  `✅ Reembolso exitoso en reintento para ${transactionIdStr}`,
-                );
-              else
-                console.log(
-                  `❌ Reembolso falló en reintento para ${transactionIdStr}`,
-                );
-            } catch (err2) {
-              console.error(
-                `Error en reintento de reembolso para ${transactionIdStr}:`,
-                err2.message,
-              );
-            }
-          }, 10000);
-        }
-
-        // Notificaciones (solo si es primera vez que se procesa este pago)
+        // Notificar al usuario y admins
         const user = await User.findByPk(transaccion.id_usuario);
-        if (user && !reintentar) {
+        if (user) {
           await emailService.notificarReembolsoUsuario(
             user,
             transaccion,
@@ -426,19 +304,15 @@ const paymentController = {
             }
           }
         }
-        return res
-          .status(200)
-          .send(
-            "OK - Duplicado procesado" +
-              (reintentar ? " (reintento pendiente)" : ""),
-          );
+        return res.status(200).send("OK - Duplicado procesado");
       }
 
-      // ----- Transacción NO pagada todavía (flujo normal) -----
+      // ========== TRANSACCIÓN NO PAGADA (FLUJO NORMAL) ==========
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         transaction: t,
       });
+
       const pagoData = {
         estado: internalStatus,
         id_transaccion_pasarela: transactionIdStr,
@@ -446,6 +320,12 @@ const paymentController = {
         fecha_aprobacion: paymentDetails?.date_approved,
         detalles_raw: rawDetails,
       };
+
+      // LOG DE DEPURACIÓN: muestra los datos que se van a guardar
+      console.log(
+        "📦 Datos a guardar en PagoMercado:",
+        JSON.stringify(pagoData, null, 2),
+      );
 
       if (!pagoMercado) {
         pagoMercado = await PagoMercado.create(
@@ -499,10 +379,20 @@ const paymentController = {
     } catch (error) {
       await t.rollback();
       console.error(`❌ Error en webhook:`, error.message);
+      // Detalle específico para errores de validación de Sequelize
+      if (error.name === "SequelizeValidationError") {
+        console.error("🔍 Detalles de validación:");
+        error.errors.forEach((err) => {
+          console.error(
+            `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
+          );
+        });
+      }
       return res.status(200).send("OK - Error interno");
     }
   },
 
+  // Las siguientes funciones permanecen sin cambios
   async verificarDuplicadoPorEntidad(transaccion) {
     const {
       tipo_transaccion,
@@ -554,29 +444,23 @@ const paymentController = {
     return null;
   },
 
-  /**
-   * Endpoint genérico que inicia una transacción y checkout para cualquier modelo
-   */
   async iniciarPagoPorModelo(req, res) {
     try {
       const { modelo, modeloId } = req.params;
       const userId = req.user.id;
       const idNumerico = parseInt(modeloId);
-
       if (!modelo || isNaN(idNumerico) || idNumerico <= 0) {
         return res.status(400).json({
           error:
             "Ruta de pago inválida. Se requiere /:modelo/:modeloId, donde :modeloId es un número válido.",
         });
       }
-
       const { transaccion, redirectUrl } =
         await transaccionService.iniciarTransaccionYCheckout(
           modelo,
           idNumerico,
           userId,
         );
-
       res.status(200).json({
         success: true,
         message: `Transacción #${transaccion.id} creada. Redireccionando a la pasarela de pago.`,
@@ -594,9 +478,6 @@ const paymentController = {
     }
   },
 
-  /**
-   * Redirección: Maneja la respuesta GET del usuario desde la pasarela de pago.
-   */
   async handleCheckoutRedirect(req, res) {
     const { id_transaccion, collection_status, status } = req.query;
     if (!id_transaccion) {
@@ -630,35 +511,27 @@ const paymentController = {
     }
   },
 
-  /**
-   * Obtiene el estado actual de una transacción y opcionalmente fuerza actualización.
-   */
   async getPaymentStatus(req, res) {
     try {
       const { id_transaccion } = req.params;
       const { refresh } = req.query;
       const userId = req.user.id;
-
       let transaccion = await Transaccion.findOne({
         where: { id: id_transaccion, id_usuario: userId },
       });
-
       if (!transaccion) {
         return res.status(404).json({
           error: "Transacción no encontrada o no te pertenece.",
         });
       }
-
       const statusFinal = ["pagado", "fallido", "reembolsado"];
       const needsRefresh =
         refresh === "true" &&
         !statusFinal.includes(transaccion.estado_transaccion);
-
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         order: [["createdAt", "DESC"]],
       });
-
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
         console.log(
           `Forzando actualización de estado para transacción ${id_transaccion}`,
@@ -672,7 +545,6 @@ const paymentController = {
           pagoMercado = updatedData.pagoMercado;
         }
       }
-
       const pagoDetalle = pagoMercado
         ? {
             id: pagoMercado.id,
@@ -683,7 +555,6 @@ const paymentController = {
             fecha: pagoMercado.fecha_aprobacion || pagoMercado.createdAt,
           }
         : null;
-
       res.status(200).json({
         transaccion: {
           id: transaccion.id,
@@ -705,9 +576,6 @@ const paymentController = {
   },
 };
 
-// Exportar el controlador principal
 module.exports = paymentController;
-
-// Exportar helpers (opcional)
-module.exports.verifySignature = verifySignatureForId; // Para compatibilidad si alguien lo usa
+module.exports.verifySignature = verifySignatureForId;
 module.exports.extractDataId = extractDataId;
