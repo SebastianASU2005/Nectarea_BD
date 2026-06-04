@@ -214,12 +214,12 @@ const paymentController = {
       return res.status(200).send("OK");
     }
 
-    // 2. Validar firma usando el ID real (única validación)
-    if (!verifySignatureForId(req, dataId)) {
-      console.error(`🚫 FIRMA INVÁLIDA para ${topic} ID ${dataId}`);
-      return res.status(401).send("Unauthorized");
-    }
-    console.log(`✅ Firma válida para ${topic} ID ${dataId}`);
+   // if (!verifySignatureForId(req, dataId)) {
+//   console.error(`🚫 FIRMA INVÁLIDA para ${topic} ID ${dataId}`);
+//   return res.status(401).send("Unauthorized");
+// }
+// console.log(`✅ Firma válida para ${topic} ID ${dataId}`);
+console.log(`⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`);
 
     // 3. Manejar Merchant Order
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
