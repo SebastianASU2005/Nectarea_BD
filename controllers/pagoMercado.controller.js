@@ -365,7 +365,7 @@ const paymentController = {
 
       if (transaccion.estado_transaccion === "pagado") {
         // Verificar si este webhook corresponde a un pago duplicado para la misma entidad
-        const duplicado = await this.verificarDuplicadoPorEntidad(transaccion);
+        const duplicado = await paymentController.verificarDuplicadoPorEntidad(transaccion);
 
         if (duplicado) {
           console.log(
