@@ -203,7 +203,7 @@ const paymentController = {
    * WEBHOOK CRÍTICO: Procesa notificaciones de Mercado Pago.
    */
   async handleWebhook(req, res) {
-    // 1. Extraer topic e ID real (sin validación aún)
+    // 1. Extraer topic e ID real
     const topic =
       req.query.topic || req.body?.topic || req.query.type || req.body?.type;
     let dataId = extractDataId(req);
@@ -214,12 +214,11 @@ const paymentController = {
       return res.status(200).send("OK");
     }
 
-    // 2. Validar firma (desactivada en modo prueba)
     console.log(
       `⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`,
     );
 
-    // 3. Manejar Merchant Order: ignorar para evitar errores
+    // 2. Ignorar Merchant Orders (evitan errores de SDK)
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
       console.log(
         `ℹ️ Notificación de Merchant Order ${dataId} ignorada (no se procesa automáticamente).`,
@@ -227,13 +226,13 @@ const paymentController = {
       return res.status(200).send("OK - Merchant Order ignorada");
     }
 
-    // 4. Solo pagos (topic === "payment")
+    // 3. Solo pagos
     if (topic !== "payment") {
       console.log(`Topic no soportado: ${topic}, ignorado`);
       return res.status(200).send("OK");
     }
 
-    // 5. Obtener detalles del pago
+    // 4. Obtener detalles del pago
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
       metodo,
@@ -250,6 +249,9 @@ const paymentController = {
       transactionId,
       rawDetails,
     } = paymentResult;
+
+    // ✅ Convertir transactionId a string para evitar error de tipo
+    const transactionIdStr = String(transactionId);
     const internalStatus = MP_STATUS_MAP[status] || "en_proceso";
 
     const t = await sequelize.transaction({
@@ -268,31 +270,31 @@ const paymentController = {
         return res.status(404).send("Transacción no encontrada");
       }
 
-      // ----- CASO: Transacción YA PAGADA -----
+      // ----- CASO: Transacción YA PAGADA (posible duplicado) -----
       if (transaccion.estado_transaccion === "pagado") {
-        // 🔥 Evitar procesar el mismo pago dos veces
+        // Verificar si este pago ya fue registrado (usando string)
         const pagoExistente = await PagoMercado.findOne({
-          where: { id_transaccion_pasarela: transactionId },
+          where: { id_transaccion_pasarela: transactionIdStr },
         });
         if (pagoExistente) {
           console.log(
-            `ℹ️ El pago MP ${transactionId} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando.`,
+            `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando.`,
           );
           await t.rollback();
           return res.status(200).send("OK - Pago ya registrado");
         }
 
         console.log(
-          `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionId}...`,
+          `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
         );
         await t.rollback(); // No necesitamos la transacción actual
 
-        // REEMBOLSO DIRECTO
+        // Reembolso directo
         let reembolsoExitoso = false;
         let errorReembolso = null;
         try {
           const resultado = await pagoMercadoService.realizarReembolso(
-            transactionId,
+            transactionIdStr,
             parseFloat(transaccion.monto),
           );
           reembolsoExitoso = resultado?.success === true;
@@ -306,14 +308,14 @@ const paymentController = {
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
         }
 
-        // ✅ Guardar registro con estado válido del enum
+        // Guardar registro con estado válido del enum
         const estadoRegistro = reembolsoExitoso ? "devuelto" : "rechazado";
         try {
           await PagoMercado.create({
             id_transaccion: transaccion.id,
             monto_pagado: transaccion.monto,
             metodo_pasarela: metodo,
-            id_transaccion_pasarela: transactionId,
+            id_transaccion_pasarela: transactionIdStr,
             estado: estadoRegistro,
             detalles_raw: { error: errorReembolso, duplicado: true },
           });
@@ -337,8 +339,12 @@ const paymentController = {
                 admin.email,
                 user,
                 transaccion,
-                `PAGO DUPLICADO - Transacción #${transaccion.id} - Payment MP ${transactionId}`,
-                { reembolsoExitoso, errorReembolso, idPagoMP: transactionId },
+                `PAGO DUPLICADO - Transacción #${transaccion.id} - Payment MP ${transactionIdStr}`,
+                {
+                  reembolsoExitoso,
+                  errorReembolso,
+                  idPagoMP: transactionIdStr,
+                },
               );
             }
           }
@@ -353,7 +359,7 @@ const paymentController = {
       });
       const pagoData = {
         estado: internalStatus,
-        id_transaccion_pasarela: transactionId,
+        id_transaccion_pasarela: transactionIdStr,
         tipo_medio_pago: paymentDetails?.payment_method_type,
         fecha_aprobacion: paymentDetails?.date_approved,
         detalles_raw: rawDetails,
