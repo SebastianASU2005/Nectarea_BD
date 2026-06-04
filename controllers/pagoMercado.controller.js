@@ -272,81 +272,143 @@ const paymentController = {
 
       // ----- CASO: Transacción YA PAGADA (posible duplicado) -----
       if (transaccion.estado_transaccion === "pagado") {
-        // Verificar si este pago ya fue procesado (duplicado)
         const transactionIdStr = String(transactionId);
-        let pagoExistente;
-        try {
-          pagoExistente = await PagoMercado.findOne({
-            where: { id_transaccion_pasarela: transactionIdStr },
-            transaction: t,
-            lock: t.LOCK.UPDATE, // evitar concurrencia
-          });
-        } catch (err) {
-          console.error("Error al buscar pago existente:", err.message);
-        }
 
-        if (pagoExistente) {
+        // Usar findOrCreate para evitar duplicados de procesamiento
+        const [pagoRegistro, created] = await PagoMercado.findOrCreate({
+          where: { id_transaccion_pasarela: transactionIdStr },
+          defaults: {
+            id_transaccion: transaccion.id,
+            monto_pagado: transaccion.monto,
+            metodo_pasarela: metodo,
+            estado: "en_proceso", // estado temporal
+            detalles_raw: { processing: true, fecha: new Date() },
+          },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+
+        if (!created) {
           console.log(
-            `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando.`,
+            `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoRegistro.estado}). Ignorando.`,
           );
           await t.commit();
-          return res.status(200).send("OK - Pago ya registrado");
+          return res.status(200).send("OK - Pago ya procesado");
         }
 
         console.log(
           `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
         );
 
-        // REEMBOLSO DIRECTO (una sola vez)
         let reembolsoExitoso = false;
         let errorReembolso = null;
+        let estadoFinal = "rechazado"; // por defecto
+        let reintentar = false;
+
         try {
           const resultado = await pagoMercadoService.realizarReembolso(
             transactionIdStr,
             parseFloat(transaccion.monto),
           );
           reembolsoExitoso = resultado?.success === true;
-          if (!reembolsoExitoso && resultado?.alreadyRefunded) {
+          if (reembolsoExitoso) {
+            estadoFinal = "devuelto";
+          } else if (resultado?.alreadyRefunded) {
             errorReembolso = "El pago ya estaba reembolsado";
-          } else if (!reembolsoExitoso) {
+            estadoFinal = "devuelto"; // ya está reembolsado, lo marcamos como devuelto
+          } else {
             errorReembolso = resultado?.message || "Reembolso falló";
+            // Verificar si el error es "Movement operations pending" (código 6029)
+            if (
+              errorReembolso &&
+              errorReembolso.includes("Movement operations pending")
+            ) {
+              reintentar = true;
+              estadoFinal = "pendiente"; // lo dejamos pendiente para reintentar después
+            } else {
+              estadoFinal = "rechazado";
+            }
           }
         } catch (err) {
           errorReembolso = err.message;
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
+          if (
+            errorReembolso &&
+            errorReembolso.includes("Movement operations pending")
+          ) {
+            reintentar = true;
+            estadoFinal = "pendiente";
+          } else {
+            estadoFinal = "rechazado";
+          }
         }
 
-        // Guardar registro del pago duplicado (auditoría) con estado válido del enum
-        const estadoRegistro = reembolsoExitoso ? "devuelto" : "rechazado";
-        try {
-          await PagoMercado.create(
-            {
-              id_transaccion: transaccion.id,
-              monto_pagado: transaccion.monto,
-              metodo_pasarela: metodo,
-              id_transaccion_pasarela: transactionIdStr,
-              estado: estadoRegistro,
-              detalles_raw: { error: errorReembolso, duplicado: true },
+        // Actualizar el registro con el estado final
+        await pagoRegistro.update(
+          {
+            estado: estadoFinal,
+            detalles_raw: {
+              error: errorReembolso,
+              duplicado: true,
+              reintentar: reintentar,
+              fecha: new Date(),
             },
-            { transaction: t },
+          },
+          { transaction: t },
+        );
+
+        await t.commit();
+
+        // Si requiere reintento, programar una tarea asíncrona (por ejemplo, usando setTimeout)
+        if (reintentar) {
+          console.log(
+            `⏰ El reembolso para ${transactionIdStr} está pendiente. Se reintentará en 10 segundos.`,
           );
-          await t.commit();
-        } catch (dbErr) {
-          await t.rollback();
-          console.error("No se pudo guardar el pago duplicado:", dbErr.message);
-          // No podemos continuar porque el registro es necesario para evitar reintentos
-          return res
-            .status(200)
-            .send("OK - Error interno al guardar duplicado");
+          setTimeout(async () => {
+            try {
+              // Volver a intentar el reembolso (sin crear un nuevo registro)
+              const resultado2 = await pagoMercadoService.realizarReembolso(
+                transactionIdStr,
+                parseFloat(transaccion.monto),
+              );
+              const exitoso = resultado2?.success === true;
+              const nuevoEstado = exitoso ? "devuelto" : "rechazado";
+              await PagoMercado.update(
+                {
+                  estado: nuevoEstado,
+                  detalles_raw: {
+                    ...pagoRegistro.detalles_raw,
+                    reintento_exitoso: exitoso,
+                  },
+                },
+                { where: { id: pagoRegistro.id } },
+              );
+              if (exitoso) {
+                console.log(
+                  `✅ Reembolso exitoso en reintento para ${transactionIdStr}`,
+                );
+              } else {
+                console.log(
+                  `❌ Reembolso falló en reintento para ${transactionIdStr}`,
+                );
+              }
+            } catch (err2) {
+              console.error(
+                `Error en reintento de reembolso para ${transactionIdStr}:`,
+                err2.message,
+              );
+            }
+          }, 10000); // 10 segundos
         }
 
-        // Notificaciones (solo si se creó el registro ahora, es decir, primera vez)
+        // Notificaciones (solo si el registro se creó ahora)
         const user = await User.findByPk(transaccion.id_usuario);
-        if (user) {
+        if (user && !reintentar) {
+          // si reintenta, no notificar ahora (se notificará después)
           await emailService.notificarReembolsoUsuario(
             user,
             transaccion,
-            `Pago duplicado para la transacción ya pagada. El sistema intentó reembolsar automáticamente.`,
+            `Pago duplicado detectado. El sistema ${reembolsoExitoso ? "reembolsó" : "NO pudo reembolsar"} automáticamente.`,
             reembolsoExitoso,
           );
           const admins = await usuarioService.findAllAdmins();
@@ -366,7 +428,12 @@ const paymentController = {
             }
           }
         }
-        return res.status(200).send("OK - Duplicado reembolsado");
+        return res
+          .status(200)
+          .send(
+            "OK - Duplicado procesado" +
+              (reintentar ? " (reintento programado)" : ""),
+          );
       }
 
       // ----- Transacción NO pagada todavía (flujo normal) -----

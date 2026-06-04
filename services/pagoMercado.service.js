@@ -415,6 +415,19 @@ const paymentService = {
             message: "El pago ya fue reembolsado o está en proceso.",
           };
         }
+        if (
+          errorStatus === 409 &&
+          errorMsg.includes("Movement operations pending")
+        ) {
+          console.warn(
+            `⏰ Pago ${paymentId} en proceso, no se puede reembolsar aún. Se reintentará más tarde.`,
+          );
+          return {
+            success: false,
+            pending: true,
+            message: "Movement operations pending. Reintentar más tarde.",
+          };
+        }
         if (errorStatus === 401 || errorStatus === 403) {
           console.warn(
             `   - Fallo con token ${tokenName} (Status ${errorStatus}). Reintentando con otro token.`,
