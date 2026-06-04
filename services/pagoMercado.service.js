@@ -428,6 +428,15 @@ const paymentService = {
             message: "Movement operations pending. Reintentar más tarde.",
           };
         }
+        if (
+          errorStatus === 409 &&
+          errorMsg.includes("Movement operations pending")
+        ) {
+          console.warn(
+            `⏰ Reembolso para ${paymentId} en conflicto: movimiento pendiente. Se reintentará más tarde.`,
+          );
+          return { success: false, pending: true, message: errorMsg };
+        }
         if (errorStatus === 401 || errorStatus === 403) {
           console.warn(
             `   - Fallo con token ${tokenName} (Status ${errorStatus}). Reintentando con otro token.`,

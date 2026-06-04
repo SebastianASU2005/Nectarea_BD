@@ -273,15 +273,14 @@ const paymentController = {
       // ----- CASO: Transacción YA PAGADA (posible duplicado) -----
       if (transaccion.estado_transaccion === "pagado") {
         const transactionIdStr = String(transactionId);
-
-        // Usar findOrCreate para evitar duplicados de procesamiento
+        // Usar findOrCreate con un estado válido inicial (pendiente o en_proceso)
         const [pagoRegistro, created] = await PagoMercado.findOrCreate({
           where: { id_transaccion_pasarela: transactionIdStr },
           defaults: {
             id_transaccion: transaccion.id,
             monto_pagado: transaccion.monto,
             metodo_pasarela: metodo,
-            estado: "en_proceso", // estado temporal
+            estado: "en_proceso", // ✅ estado válido
             detalles_raw: { processing: true, fecha: new Date() },
           },
           transaction: t,
@@ -302,7 +301,7 @@ const paymentController = {
 
         let reembolsoExitoso = false;
         let errorReembolso = null;
-        let estadoFinal = "rechazado"; // por defecto
+        let estadoFinal = "rechazado";
         let reintentar = false;
 
         try {
@@ -315,13 +314,13 @@ const paymentController = {
             estadoFinal = "devuelto";
           } else if (resultado?.alreadyRefunded) {
             errorReembolso = "El pago ya estaba reembolsado";
-            estadoFinal = "devuelto"; // ya está reembolsado, lo marcamos como devuelto
+            estadoFinal = "devuelto";
           } else {
             errorReembolso = resultado?.message || "Reembolso falló";
-            // Verificar si el error es "Movement operations pending" (código 6029)
             if (
               errorReembolso &&
-              errorReembolso.includes("Movement operations pending")
+              (errorReembolso.includes("Movement operations pending") ||
+                errorReembolso.includes("409"))
             ) {
               reintentar = true;
               estadoFinal = "pendiente"; // lo dejamos pendiente para reintentar después
@@ -334,7 +333,8 @@ const paymentController = {
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
           if (
             errorReembolso &&
-            errorReembolso.includes("Movement operations pending")
+            (errorReembolso.includes("Movement operations pending") ||
+              errorReembolso.includes("409"))
           ) {
             reintentar = true;
             estadoFinal = "pendiente";
@@ -350,7 +350,7 @@ const paymentController = {
             detalles_raw: {
               error: errorReembolso,
               duplicado: true,
-              reintentar: reintentar,
+              reintentar,
               fecha: new Date(),
             },
           },
@@ -359,14 +359,13 @@ const paymentController = {
 
         await t.commit();
 
-        // Si requiere reintento, programar una tarea asíncrona (por ejemplo, usando setTimeout)
+        // Si requiere reintento, programar una tarea
         if (reintentar) {
           console.log(
-            `⏰ El reembolso para ${transactionIdStr} está pendiente. Se reintentará en 10 segundos.`,
+            `⏰ Reembolso pendiente para ${transactionIdStr}. Se reintentará en 10 segundos.`,
           );
           setTimeout(async () => {
             try {
-              // Volver a intentar el reembolso (sin crear un nuevo registro)
               const resultado2 = await pagoMercadoService.realizarReembolso(
                 transactionIdStr,
                 parseFloat(transaccion.monto),
@@ -379,32 +378,31 @@ const paymentController = {
                   detalles_raw: {
                     ...pagoRegistro.detalles_raw,
                     reintento_exitoso: exitoso,
+                    reintento_fecha: new Date(),
                   },
                 },
                 { where: { id: pagoRegistro.id } },
               );
-              if (exitoso) {
+              if (exitoso)
                 console.log(
                   `✅ Reembolso exitoso en reintento para ${transactionIdStr}`,
                 );
-              } else {
+              else
                 console.log(
                   `❌ Reembolso falló en reintento para ${transactionIdStr}`,
                 );
-              }
             } catch (err2) {
               console.error(
                 `Error en reintento de reembolso para ${transactionIdStr}:`,
                 err2.message,
               );
             }
-          }, 10000); // 10 segundos
+          }, 10000);
         }
 
-        // Notificaciones (solo si el registro se creó ahora)
+        // Notificaciones (solo si es primera vez que se procesa este pago)
         const user = await User.findByPk(transaccion.id_usuario);
         if (user && !reintentar) {
-          // si reintenta, no notificar ahora (se notificará después)
           await emailService.notificarReembolsoUsuario(
             user,
             transaccion,
@@ -432,7 +430,7 @@ const paymentController = {
           .status(200)
           .send(
             "OK - Duplicado procesado" +
-              (reintentar ? " (reintento programado)" : ""),
+              (reintentar ? " (reintento pendiente)" : ""),
           );
       }
 
