@@ -214,30 +214,17 @@ const paymentController = {
       return res.status(200).send("OK");
     }
 
-    // 2. Validar firma (si está activada) - Opcional: puedes comentar mientras pruebas
-    // if (!verifySignatureForId(req, dataId)) {
-    //   console.error(`🚫 FIRMA INVÁLIDA para ${topic} ID ${dataId}`);
-    //   return res.status(401).send("Unauthorized");
-    // }
-    // console.log(`✅ Firma válida para ${topic} ID ${dataId}`);
+    // 2. Validar firma (desactivada en modo prueba)
     console.log(
       `⚠️ [MODO PRUEBA] Validación de firma desactivada para ${topic} ID ${dataId}`,
     );
 
-    // 3. Manejar Merchant Order
+    // 3. Manejar Merchant Order: ignorar para evitar errores
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
-      try {
-        console.log(`🔄 Merchant Order ${dataId} recibida. Procesando...`);
-        await pagoMercadoService.procesarPagosDeMerchantOrder(dataId);
-        console.log(`✅ Merchant Order ${dataId} procesada.`);
-        return res.status(200).send("OK - Merchant Order procesada");
-      } catch (error) {
-        console.error(
-          `❌ Error al procesar Merchant Order ${dataId}:`,
-          error.message,
-        );
-        return res.status(200).send("OK - Error en procesamiento de MO");
-      }
+      console.log(
+        `ℹ️ Notificación de Merchant Order ${dataId} ignorada (no se procesa automáticamente).`,
+      );
+      return res.status(200).send("OK - Merchant Order ignorada");
     }
 
     // 4. Solo pagos (topic === "payment")
@@ -283,7 +270,18 @@ const paymentController = {
 
       // ----- CASO: Transacción YA PAGADA -----
       if (transaccion.estado_transaccion === "pagado") {
-        // Cualquier nuevo pago con la misma referencia externa es duplicado
+        // 🔥 Evitar procesar el mismo pago dos veces
+        const pagoExistente = await PagoMercado.findOne({
+          where: { id_transaccion_pasarela: transactionId },
+        });
+        if (pagoExistente) {
+          console.log(
+            `ℹ️ El pago MP ${transactionId} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando.`,
+          );
+          await t.rollback();
+          return res.status(200).send("OK - Pago ya registrado");
+        }
+
         console.log(
           `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionId}...`,
         );
@@ -308,14 +306,15 @@ const paymentController = {
           console.error(`Error en reembolso duplicado: ${errorReembolso}`);
         }
 
-        // Guardar registro del pago duplicado (auditoría)
+        // ✅ Guardar registro con estado válido del enum
+        const estadoRegistro = reembolsoExitoso ? "devuelto" : "rechazado";
         try {
           await PagoMercado.create({
             id_transaccion: transaccion.id,
             monto_pagado: transaccion.monto,
             metodo_pasarela: metodo,
             id_transaccion_pasarela: transactionId,
-            estado: reembolsoExitoso ? "reembolsado" : "fallido",
+            estado: estadoRegistro,
             detalles_raw: { error: errorReembolso, duplicado: true },
           });
         } catch (dbErr) {
@@ -347,7 +346,7 @@ const paymentController = {
         return res.status(200).send("OK - Duplicado reembolsado");
       }
 
-      // ----- Transacción NO pagada todavía -----
+      // ----- Transacción NO pagada todavía (flujo normal) -----
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         transaction: t,
