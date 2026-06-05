@@ -327,8 +327,8 @@ const paymentController = {
               } catch (dbErr) {
                 await saveT.rollback();
                 console.error(
-                  `❌ Error al guardar pago duplicado en BD:`,
-                  dbErr.message,
+                  "❌ Error completo al guardar pago duplicado:",
+                  dbErr,
                 );
                 if (dbErr.name === "SequelizeValidationError") {
                   console.error("🔍 Detalles de validación:");
@@ -337,7 +337,15 @@ const paymentController = {
                       `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
                     );
                   });
+                } else if (dbErr.name === "SequelizeUniqueConstraintError") {
+                  console.error(
+                    "🔍 Violación de unicidad:",
+                    dbErr.errors.map((e) => e.message),
+                  );
+                } else {
+                  console.error("🔍 Error inesperado:", dbErr.message);
                 }
+                // No lanzamos el error para que el webhook no falle
               }
 
               // 🔁 NOTIFICACIONES (solo una vez, antes de marcar como procesado)
