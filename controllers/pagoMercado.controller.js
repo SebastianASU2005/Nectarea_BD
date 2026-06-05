@@ -1,5 +1,6 @@
 // Archivo: controllers/pagoMercado.controller.js
 // VERSIÓN FINAL CON MANEJO UNIFICADO DE DUPLICADOS (incluye pujas, inversiones, cuotas, adhesiones)
+// CORREGIDO: binding de this._reembolsarPagoDuplicado y control de concurrencia
 
 const transaccionService = require("../services/transaccion.service");
 const pagoMercadoService = require("../services/pagoMercado.service");
@@ -27,6 +28,8 @@ const MP_STATUS_MAP = {
 // Almacenamiento temporal para evitar reintentos duplicados y reembolsos múltiples
 const processedRefunds = new Set(); // Payment IDs ya procesados (éxito o ya reembolsado)
 const pendingRetries = new Map(); // Timeouts activos para reintentos
+// Control de concurrencia para webhooks (evita procesar el mismo pago dos veces en paralelo)
+const processingPayments = new Set();
 
 // ==================== VALIDACIÓN DE FIRMA ====================
 function verifySignatureForId(req, dataId) {
@@ -90,7 +93,177 @@ function extractDataId(req) {
   return dataId;
 }
 
-const paymentController = {
+// Referencia al controlador para uso interno (evita problemas de binding)
+const paymentController = module.exports;
+
+// ==================== FUNCIÓN AUXILIAR DE REEMBOLSO ====================
+// Declarada como async function para poder referenciarla dentro del controlador
+async function reembolsarPagoDuplicado(
+  transaccion,
+  paymentIdStr,
+  metodo,
+  esReintento = false,
+) {
+  try {
+    const resultado = await pagoMercadoService.realizarReembolso(
+      paymentIdStr,
+      parseFloat(transaccion.monto),
+    );
+
+    const exito =
+      resultado?.success === true || resultado?.alreadyRefunded === true;
+
+    if (exito) {
+      if (resultado?.success === true) {
+        console.log(`✅ Reembolso exitoso para pago ${paymentIdStr}`);
+      } else {
+        console.log(`ℹ️ El pago ${paymentIdStr} ya estaba reembolsado.`);
+      }
+
+      // Guardar en BD (nueva transacción)
+      const saveT = await sequelize.transaction();
+      try {
+        const now = new Date();
+        const [pago, created] = await PagoMercado.findOrCreate({
+          where: { id_transaccion_pasarela: paymentIdStr },
+          defaults: {
+            id_transaccion: transaccion.id,
+            monto_pagado: transaccion.monto,
+            metodo_pasarela: metodo,
+            estado: "devuelto",
+            detalles_raw: {
+              duplicado: true,
+              fecha: now.toISOString(),
+              resultado: resultado?.success ? "exitoso" : "ya_reembolsado",
+            },
+            createdAt: now,
+            updatedAt: now,
+          },
+          transaction: saveT,
+        });
+        if (created) {
+          console.log(
+            `✅ Registro del pago duplicado guardado en BD para ${paymentIdStr}`,
+          );
+        } else {
+          console.log(
+            `ℹ️ El pago ${paymentIdStr} ya existía en BD (estado: ${pago.estado})`,
+          );
+        }
+        await saveT.commit();
+      } catch (dbErr) {
+        await saveT.rollback();
+        console.error(
+          `❌ Error al guardar pago duplicado en BD:`,
+          dbErr.message,
+        );
+        if (dbErr.name === "SequelizeValidationError") {
+          console.error("🔍 Detalles de validación:");
+          dbErr.errors.forEach((err) => {
+            console.error(
+              `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
+            );
+          });
+        }
+      }
+
+      // Notificaciones (solo una vez, no en reintentos)
+      if (!esReintento) {
+        const user = await User.findByPk(transaccion.id_usuario);
+        if (user) {
+          await emailService.notificarReembolsoUsuario(
+            user,
+            transaccion,
+            `Pago duplicado reembolsado correctamente.`,
+            true,
+          );
+          const admins = await usuarioService.findAllAdmins();
+          for (const admin of admins) {
+            if (admin.email) {
+              await emailService.notificarReembolsoAdminMejorada(
+                admin.email,
+                user,
+                transaccion,
+                `REEMBOLSO EXITOSO - Pago duplicado MP ${paymentIdStr}`,
+                { reembolsoExitoso: true, idPagoMP: paymentIdStr },
+              );
+            }
+          }
+        }
+      }
+
+      // Marcar como procesado en memoria (para evitar reintentos inmediatos)
+      processedRefunds.add(paymentIdStr);
+      setTimeout(() => processedRefunds.delete(paymentIdStr), 60000);
+      return;
+    }
+
+    // Reembolso pendiente (Movement operations pending)
+    if (resultado?.pending === true && !esReintento) {
+      console.log(
+        `⏰ Reembolso pendiente para ${paymentIdStr}. Reintentando en 5 segundos...`,
+      );
+      const timeoutId = setTimeout(async () => {
+        pendingRetries.delete(paymentIdStr);
+        await reembolsarPagoDuplicado(transaccion, paymentIdStr, metodo, true);
+      }, 5000);
+      pendingRetries.set(paymentIdStr, timeoutId);
+      return;
+    }
+
+    // Otro error (fallo real)
+    console.error(
+      `❌ Reembolso falló para ${paymentIdStr}: ${resultado?.message || "sin detalles"}`,
+    );
+    if (!processedRefunds.has(paymentIdStr)) {
+      processedRefunds.add(paymentIdStr);
+      const user = await User.findByPk(transaccion.id_usuario);
+      if (user) {
+        await emailService.notificarReembolsoUsuario(
+          user,
+          transaccion,
+          `El sistema intentó reembolsar un pago duplicado pero falló: ${resultado?.message}`,
+          false,
+        );
+        const admins = await usuarioService.findAllAdmins();
+        for (const admin of admins) {
+          if (admin.email) {
+            await emailService.notificarReembolsoAdminMejorada(
+              admin.email,
+              user,
+              transaccion,
+              `FALLO EN REEMBOLSO - Pago duplicado MP ${paymentIdStr}`,
+              {
+                reembolsoExitoso: false,
+                errorReembolso: resultado?.message,
+                idPagoMP: paymentIdStr,
+              },
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(
+      `Error crítico en reembolso para ${paymentIdStr}:`,
+      err.message,
+    );
+    if (!processedRefunds.has(paymentIdStr)) {
+      processedRefunds.add(paymentIdStr);
+      const user = await User.findByPk(transaccion.id_usuario);
+      if (user) {
+        await emailService.notificarReembolsoUsuario(
+          user,
+          transaccion,
+          `Error inesperado al intentar reembolsar: ${err.message}`,
+          false,
+        );
+      }
+    }
+  }
+}
+
+const paymentControllerObj = {
   // ==================== CHECKOUT ====================
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
@@ -174,177 +347,6 @@ const paymentController = {
     return this.createCheckoutGenerico(req, res);
   },
 
-  // ==================== FUNCIÓN AUXILIAR DE REEMBOLSO ====================
-  async _reembolsarPagoDuplicado(
-    transaccion,
-    paymentIdStr,
-    metodo,
-    esReintento = false,
-  ) {
-    try {
-      const resultado = await pagoMercadoService.realizarReembolso(
-        paymentIdStr,
-        parseFloat(transaccion.monto),
-      );
-
-      const exito =
-        resultado?.success === true || resultado?.alreadyRefunded === true;
-
-      if (exito) {
-        if (resultado?.success === true) {
-          console.log(`✅ Reembolso exitoso para pago ${paymentIdStr}`);
-        } else {
-          console.log(`ℹ️ El pago ${paymentIdStr} ya estaba reembolsado.`);
-        }
-
-        // Guardar en BD (nueva transacción)
-        const saveT = await sequelize.transaction();
-        try {
-          const now = new Date();
-          const [pago, created] = await PagoMercado.findOrCreate({
-            where: { id_transaccion_pasarela: paymentIdStr },
-            defaults: {
-              id_transaccion: transaccion.id,
-              monto_pagado: transaccion.monto,
-              metodo_pasarela: metodo,
-              estado: "devuelto",
-              detalles_raw: {
-                duplicado: true,
-                fecha: now.toISOString(),
-                resultado: resultado?.success ? "exitoso" : "ya_reembolsado",
-              },
-              createdAt: now,
-              updatedAt: now,
-            },
-            transaction: saveT,
-          });
-          if (created) {
-            console.log(
-              `✅ Registro del pago duplicado guardado en BD para ${paymentIdStr}`,
-            );
-          } else {
-            console.log(
-              `ℹ️ El pago ${paymentIdStr} ya existía en BD (estado: ${pago.estado})`,
-            );
-          }
-          await saveT.commit();
-        } catch (dbErr) {
-          await saveT.rollback();
-          console.error(
-            `❌ Error al guardar pago duplicado en BD:`,
-            dbErr.message,
-          );
-          if (dbErr.name === "SequelizeValidationError") {
-            console.error("🔍 Detalles de validación:");
-            dbErr.errors.forEach((err) => {
-              console.error(
-                `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
-              );
-            });
-          }
-        }
-
-        // Notificaciones (solo una vez, no en reintentos)
-        if (!esReintento) {
-          const user = await User.findByPk(transaccion.id_usuario);
-          if (user) {
-            await emailService.notificarReembolsoUsuario(
-              user,
-              transaccion,
-              `Pago duplicado reembolsado correctamente.`,
-              true,
-            );
-            const admins = await usuarioService.findAllAdmins();
-            for (const admin of admins) {
-              if (admin.email) {
-                await emailService.notificarReembolsoAdminMejorada(
-                  admin.email,
-                  user,
-                  transaccion,
-                  `REEMBOLSO EXITOSO - Pago duplicado MP ${paymentIdStr}`,
-                  { reembolsoExitoso: true, idPagoMP: paymentIdStr },
-                );
-              }
-            }
-          }
-        }
-
-        // Marcar como procesado en memoria (para evitar reintentos inmediatos)
-        processedRefunds.add(paymentIdStr);
-        setTimeout(() => processedRefunds.delete(paymentIdStr), 60000);
-        return;
-      }
-
-      // Reembolso pendiente (Movement operations pending)
-      if (resultado?.pending === true && !esReintento) {
-        console.log(
-          `⏰ Reembolso pendiente para ${paymentIdStr}. Reintentando en 5 segundos...`,
-        );
-        const timeoutId = setTimeout(async () => {
-          pendingRetries.delete(paymentIdStr);
-          await this._reembolsarPagoDuplicado(
-            transaccion,
-            paymentIdStr,
-            metodo,
-            true,
-          );
-        }, 5000);
-        pendingRetries.set(paymentIdStr, timeoutId);
-        return;
-      }
-
-      // Otro error (fallo real)
-      console.error(
-        `❌ Reembolso falló para ${paymentIdStr}: ${resultado?.message || "sin detalles"}`,
-      );
-      if (!processedRefunds.has(paymentIdStr)) {
-        processedRefunds.add(paymentIdStr);
-        const user = await User.findByPk(transaccion.id_usuario);
-        if (user) {
-          await emailService.notificarReembolsoUsuario(
-            user,
-            transaccion,
-            `El sistema intentó reembolsar un pago duplicado pero falló: ${resultado?.message}`,
-            false,
-          );
-          const admins = await usuarioService.findAllAdmins();
-          for (const admin of admins) {
-            if (admin.email) {
-              await emailService.notificarReembolsoAdminMejorada(
-                admin.email,
-                user,
-                transaccion,
-                `FALLO EN REEMBOLSO - Pago duplicado MP ${paymentIdStr}`,
-                {
-                  reembolsoExitoso: false,
-                  errorReembolso: resultado?.message,
-                  idPagoMP: paymentIdStr,
-                },
-              );
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error(
-        `Error crítico en reembolso para ${paymentIdStr}:`,
-        err.message,
-      );
-      if (!processedRefunds.has(paymentIdStr)) {
-        processedRefunds.add(paymentIdStr);
-        const user = await User.findByPk(transaccion.id_usuario);
-        if (user) {
-          await emailService.notificarReembolsoUsuario(
-            user,
-            transaccion,
-            `Error inesperado al intentar reembolsar: ${err.message}`,
-            false,
-          );
-        }
-      }
-    }
-  },
-
   // ==================== WEBHOOK ====================
   async handleWebhook(req, res) {
     const topic =
@@ -391,197 +393,209 @@ const paymentController = {
     const transactionIdStr = String(transactionId);
     const internalStatus = MP_STATUS_MAP[status] || "en_proceso";
 
-    // ========== VERIFICACIÓN TEMPRANA: ¿Ya existe este paymentId? ==========
-    const pagoExistente = await PagoMercado.findOne({
-      where: { id_transaccion_pasarela: transactionIdStr },
-    });
-    if (pagoExistente) {
+    // ========== CONTROL DE CONCURRENCIA ==========
+    if (processingPayments.has(transactionIdStr)) {
       console.log(
-        `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando webhook.`,
+        `⏳ Pago ${transactionIdStr} ya está siendo procesado. Ignorando webhook duplicado.`,
       );
-      return res.status(200).send("OK - Pago ya registrado");
+      return res.status(200).send("OK - en proceso");
     }
-
-    let transaccion; // declarar fuera del try para uso en catch
-    const t = await sequelize.transaction({
-      isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
-    });
-
+    processingPayments.add(transactionIdStr);
+    // Liberar después del procesamiento (se hace en finally)
     try {
-      transaccion = await Transaccion.findByPk(id_transaccion, {
-        transaction: t,
-        lock: t.LOCK.UPDATE,
+      // ========== VERIFICACIÓN TEMPRANA: ¿Ya existe este paymentId? ==========
+      const pagoExistente = await PagoMercado.findOne({
+        where: { id_transaccion_pasarela: transactionIdStr },
       });
-      if (!transaccion) {
-        await t.rollback();
-        console.error(`Transacción ${id_transaccion} no encontrada.`);
-        return res.status(404).send("Transacción no encontrada");
+      if (pagoExistente) {
+        console.log(
+          `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoExistente.estado}). Ignorando webhook.`,
+        );
+        return res.status(200).send("OK - Pago ya registrado");
       }
 
-      // ========== CASO: TRANSACCIÓN YA PAGADA (DUPLICADO REAL) ==========
-      if (transaccion.estado_transaccion === "pagado") {
-        // Verificar nuevamente (por concurrencia)
-        const existing = await PagoMercado.findOne({
-          where: { id_transaccion_pasarela: transactionIdStr },
+      let transaccion; // declarar fuera del try para uso en catch
+      const t = await sequelize.transaction({
+        isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+      });
+
+      try {
+        transaccion = await Transaccion.findByPk(id_transaccion, {
           transaction: t,
           lock: t.LOCK.UPDATE,
         });
-        if (existing) {
-          console.log(
-            `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${existing.estado}). Ignorando webhook.`,
-          );
-          await t.commit();
-          return res.status(200).send("OK - Pago ya registrado");
-        }
-
-        console.log(
-          `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
-        );
-        await t.rollback(); // No necesitamos la transacción actual para el reembolso
-
-        // Cancelar reintentos pendientes
-        if (pendingRetries.has(transactionIdStr)) {
-          clearTimeout(pendingRetries.get(transactionIdStr));
-          pendingRetries.delete(transactionIdStr);
-        }
-
-        await this._reembolsarPagoDuplicado(
-          transaccion,
-          transactionIdStr,
-          metodo,
-          false,
-        );
-        return res.status(200).send("OK - Duplicado procesado");
-      }
-
-      // ========== TRANSACCIÓN NO PAGADA (FLUJO NORMAL) ==========
-      let pagoMercado = await PagoMercado.findOne({
-        where: { id_transaccion: transaccion.id },
-        transaction: t,
-      });
-
-      const pagoData = {
-        estado: internalStatus,
-        id_transaccion_pasarela: transactionIdStr,
-        tipo_medio_pago: paymentDetails?.payment_method_type,
-        fecha_aprobacion: paymentDetails?.date_approved,
-        detalles_raw: rawDetails,
-      };
-
-      const estadosValidos = [
-        "pendiente",
-        "aprobado",
-        "rechazado",
-        "devuelto",
-        "en_proceso",
-      ];
-      if (!estadosValidos.includes(pagoData.estado)) {
-        console.error(
-          `❌ Estado inválido detectado: ${pagoData.estado}. Se usará "en_proceso" como fallback.`,
-        );
-        pagoData.estado = "en_proceso";
-      }
-
-      console.log(
-        "📦 Datos a guardar en PagoMercado:",
-        JSON.stringify(pagoData, null, 2),
-      );
-
-      if (!pagoMercado) {
-        pagoMercado = await PagoMercado.create(
-          {
-            id_transaccion: transaccion.id,
-            monto_pagado: transaccion.monto,
-            metodo_pasarela: metodo,
-            ...pagoData,
-          },
-          { transaction: t },
-        );
-        await transaccion.update(
-          { id_pago_pasarela: pagoMercado.id },
-          { transaction: t },
-        );
-      } else {
-        await pagoMercado.update(pagoData, { transaction: t });
-      }
-
-      if (internalStatus === "aprobado") {
-        await transaccionService.confirmarTransaccion(transaccion.id, {
-          transaction: t,
-        });
-        processedRefunds.add(transactionIdStr);
-        setTimeout(() => processedRefunds.delete(transactionIdStr), 60000);
-      } else if (
-        ["rechazado", "devuelto", "en_proceso"].includes(internalStatus)
-      ) {
-        let newStatus = "fallido";
-        if (internalStatus === "rechazado") newStatus = "fallido";
-        else if (internalStatus === "devuelto") newStatus = "reembolsado";
-        else newStatus = "en_proceso";
-        await transaccionService.procesarFalloTransaccion(
-          transaccion.id,
-          newStatus,
-          `Pago ${internalStatus}: ${status}`,
-          { transaction: t },
-        );
-      } else {
-        await transaccion.update(
-          { estado_transaccion: internalStatus },
-          { transaction: t },
-        );
-      }
-
-      await t.commit();
-      console.log(
-        `✅ Webhook procesado: Transacción ${id_transaccion} -> ${internalStatus}`,
-      );
-      return res.status(200).send("OK");
-    } catch (error) {
-      await t.rollback();
-      console.error(`❌ Error en webhook:`, error.message);
-
-      // Detectar duplicado de entidad (cuando la transacción local aún está pendiente pero la entidad ya está pagada)
-      if (error.message && error.message.includes("DUPLICADO_ENTIDAD")) {
-        console.log(
-          `⚠️ Pago duplicado detectado (entidad ya pagada) para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
-        );
-        if (pendingRetries.has(transactionIdStr)) {
-          clearTimeout(pendingRetries.get(transactionIdStr));
-          pendingRetries.delete(transactionIdStr);
-        }
-        // transaccion está definida fuera del try, pero puede que no se haya asignado si el error ocurrió antes.
-        // Si no, la obtenemos de nuevo
         if (!transaccion) {
-          transaccion = await Transaccion.findByPk(id_transaccion);
+          await t.rollback();
+          console.error(`Transacción ${id_transaccion} no encontrada.`);
+          return res.status(404).send("Transacción no encontrada");
         }
-        if (transaccion) {
-          await this._reembolsarPagoDuplicado(
+
+        // ========== CASO: TRANSACCIÓN YA PAGADA (DUPLICADO REAL) ==========
+        if (transaccion.estado_transaccion === "pagado") {
+          // Verificar nuevamente (por concurrencia)
+          const existing = await PagoMercado.findOne({
+            where: { id_transaccion_pasarela: transactionIdStr },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+          if (existing) {
+            console.log(
+              `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${existing.estado}). Ignorando webhook.`,
+            );
+            await t.commit();
+            return res.status(200).send("OK - Pago ya registrado");
+          }
+
+          console.log(
+            `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
+          );
+          await t.rollback(); // No necesitamos la transacción actual para el reembolso
+
+          // Cancelar reintentos pendientes
+          if (pendingRetries.has(transactionIdStr)) {
+            clearTimeout(pendingRetries.get(transactionIdStr));
+            pendingRetries.delete(transactionIdStr);
+          }
+
+          await reembolsarPagoDuplicado(
             transaccion,
             transactionIdStr,
             metodo,
             false,
           );
-        } else {
+          return res.status(200).send("OK - Duplicado procesado");
+        }
+
+        // ========== TRANSACCIÓN NO PAGADA (FLUJO NORMAL) ==========
+        let pagoMercado = await PagoMercado.findOne({
+          where: { id_transaccion: transaccion.id },
+          transaction: t,
+        });
+
+        const pagoData = {
+          estado: internalStatus,
+          id_transaccion_pasarela: transactionIdStr,
+          tipo_medio_pago: paymentDetails?.payment_method_type,
+          fecha_aprobacion: paymentDetails?.date_approved,
+          detalles_raw: rawDetails,
+        };
+
+        const estadosValidos = [
+          "pendiente",
+          "aprobado",
+          "rechazado",
+          "devuelto",
+          "en_proceso",
+        ];
+        if (!estadosValidos.includes(pagoData.estado)) {
           console.error(
-            "No se pudo obtener la transacción original para reembolsar el duplicado.",
+            `❌ Estado inválido detectado: ${pagoData.estado}. Se usará "en_proceso" como fallback.`,
+          );
+          pagoData.estado = "en_proceso";
+        }
+
+        console.log(
+          "📦 Datos a guardar en PagoMercado:",
+          JSON.stringify(pagoData, null, 2),
+        );
+
+        if (!pagoMercado) {
+          pagoMercado = await PagoMercado.create(
+            {
+              id_transaccion: transaccion.id,
+              monto_pagado: transaccion.monto,
+              metodo_pasarela: metodo,
+              ...pagoData,
+            },
+            { transaction: t },
+          );
+          await transaccion.update(
+            { id_pago_pasarela: pagoMercado.id },
+            { transaction: t },
+          );
+        } else {
+          await pagoMercado.update(pagoData, { transaction: t });
+        }
+
+        if (internalStatus === "aprobado") {
+          await transaccionService.confirmarTransaccion(transaccion.id, {
+            transaction: t,
+          });
+          processedRefunds.add(transactionIdStr);
+          setTimeout(() => processedRefunds.delete(transactionIdStr), 60000);
+        } else if (
+          ["rechazado", "devuelto", "en_proceso"].includes(internalStatus)
+        ) {
+          let newStatus = "fallido";
+          if (internalStatus === "rechazado") newStatus = "fallido";
+          else if (internalStatus === "devuelto") newStatus = "reembolsado";
+          else newStatus = "en_proceso";
+          await transaccionService.procesarFalloTransaccion(
+            transaccion.id,
+            newStatus,
+            `Pago ${internalStatus}: ${status}`,
+            { transaction: t },
+          );
+        } else {
+          await transaccion.update(
+            { estado_transaccion: internalStatus },
+            { transaction: t },
           );
         }
-        return res.status(200).send("OK - Duplicado procesado");
-      }
 
-      if (error.name === "SequelizeValidationError") {
-        console.error("🔍 Detalles de validación:");
-        error.errors.forEach((err) => {
-          console.error(
-            `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
+        await t.commit();
+        console.log(
+          `✅ Webhook procesado: Transacción ${id_transaccion} -> ${internalStatus}`,
+        );
+        return res.status(200).send("OK");
+      } catch (error) {
+        await t.rollback();
+        console.error(`❌ Error en webhook:`, error.message);
+
+        // Detectar duplicado de entidad (cuando la transacción local aún está pendiente pero la entidad ya está pagada)
+        if (error.message && error.message.includes("DUPLICADO_ENTIDAD")) {
+          console.log(
+            `⚠️ Pago duplicado detectado (entidad ya pagada) para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
           );
-        });
+          if (pendingRetries.has(transactionIdStr)) {
+            clearTimeout(pendingRetries.get(transactionIdStr));
+            pendingRetries.delete(transactionIdStr);
+          }
+          // transaccion está definida en el bloque try, pero si el error ocurrió antes, la obtenemos de nuevo
+          if (!transaccion) {
+            transaccion = await Transaccion.findByPk(id_transaccion);
+          }
+          if (transaccion) {
+            await reembolsarPagoDuplicado(
+              transaccion,
+              transactionIdStr,
+              metodo,
+              false,
+            );
+          } else {
+            console.error(
+              "No se pudo obtener la transacción original para reembolsar el duplicado.",
+            );
+          }
+          return res.status(200).send("OK - Duplicado procesado");
+        }
+
+        if (error.name === "SequelizeValidationError") {
+          console.error("🔍 Detalles de validación:");
+          error.errors.forEach((err) => {
+            console.error(
+              `  - Campo: ${err.path}, Valor: ${err.value}, Mensaje: ${err.message}`,
+            );
+          });
+        }
+        return res.status(200).send("OK - Error interno");
       }
-      return res.status(200).send("OK - Error interno");
+    } finally {
+      processingPayments.delete(transactionIdStr);
     }
   },
 
-  // ==================== FUNCIONES ADICIONALES (sin cambios) ====================
+  // ==================== FUNCIONES ADICIONALES ====================
   async verificarDuplicadoPorEntidad(transaccion) {
     const {
       tipo_transaccion,
@@ -765,6 +779,7 @@ const paymentController = {
   },
 };
 
-module.exports = paymentController;
+// Exportamos el controlador y también las funciones auxiliares para compatibilidad
+module.exports = paymentControllerObj;
 module.exports.verifySignature = verifySignatureForId;
 module.exports.extractDataId = extractDataId;
