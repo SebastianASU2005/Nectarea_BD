@@ -25,7 +25,9 @@ const MP_STATUS_MAP = {
 };
 
 // Almacenamiento temporal para evitar reintentos duplicados
-const pendingRefunds = new Map(); // key: paymentId, value: timeoutId
+// Almacenamiento para evitar reembolsos duplicados y reintentos múltiples
+const processedRefunds = new Set(); // Payment IDs ya procesados (éxito o ya reembolsado)
+const pendingRetries = new Map(); // Timeouts activos para reintentos
 
 // ==================== VALIDACIÓN DE FIRMA ====================
 function verifySignatureForId(req, dataId) {
@@ -136,16 +138,14 @@ const paymentController = {
           ));
       }
       await t.commit();
-      res
-        .status(200)
-        .json({
-          success: true,
-          transaccionId: transaccion.id,
-          pagoMercadoId: pagoMercado.id,
-          tipo: transaccion.tipo_transaccion,
-          monto: parseFloat(transaccion.monto),
-          redirectUrl,
-        });
+      res.status(200).json({
+        success: true,
+        transaccionId: transaccion.id,
+        pagoMercadoId: pagoMercado.id,
+        tipo: transaccion.tipo_transaccion,
+        monto: parseFloat(transaccion.monto),
+        redirectUrl,
+      });
     } catch (error) {
       await t.rollback();
       console.error("Error al crear/regenerar checkout:", error.message);
@@ -238,75 +238,98 @@ const paymentController = {
 
       // ========== CASO: TRANSACCIÓN YA PAGADA (DUPLICADO) ==========
       if (transaccion.estado_transaccion === "pagado") {
+        const transactionIdStr = String(transactionId);
+
+        // Si ya procesamos este paymentId (ya sea reembolsado o ya notificado), ignorar
+        if (processedRefunds.has(transactionIdStr)) {
+          console.log(
+            `ℹ️ El pago ${transactionIdStr} ya fue procesado anteriormente. Ignorando webhook.`,
+          );
+          await t.rollback();
+          return res.status(200).send("OK - Pago ya procesado");
+        }
+
         console.log(
           `⚠️ Pago duplicado detectado para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
         );
-        await t.rollback(); // No necesitamos transacción de BD para el reembolso
+        await t.rollback(); // No necesitamos transacción de BD
 
-        // Evitar reintentos simultáneos para el mismo paymentId
-        if (pendingRefunds.has(transactionIdStr)) {
-          console.log(
-            `ℹ️ Ya hay un reintento programado para ${transactionIdStr}. Ignorando este webhook.`,
-          );
-          return res.status(200).send("OK - Reintento ya programado");
+        // Cancelar cualquier reintento pendiente para este paymentId (evita duplicados)
+        if (pendingRetries.has(transactionIdStr)) {
+          clearTimeout(pendingRetries.get(transactionIdStr));
+          pendingRetries.delete(transactionIdStr);
         }
 
-        // Función que ejecuta el reembolso (puede ser llamada directamente o con setTimeout)
+        // Función que ejecuta el reembolso y maneja las notificaciones una sola vez
         const ejecutarReembolso = async (esReintento = false) => {
           try {
             const resultado = await pagoMercadoService.realizarReembolso(
               transactionIdStr,
               parseFloat(transaccion.monto),
             );
+
+            // CASO 1: Reembolso exitoso
             if (resultado?.success === true) {
               console.log(`✅ Reembolso exitoso para pago ${transactionIdStr}`);
-              const user = await User.findByPk(transaccion.id_usuario);
-              if (user && !esReintento) {
-                await emailService.notificarReembolsoUsuario(
-                  user,
-                  transaccion,
-                  `Pago duplicado reembolsado correctamente.`,
-                  true,
-                );
-                const admins = await usuarioService.findAllAdmins();
-                for (const admin of admins) {
-                  if (admin.email) {
-                    await emailService.notificarReembolsoAdminMejorada(
-                      admin.email,
-                      user,
-                      transaccion,
-                      `REEMBOLSO EXITOSO - Pago duplicado MP ${transactionIdStr}`,
-                      { reembolsoExitoso: true, idPagoMP: transactionIdStr },
-                    );
+              if (!processedRefunds.has(transactionIdStr)) {
+                processedRefunds.add(transactionIdStr);
+                // Enviar notificaciones solo una vez
+                const user = await User.findByPk(transaccion.id_usuario);
+                if (user) {
+                  await emailService.notificarReembolsoUsuario(
+                    user,
+                    transaccion,
+                    `Pago duplicado reembolsado correctamente.`,
+                    true,
+                  );
+                  const admins = await usuarioService.findAllAdmins();
+                  for (const admin of admins) {
+                    if (admin.email) {
+                      await emailService.notificarReembolsoAdminMejorada(
+                        admin.email,
+                        user,
+                        transaccion,
+                        `REEMBOLSO EXITOSO - Pago duplicado MP ${transactionIdStr}`,
+                        { reembolsoExitoso: true, idPagoMP: transactionIdStr },
+                      );
+                    }
                   }
                 }
               }
-              pendingRefunds.delete(transactionIdStr);
               return;
             }
+
+            // CASO 2: El pago ya estaba reembolsado (no es un error)
             if (resultado?.alreadyRefunded === true) {
               console.log(
-                `ℹ️ El pago ${transactionIdStr} ya estaba reembolsado.`,
+                `ℹ️ El pago ${transactionIdStr} ya estaba reembolsado. No se requiere acción.`,
               );
-              pendingRefunds.delete(transactionIdStr);
+              if (!processedRefunds.has(transactionIdStr)) {
+                processedRefunds.add(transactionIdStr);
+                // Opcional: notificar éxito silencioso (no enviamos correo de error)
+              }
               return;
             }
-            if (resultado?.pending === true) {
+
+            // CASO 3: Reembolso pendiente (Movement operations pending)
+            if (resultado?.pending === true && !esReintento) {
               console.log(
                 `⏰ Reembolso pendiente para ${transactionIdStr}. Reintentando en 5 segundos...`,
               );
               const timeoutId = setTimeout(async () => {
-                pendingRefunds.delete(transactionIdStr);
+                pendingRetries.delete(transactionIdStr);
                 await ejecutarReembolso(true);
               }, 5000);
-              pendingRefunds.set(transactionIdStr, timeoutId);
+              pendingRetries.set(transactionIdStr, timeoutId);
               return;
             }
-            // Otro error
+
+            // CASO 4: Otro error (fallo real)
             console.error(
               `❌ Reembolso falló para ${transactionIdStr}: ${resultado?.message || "sin detalles"}`,
             );
-            if (!esReintento) {
+            if (!processedRefunds.has(transactionIdStr)) {
+              processedRefunds.add(transactionIdStr); // Marcar como procesado aunque haya fallado para no seguir spameando
               const user = await User.findByPk(transaccion.id_usuario);
               if (user) {
                 await emailService.notificarReembolsoUsuario(
@@ -333,13 +356,13 @@ const paymentController = {
                 }
               }
             }
-            pendingRefunds.delete(transactionIdStr);
           } catch (err) {
             console.error(
               `Error crítico en reembolso para ${transactionIdStr}:`,
               err.message,
             );
-            if (!esReintento) {
+            if (!processedRefunds.has(transactionIdStr)) {
+              processedRefunds.add(transactionIdStr);
               const user = await User.findByPk(transaccion.id_usuario);
               if (user) {
                 await emailService.notificarReembolsoUsuario(
@@ -350,14 +373,15 @@ const paymentController = {
                 );
               }
             }
-            pendingRefunds.delete(transactionIdStr);
+          } finally {
+            // Limpiar el Set después de un tiempo (opcional, para no crecer indefinidamente)
+            setTimeout(() => processedRefunds.delete(transactionIdStr), 60000); // 1 minuto
           }
         };
 
         await ejecutarReembolso(false);
         return res.status(200).send("OK - Duplicado procesado");
       }
-
       // ========== TRANSACCIÓN NO PAGADA (FLUJO NORMAL) ==========
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
