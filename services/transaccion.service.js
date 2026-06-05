@@ -90,7 +90,55 @@ const transaccionService = {
   // =========================================================================
   // FLUJO ORIGINAL: Crea Transacción y luego su Checkout
   // =========================================================================
+  /**
+   * Verifica si la entidad asociada a una transacción ya tiene un pago confirmado.
+   * @param {Transaccion} transaccion - La transacción actual.
+   * @param {Transaction} t - Transacción de Sequelize.
+   * @returns {Promise<boolean>} true si ya existe otra transacción pagada para la misma entidad.
+   */
+  async _esTransaccionDuplicadaPorEntidad(transaccion, t) {
+    const {
+      tipo_transaccion,
+      id_inversion,
+      id_puja,
+      id_pago_mensual,
+      id_pago_adhesion,
+      id,
+    } = transaccion;
 
+    let whereCondition = null;
+    switch (tipo_transaccion) {
+      case "directo":
+        if (!id_inversion) return false;
+        whereCondition = { id_inversion, tipo_transaccion: "directo" };
+        break;
+      case "Puja":
+        if (!id_puja) return false;
+        whereCondition = { id_puja, tipo_transaccion: "Puja" };
+        break;
+      case "mensual":
+        if (!id_pago_mensual) return false;
+        whereCondition = { id_pago_mensual };
+        break;
+      case "adhesion":
+        if (!id_pago_adhesion) return false;
+        whereCondition = { id_pago_adhesion };
+        break;
+      default:
+        return false;
+    }
+
+    const otraTransaccion = await Transaccion.findOne({
+      where: {
+        ...whereCondition,
+        id: { [Op.ne]: id },
+        estado_transaccion: "pagado",
+      },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    return !!otraTransaccion;
+  },
   async crearTransaccionConCheckout(
     data,
     metodo = "mercadopago",
@@ -587,7 +635,6 @@ const transaccionService = {
 
   async confirmarTransaccion(transaccionId, options = {}) {
     const t = options.transaction;
-
     if (!t) {
       throw new Error(
         "Se requiere una transacción (t) activa para confirmarTransaccion.",
@@ -619,6 +666,28 @@ const transaccionService = {
         );
       }
 
+      // ========== NUEVA VERIFICACIÓN DE DUPLICADO POR ENTIDAD ==========
+      const esDuplicado = await this._esTransaccionDuplicadaPorEntidad(
+        transaccion,
+        t,
+      );
+      if (esDuplicado) {
+        // Marcar la transacción como fallida para que no se reintente
+        await transaccion.update(
+          {
+            estado_transaccion: "fallido",
+            error_detalle:
+              "Pago duplicado (la entidad ya tiene una transacción pagada)",
+          },
+          { transaction: t },
+        );
+        // Lanzar error especial para que el webhook lo capture y ejecute el reembolso
+        throw new Error(
+          "DUPLICADO_ENTIDAD: La entidad asociada ya tiene un pago confirmado.",
+        );
+      }
+
+      // Validaciones existentes (proyecto cerrado, expiración, etc.)
       if (
         transaccion.tipo_transaccion === "directo" &&
         transaccion.id_proyecto
@@ -626,11 +695,8 @@ const transaccionService = {
         const proyecto = await Proyecto.findByPk(transaccion.id_proyecto, {
           transaction: t,
         });
-
-        if (!proyecto) {
+        if (!proyecto)
           throw new Error(`Proyecto ${transaccion.id_proyecto} no encontrado.`);
-        }
-
         if (
           proyecto.estado_proyecto === "Finalizado" ||
           proyecto.estado_proyecto === "Cancelado"
@@ -642,7 +708,6 @@ const transaccionService = {
             },
             { transaction: t },
           );
-
           throw new Error(
             `El proyecto "${proyecto.nombre_proyecto}" ya no está disponible para inversión.`,
           );
@@ -653,16 +718,16 @@ const transaccionService = {
         transaccion,
         t,
       );
-
       if (haExpirado) {
         throw new Error(
           `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
         );
       }
 
-      await this._validarEntidadSinPagoPrevisto(transaccion, t);
+      // Antigua validación _validarEntidadSinPagoPrevisto ya no es necesaria (la reemplazamos por _esTransaccionDuplicadaPorEntidad)
+      // await this._validarEntidadSinPagoPrevisto(transaccion, t);
 
-      // ✅ Eliminado el case para pago_suscripcion_inicial
+      // Lógica de negocio según tipo de transacción
       switch (transaccion.tipo_transaccion) {
         case "mensual":
           await this.manejarPagoMensual(
@@ -671,11 +736,9 @@ const transaccionService = {
             t,
           );
           break;
-
         case "directo":
-          if (!transaccion.id_inversion) {
+          if (!transaccion.id_inversion)
             throw new Error("Transacción 'directo' sin ID de inversión.");
-          }
           await inversionService.confirmarInversion(
             transaccion.id_inversion,
             t,
@@ -686,11 +749,9 @@ const transaccionService = {
             t,
           );
           break;
-
         case "Puja":
-          if (!transaccion.id_puja) {
+          if (!transaccion.id_puja)
             throw new Error("Transacción 'Puja' sin ID de puja.");
-          }
           const pujaService = require("./puja.service");
           await pujaService.procesarPujaGanadora(transaccion.id_puja, t);
           await resumenCuentaService.actualizarSaldoGeneral(
@@ -699,7 +760,6 @@ const transaccionService = {
             t,
           );
           break;
-
         case "adhesion":
           await this.manejarPagoAdhesion(
             transaccion,
@@ -707,7 +767,6 @@ const transaccionService = {
             t,
           );
           break;
-
         default:
           throw new Error(
             `Tipo de transacción no reconocido: ${transaccion.tipo_transaccion}`,
@@ -725,33 +784,8 @@ const transaccionService = {
       console.log(`✅ Transacción ${transaccionId} confirmada exitosamente.`);
       return transaccion;
     } catch (error) {
-      console.error(
-        `Error al procesar la lógica de negocio de la transacción ${transaccionId}: ${error.message}`,
-      );
-
-      if (
-        error.message.includes("ya tiene una transacción pagada") ||
-        error.message.includes("ya está marcada como")
-      ) {
-        try {
-          await transaccion.update(
-            {
-              estado_transaccion: "fallido",
-              error_detalle: error.message,
-            },
-            { transaction: t },
-          );
-        } catch (updateError) {
-          console.error(
-            "Error al marcar transacción como fallida:",
-            updateError.message,
-          );
-        }
-      }
-
-      throw new Error(
-        `Error en el procesamiento de confirmación: ${error.message}`,
-      );
+      // Si el error es de duplicado, lo propagamos para que el webhook lo maneje
+      throw error;
     }
   },
 
