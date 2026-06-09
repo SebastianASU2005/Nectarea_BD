@@ -114,9 +114,9 @@ const paymentService = {
         ],
         external_reference: String(transaccionId),
         back_urls: {
-          success: `${FRONTEND_URL}/pago/exito/${transaccionId}`,
-          failure: `${FRONTEND_URL}/pago/fallo/${transaccionId}`,
-          pending: `${FRONTEND_URL}/pago/pendiente/${transaccionId}`,
+          success: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/exito/${transaccionId}`,
+          failure: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/fallo/${transaccionId}`,
+          pending: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/pendiente/${transaccionId}`,
         },
         notification_url: webhookUrl,
         auto_return: "approved",
