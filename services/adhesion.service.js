@@ -302,6 +302,7 @@ const adhesionService = {
   /**
    * Cuando se completa la última cuota, activa la suscripción (token = 1, adhesion_completada = true)
    * y crea el resumen de cuenta si no existe.
+   * Además, verifica si el proyecto alcanzó el objetivo y lo inicia automáticamente.
    */
   async _completarAdhesionYActivarSuscripcion(adhesion, transaction) {
     const suscripcion = await SuscripcionProyecto.findByPk(
@@ -323,8 +324,29 @@ const adhesionService = {
       { transaction },
     );
 
-    // Crear el resumen de cuenta si el proyecto es mensual
+    // Obtener el proyecto actualizado
     const proyecto = suscripcion.proyectoAsociado;
+    if (proyecto && proyecto.tipo_inversion === "mensual") {
+      // Volver a cargar por si el contador cambió
+      await proyecto.reload({ transaction });
+
+      // 🔥 VERIFICAR SI SE ALCANZÓ EL OBJETIVO Y EL PROYECTO ESTÁ EN ESPERA
+      if (
+        proyecto.suscripciones_actuales >= proyecto.obj_suscripciones &&
+        proyecto.estado_proyecto === "En Espera"
+      ) {
+        const proyectoService = require("./proyecto.service");
+        // Iniciar proyecto automáticamente (sin administrador, como sistema)
+        await proyectoService.iniciarConteoMensual(proyecto.id, {
+          sistema: true,
+          adminId: null,
+          ip: null,
+          userAgent: null,
+        });
+      }
+    }
+
+    // Crear el resumen de cuenta si el proyecto es mensual
     if (proyecto && proyecto.tipo_inversion === "mensual") {
       const resumenExistente = await ResumenCuenta.findOne({
         where: { id_suscripcion: suscripcion.id },
