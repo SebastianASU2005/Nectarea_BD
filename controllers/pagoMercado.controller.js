@@ -252,16 +252,14 @@ const paymentControllerObj = {
           ));
       }
       await t.commit();
-      res
-        .status(200)
-        .json({
-          success: true,
-          transaccionId: transaccion.id,
-          pagoMercadoId: pagoMercado.id,
-          tipo: transaccion.tipo_transaccion,
-          monto: parseFloat(transaccion.monto),
-          redirectUrl,
-        });
+      res.status(200).json({
+        success: true,
+        transaccionId: transaccion.id,
+        pagoMercadoId: pagoMercado.id,
+        tipo: transaccion.tipo_transaccion,
+        monto: parseFloat(transaccion.monto),
+        redirectUrl,
+      });
     } catch (error) {
       await t.rollback();
       console.error("Error al crear/regenerar checkout:", error.message);
@@ -441,16 +439,33 @@ const paymentControllerObj = {
       } catch (error) {
         await t.rollback();
         console.error(`❌ Error en webhook:`, error.message);
-        if (error.message && error.message.includes("DUPLICADO_ENTIDAD")) {
+
+        // ========== NUEVA LÓGICA: Reembolsar para errores que impiden el pago ==========
+        const erroresReembolsables = [
+          "DUPLICADO_ENTIDAD",
+          "ya no está disponible para inversión",
+          "proyecto ya no está disponible",
+          "proyecto está en estado: Finalizado",
+          "proyecto está en estado: Cancelado",
+          "Transacción expiró",
+          "ya fue revertida",
+        ];
+
+        const debeReembolsar = erroresReembolsables.some((msg) =>
+          error.message.includes(msg),
+        );
+
+        if (debeReembolsar) {
           console.log(
-            `⚠️ Pago duplicado detectado (entidad ya pagada) para Transacción ${id_transaccion}. Reembolsando pago MP ${transactionIdStr}...`,
+            `⚠️ Error reembolsable detectado: "${error.message}". Reembolsando pago MP ${transactionIdStr}...`,
           );
           if (pendingRetries.has(transactionIdStr)) {
             clearTimeout(pendingRetries.get(transactionIdStr));
             pendingRetries.delete(transactionIdStr);
           }
-          if (!transaccion)
+          if (!transaccion) {
             transaccion = await Transaccion.findByPk(id_transaccion);
+          }
           if (transaccion) {
             await reembolsarPagoDuplicado(
               transaccion,
@@ -460,11 +475,13 @@ const paymentControllerObj = {
             );
           } else {
             console.error(
-              "No se pudo obtener la transacción original para reembolsar el duplicado.",
+              "No se pudo obtener la transacción original para reembolsar el pago.",
             );
           }
-          return res.status(200).send("OK - Duplicado procesado");
+          return res.status(200).send("OK - Reembolsado por error de negocio");
         }
+
+        // Errores no reembolsables (validaciones de Sequelize, etc.)
         if (error.name === "SequelizeValidationError") {
           console.error("🔍 Detalles de validación:", error.errors);
         }
@@ -481,12 +498,10 @@ const paymentControllerObj = {
       const userId = req.user.id;
       const idNumerico = parseInt(modeloId);
       if (!modelo || isNaN(idNumerico) || idNumerico <= 0) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Ruta de pago inválida. Se requiere /:modelo/:modeloId, donde :modeloId es un número válido.",
-          });
+        return res.status(400).json({
+          error:
+            "Ruta de pago inválida. Se requiere /:modelo/:modeloId, donde :modeloId es un número válido.",
+        });
       }
       const { transaccion, redirectUrl } =
         await transaccionService.iniciarTransaccionYCheckout(
@@ -494,16 +509,14 @@ const paymentControllerObj = {
           idNumerico,
           userId,
         );
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: `Transacción #${transaccion.id} creada. Redireccionando a la pasarela de pago.`,
-          transaccionId: transaccion.id,
-          modelo,
-          modeloId: idNumerico,
-          redirectUrl,
-        });
+      res.status(200).json({
+        success: true,
+        message: `Transacción #${transaccion.id} creada. Redireccionando a la pasarela de pago.`,
+        transaccionId: transaccion.id,
+        modelo,
+        modeloId: idNumerico,
+        redirectUrl,
+      });
     } catch (error) {
       console.error(
         `Error en el checkout genérico para ${req.params.modelo}:`,
@@ -585,22 +598,20 @@ const paymentControllerObj = {
             fecha: pagoMercado.fecha_aprobacion || pagoMercado.createdAt,
           }
         : null;
-      res
-        .status(200)
-        .json({
-          transaccion: {
-            id: transaccion.id,
-            tipo: transaccion.tipo_transaccion,
-            monto: parseFloat(transaccion.monto),
-            estado: transaccion.estado_transaccion,
-            fecha: transaccion.fecha_transaccion,
-            id_inversion: transaccion.id_inversion,
-            id_puja: transaccion.id_puja,
-            id_suscripcion: transaccion.id_suscripcion,
-            id_proyecto: transaccion.id_proyecto,
-          },
-          pagoPasarela: pagoDetalle,
-        });
+      res.status(200).json({
+        transaccion: {
+          id: transaccion.id,
+          tipo: transaccion.tipo_transaccion,
+          monto: parseFloat(transaccion.monto),
+          estado: transaccion.estado_transaccion,
+          fecha: transaccion.fecha_transaccion,
+          id_inversion: transaccion.id_inversion,
+          id_puja: transaccion.id_puja,
+          id_suscripcion: transaccion.id_suscripcion,
+          id_proyecto: transaccion.id_proyecto,
+        },
+        pagoPasarela: pagoDetalle,
+      });
     } catch (error) {
       console.error("Error al consultar estado de pago:", error.message);
       res.status(500).json({ error: error.message });

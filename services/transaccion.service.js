@@ -666,7 +666,7 @@ const transaccionService = {
         );
       }
 
-      // ========== NUEVA VERIFICACIÓN DE DUPLICADO POR ENTIDAD ==========
+      // ========== 1. VERIFICACIÓN DE DUPLICADO POR ENTIDAD (ANTES QUE TODO) ==========
       const esDuplicado = await this._esTransaccionDuplicadaPorEntidad(
         transaccion,
         t,
@@ -687,7 +687,7 @@ const transaccionService = {
         );
       }
 
-      // Validaciones existentes (proyecto cerrado, expiración, etc.)
+      // ========== 2. VALIDACIONES DE NEGOCIO (proyecto cerrado, expiración, etc.) ==========
       if (
         transaccion.tipo_transaccion === "directo" &&
         transaccion.id_proyecto
@@ -724,10 +724,7 @@ const transaccionService = {
         );
       }
 
-      // Antigua validación _validarEntidadSinPagoPrevisto ya no es necesaria (la reemplazamos por _esTransaccionDuplicadaPorEntidad)
-      // await this._validarEntidadSinPagoPrevisto(transaccion, t);
-
-      // Lógica de negocio según tipo de transacción
+      // ========== 3. LÓGICA DE NEGOCIO SEGÚN TIPO DE TRANSACCIÓN ==========
       switch (transaccion.tipo_transaccion) {
         case "mensual":
           await this.manejarPagoMensual(
