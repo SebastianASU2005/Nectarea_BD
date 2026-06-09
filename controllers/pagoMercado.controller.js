@@ -1,5 +1,5 @@
 // Archivo: controllers/pagoMercado.controller.js
-// VERSIÓN LIMPIA – logs reducidos y validación anti-duplicado para inversiones
+// VERSIÓN FINAL – Con verificación de firma + logs optimizados + detección de duplicados mejorada
 
 const transaccionService = require("../services/transaccion.service");
 const pagoMercadoService = require("../services/pagoMercado.service");
@@ -67,8 +67,6 @@ function extractDataId(req) {
   }
   return dataId;
 }
-
-const paymentController = module.exports;
 
 async function reembolsarPagoDuplicado(
   transaccion,
@@ -294,10 +292,22 @@ const paymentControllerObj = {
       req.query.topic || req.body?.topic || req.query.type || req.body?.type;
     let dataId = extractDataId(req);
     const { metodo } = req.params;
+
     if (!topic || !dataId) {
       console.log("Webhook sin topic o id, ignorado");
       return res.status(200).send("OK");
     }
+
+    // ========== VERIFICACIÓN DE FIRMA (ACTIVADA) ==========
+    const signatureValid = verifySignatureForId(req, dataId);
+    if (!signatureValid) {
+      console.error(
+        `🚫 Firma inválida para ${topic} ID ${dataId}. Rechazando webhook.`,
+      );
+      return res.status(401).send("Firma inválida");
+    }
+    console.log(`✅ Firma verificada correctamente para ${topic} ID ${dataId}`);
+
     if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
       console.log(`ℹ️ Notificación de Merchant Order ${dataId} ignorada.`);
       return res.status(200).send("OK - Merchant Order ignorada");
@@ -306,6 +316,7 @@ const paymentControllerObj = {
       console.log(`Topic no soportado: ${topic}, ignorado`);
       return res.status(200).send("OK");
     }
+
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
       req,
       metodo,
@@ -314,6 +325,7 @@ const paymentControllerObj = {
       console.log("Webhook: Sin datos de pago válidos");
       return res.status(200).send("OK - Sin acción");
     }
+
     const {
       transaccionId: id_transaccion,
       status,
@@ -440,7 +452,6 @@ const paymentControllerObj = {
         await t.rollback();
         console.error(`❌ Error en webhook:`, error.message);
 
-        // ========== NUEVA LÓGICA: Reembolsar para errores que impiden el pago ==========
         const erroresReembolsables = [
           "DUPLICADO_ENTIDAD",
           "ya no está disponible para inversión",
@@ -481,7 +492,6 @@ const paymentControllerObj = {
           return res.status(200).send("OK - Reembolsado por error de negocio");
         }
 
-        // Errores no reembolsables (validaciones de Sequelize, etc.)
         if (error.name === "SequelizeValidationError") {
           console.error("🔍 Detalles de validación:", error.errors);
         }
