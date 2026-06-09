@@ -26,6 +26,7 @@ const MP_STATUS_MAP = {
 const processedRefunds = new Set();
 const pendingRetries = new Map();
 const processingPayments = new Set();
+const refundNotified = new Set();
 
 function verifySignatureForId(req, dataId) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
@@ -85,6 +86,7 @@ async function reembolsarPagoDuplicado(
       if (resultado?.success === true)
         console.log(`✅ Reembolso exitoso para pago ${paymentIdStr}`);
       else console.log(`ℹ️ El pago ${paymentIdStr} ya estaba reembolsado.`);
+
       const saveT = await sequelize.transaction();
       try {
         const now = new Date();
@@ -117,7 +119,13 @@ async function reembolsarPagoDuplicado(
           dbErr.message,
         );
       }
-      if (!esReintento) {
+
+      // ========== NOTIFICAR SOLO UNA VEZ POR PAYMENT ID ==========
+      if (!refundNotified.has(paymentIdStr)) {
+        refundNotified.add(paymentIdStr);
+        // Limpieza después de 1 hora para evitar acumulación
+        setTimeout(() => refundNotified.delete(paymentIdStr), 3600000);
+
         const user = await User.findByPk(transaccion.id_usuario);
         if (user) {
           await emailService.notificarReembolsoUsuario(
@@ -140,6 +148,7 @@ async function reembolsarPagoDuplicado(
           }
         }
       }
+
       processedRefunds.add(paymentIdStr);
       setTimeout(() => processedRefunds.delete(paymentIdStr), 60000);
       return;
@@ -205,7 +214,6 @@ async function reembolsarPagoDuplicado(
     }
   }
 }
-
 const paymentControllerObj = {
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
