@@ -523,11 +523,11 @@ const emailService = {
    * @param {object} proyecto - Proyecto de Sequelize.
    */
   async notificarInicioProyectoAdmin(adminEmail, proyecto) {
-    const subject = `🟢 INICIO DE PROYECTO: Objetivo Cumplido - ${proyecto.nombre_proyecto}`;
+    const subject = `🟢 INICIO DE PROYECTO- ${proyecto.nombre_proyecto}`;
 
     const contenidoInterno = `
           <h2 style="color: #0b1b36; margin-top: 0;">¡El Proyecto ha Iniciado su Proceso!</h2>
-          <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) ha alcanzado el número de suscripciones requerido (**${proyecto.obj_suscripciones}**).</p>
+          <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) suscripciones: (**${proyecto.obj_suscripciones}**).</p>
           <p style="font-weight: bold; color: #4CAF50; font-size: 1.1em;">Estado Actual: En proceso</p>
           <p>El sistema ha marcado la fecha de inicio del proceso y comenzará la generación de pagos mensuales.</p>
           <p>No se requiere acción inmediata, pero por favor, confirme el estado en el <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="color: #FF5733; text-decoration: none; font-weight: bold;">panel de administración</a>.</p>
