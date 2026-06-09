@@ -114,9 +114,9 @@ const paymentService = {
         ],
         external_reference: String(transaccionId),
         back_urls: {
-          success: `${process.env.FRONTEND_URL}/pago/exito/${transaccionId}`,
-          failure: `${process.env.FRONTEND_URL}/pago/fallo/${transaccionId}`,
-          pending: `${process.env.FRONTEND_URL}/pago/pendiente/${transaccionId}`,
+          success: `${FRONTEND_URL}/pago/exito/${transaccionId}`,
+          failure: `${FRONTEND_URL}/pago/fallo/${transaccionId}`,
+          pending: `${FRONTEND_URL}/pago/pendiente/${transaccionId}`,
         },
         notification_url: webhookUrl,
         auto_return: "approved",
