@@ -16,6 +16,7 @@ const adhesionService = {
   /**
    * Crea una nueva adhesión con plan de pago y reserva el cupo creando la suscripción (sin token).
    * Las fechas de vencimiento se calculan siempre a partir del próximo mes (día 10).
+   * NOTA: NO se incrementa suscripciones_actuales aquí. Eso ocurre solo cuando la adhesión se completa.
    */
   async crearAdhesion(usuarioId, proyectoId, planPago) {
     const t = await sequelize.transaction();
@@ -31,14 +32,14 @@ const adhesionService = {
         throw new Error("Proyecto finalizado, no se puede adherir");
       }
 
-      // 3. Verificar que haya cupo disponible
+      // 2. Verificar que haya cupo disponible (opcional, depende de la política de negocio)
       if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
         throw new Error(
           `El proyecto ya alcanzó su límite de ${proyecto.obj_suscripciones} suscriptores.`,
         );
       }
 
-      // 4. Obtener la cuota mensual más reciente (valor móvil)
+      // 3. Obtener la cuota mensual más reciente (valor móvil)
       const cuotaMensual = await CuotaMensual.findOne({
         where: { id_proyecto: proyectoId },
         order: [["createdAt", "DESC"]],
@@ -68,7 +69,7 @@ const adhesionService = {
       }
       const montoPorCuota = montoTotal / cuotasTotales;
 
-      // 5. CREAR LA SUSCRIPCIÓN (reserva cupo, sin token, adhesion_completada = false)
+      // 4. CREAR LA SUSCRIPCIÓN (reserva cupo, sin token, adhesion_completada = false)
       const nuevaSuscripcion = await SuscripcionProyecto.create(
         {
           id_usuario: usuarioId,
@@ -84,13 +85,10 @@ const adhesionService = {
         { transaction: t },
       );
 
-      // Incrementar contador de suscripciones actuales
-      await proyecto.increment("suscripciones_actuales", {
-        by: 1,
-        transaction: t,
-      });
+      // 🚫 NO incrementamos suscripciones_actuales aquí
+      // await proyecto.increment("suscripciones_actuales", { by: 1, transaction: t });
 
-      // 6. Crear la ADHESIÓN
+      // 5. Crear la ADHESIÓN
       const adhesion = await Adhesion.create(
         {
           id_usuario: usuarioId,
@@ -108,18 +106,16 @@ const adhesionService = {
         { transaction: t },
       );
 
-      // 7. Generar pagos de adhesión: PRIMERA CUOTA el día 10 del próximo mes (local)
-      const hoyLocal = new Date(); // fecha y hora actual del servidor
+      // 6. Generar pagos de adhesión: PRIMERA CUOTA el día 10 del próximo mes (local)
+      const hoyLocal = new Date();
       let año = hoyLocal.getFullYear();
       let mes = hoyLocal.getMonth() + 1; // próximo mes
       if (mes > 11) {
         mes = 0;
         año++;
       }
-      // Obtener día 10 del mes correspondiente como string YYYY-MM-DD usando local
       const obtenerFecha10 = (año, mes) => {
-        // mes es 0-index para Date? Cuidado: aquí mes viene como 1-12, restamos 1 para Date
-        const fecha = new Date(año, mes - 1, 10); // local
+        const fecha = new Date(año, mes - 1, 10);
         const y = fecha.getFullYear();
         const m = String(fecha.getMonth() + 1).padStart(2, "0");
         const d = String(fecha.getDate()).padStart(2, "0");
@@ -221,7 +217,6 @@ const adhesionService = {
    * Valida que todas las cuotas anteriores estén pagadas (pago secuencial)
    */
   async procesarPagoCuota(adhesionId, numeroCuota, transaccionId, t) {
-    // Obtener la cuota con su adhesión y todas las cuotas (para validación)
     const adhesionConCuotas = await Adhesion.findByPk(adhesionId, {
       transaction: t,
       include: [{ model: PagoAdhesion, as: "pagos" }],
@@ -252,7 +247,7 @@ const adhesionService = {
     }
 
     // Marcar como pagado
-    const hoyLocalStr = new Date().toLocaleDateString("en-CA"); // 'en-CA' produce YYYY-MM-DD
+    const hoyLocalStr = new Date().toLocaleDateString("en-CA");
     await pagoAdhesion.update(
       {
         estado: "pagado",
@@ -284,7 +279,6 @@ const adhesionService = {
       { transaction: t },
     );
 
-    // Notificar por email después del commit
     t.afterCommit(async () => {
       const usuario = await Usuario.findByPk(adhesion.id_usuario);
       const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
@@ -300,9 +294,10 @@ const adhesionService = {
   },
 
   /**
-   * Cuando se completa la última cuota, activa la suscripción (token = 1, adhesion_completada = true)
-   * y crea el resumen de cuenta si no existe.
-   * Además, verifica si el proyecto alcanzó el objetivo y lo inicia automáticamente.
+   * Cuando se completa la última cuota, activa la suscripción (token = 1, adhesion_completada = true),
+   * INCREMENTA el contador de suscripciones activas del proyecto,
+   * crea el resumen de cuenta si no existe,
+   * y si se alcanza el objetivo, inicia el proyecto automáticamente.
    */
   async _completarAdhesionYActivarSuscripcion(adhesion, transaction) {
     const suscripcion = await SuscripcionProyecto.findByPk(
@@ -314,7 +309,7 @@ const adhesionService = {
     );
     if (!suscripcion) throw new Error("Suscripción asociada no encontrada");
 
-    if (suscripcion.adhesion_completada) return; // ya estaba activada
+    if (suscripcion.adhesion_completada) return;
 
     await suscripcion.update(
       {
@@ -324,10 +319,13 @@ const adhesionService = {
       { transaction },
     );
 
-    // Obtener el proyecto actualizado
+    // ✅ INCREMENTAR EL CONTADOR DE SUSCRIPCIONES ACTIVAS DEL PROYECTO
     const proyecto = suscripcion.proyectoAsociado;
     if (proyecto && proyecto.tipo_inversion === "mensual") {
-      // Volver a cargar por si el contador cambió
+      await proyecto.increment("suscripciones_actuales", {
+        by: 1,
+        transaction,
+      });
       await proyecto.reload({ transaction });
 
       // 🔥 VERIFICAR SI SE ALCANZÓ EL OBJETIVO Y EL PROYECTO ESTÁ EN ESPERA
@@ -336,7 +334,6 @@ const adhesionService = {
         proyecto.estado_proyecto === "En Espera"
       ) {
         const proyectoService = require("./proyecto.service");
-        // Iniciar proyecto automáticamente (sin administrador, como sistema)
         await proyectoService.iniciarConteoMensual(proyecto.id, {
           sistema: true,
           adminId: null,
@@ -359,7 +356,6 @@ const adhesionService = {
       }
     }
 
-    // Notificar al usuario que completó la adhesión
     transaction.afterCommit(async () => {
       const usuario = await Usuario.findByPk(adhesion.id_usuario);
       const proyectoCompleto = await Proyecto.findByPk(adhesion.id_proyecto);
@@ -440,7 +436,7 @@ const adhesionService = {
         },
       );
 
-      // Desactivar suscripción y liberar cupo
+      // Desactivar suscripción (pero NO decrementar suscripciones_actuales, porque nunca se incrementó para esta adhesión incompleta)
       if (adhesion.suscripcion && adhesion.suscripcion.activo) {
         await pagoService.cancelPendingPaymentsBySubscription(
           adhesion.suscripcion.id,
@@ -473,21 +469,8 @@ const adhesionService = {
             );
           }
         }
-        if (adhesion.proyecto) {
-          await adhesion.proyecto.decrement("suscripciones_actuales", {
-            by: 1,
-            transaction: t,
-          });
-        } else {
-          const proyecto = await Proyecto.findByPk(adhesion.id_proyecto, {
-            transaction: t,
-          });
-          if (proyecto)
-            await proyecto.decrement("suscripciones_actuales", {
-              by: 1,
-              transaction: t,
-            });
-        }
+        // 🚫 ELIMINADO: no decrementamos suscripciones_actuales aquí
+        // porque esta adhesión nunca lo incrementó.
       }
 
       const datosPrevios = {
@@ -496,10 +479,9 @@ const adhesionService = {
       };
       await adhesion.update({ estado: "cancelada" }, { transaction: t });
 
-      // ✅ Solo registrar auditoría si es un administrador
       if (esAdmin && userId) {
         await auditService.registrar({
-          usuarioId: userId, // ID del admin
+          usuarioId: userId,
           accion: "CANCELAR_ADHESION",
           entidadTipo: "Adhesion",
           entidadId: adhesion.id,
@@ -539,12 +521,6 @@ const adhesionService = {
 
   /**
    * Verifica si una cuota específica puede ser pagada
-   * (todas las cuotas anteriores deben estar pagadas o forzadas)
-   * @param {number} adhesionId - ID de la adhesión
-   * @param {number} numeroCuota - Número de cuota a pagar (1..N)
-   * @param {number|null} usuarioId - Opcional, para verificar pertenencia
-   * @returns {Promise<boolean>}
-   * @throws {Error} si no es pagable, con mensaje explicativo
    */
   async validarCuotaPagable(adhesionId, numeroCuota, usuarioId = null) {
     const adhesion = await this.obtenerAdhesion(adhesionId, usuarioId);
@@ -558,7 +534,6 @@ const adhesionService = {
       );
     }
 
-    // Buscar cuotas anteriores que NO estén pagadas/forzadas
     const cuotasAnterioresNoPagadas = adhesion.pagos.filter(
       (p) =>
         p.numero_cuota < numeroCuota &&
@@ -576,6 +551,7 @@ const adhesionService = {
 
     return true;
   },
+
   // ------------------------------------------------------------------
   // FORZAR PAGO DE CUOTA (ADMIN)
   // ------------------------------------------------------------------
@@ -612,7 +588,6 @@ const adhesionService = {
         );
       }
 
-      // Validar cuotas anteriores
       const cuotasAnteriores = adhesion.pagos.filter(
         (p) => p.numero_cuota < numeroCuota,
       );
@@ -626,7 +601,7 @@ const adhesionService = {
       }
 
       const yaPagadas = adhesion.cuotas_pagadas;
-      const datosPrevios = pagoAdhesion.toJSON(); // ✅ Definir datos previos antes del update
+      const datosPrevios = pagoAdhesion.toJSON();
 
       await pagoAdhesion.update(
         {
@@ -658,7 +633,6 @@ const adhesionService = {
         { transaction: t },
       );
 
-      // Registrar auditoría
       await auditService.registrar({
         usuarioId: adminId,
         accion: "FORZAR_PAGO_CUOTA_ADHESION",
@@ -672,9 +646,8 @@ const adhesionService = {
         transaccion: t,
       });
 
-      await t.commit(); // ✅ Un solo commit
+      await t.commit();
 
-      // Notificaciones
       const usuario = await Usuario.findByPk(adhesion.id_usuario);
       const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
       await emailService.notificarCuotaAdhesionPagada(
@@ -710,12 +683,6 @@ const adhesionService = {
   // MÉTRICAS Y REPORTES PARA ADMINISTRACIÓN
   // ------------------------------------------------------------------
 
-  /**
-   * Obtiene métricas globales de adhesiones, con opción de filtrar por rango de fechas (creación de la adhesión)
-   * @param {Date|null} fechaInicio - Fecha de inicio (opcional)
-   * @param {Date|null} fechaFin - Fecha de fin (opcional)
-   * @returns {Promise<object>}
-   */
   async getAdhesionMetrics(fechaInicio = null, fechaFin = null) {
     const whereAdhesion = {};
     if (fechaInicio) whereAdhesion.createdAt = { [Op.gte]: fechaInicio };
@@ -786,9 +753,6 @@ const adhesionService = {
     };
   },
 
-  /**
-   * Obtiene el detalle de cuotas vencidas con datos de usuario y proyecto
-   */
   async getOverdueAdhesionPayments() {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
@@ -819,9 +783,6 @@ const adhesionService = {
     });
   },
 
-  /**
-   * Obtiene el historial de pagos de una adhesión (para auditoría)
-   */
   async getPaymentHistory(adhesionId) {
     const adhesion = await Adhesion.findByPk(adhesionId, {
       include: [
@@ -845,10 +806,6 @@ const adhesionService = {
     if (!adhesion) throw new Error("Adhesión no encontrada");
     return adhesion;
   },
-
-  // ------------------------------------------------------------------
-  // LISTAR TODAS LAS ADHESIONES (ADMIN)
-  // ------------------------------------------------------------------
 
   async listarTodasAdhesiones() {
     const UsuarioModel = require("../models/usuario");
