@@ -207,11 +207,11 @@ async function reembolsarPagoDuplicado(
         await emailService.notificarReembolsoUsuario(
           user,
           transaccion,
-          `Error inesperado al intentar reembolsar: ${err.message}`,
+          `Error inesperado al intentar reembolsar : ${err.message}`,
           false,
         );
       }
-    }
+    } 
   }
 }
 const paymentControllerObj = {
