@@ -198,6 +198,31 @@ const proyectoController = {
       res.status(400).json({ error: error.message });
     }
   },
+  /**
+   * Pausa un proyecto mensual (cambia de "En proceso" a "En Espera").
+   * @param {object} req - Objeto de solicitud (con id en params).
+   * @param {object} res - Objeto de respuesta.
+   */
+  async pausarProyecto(req, res) {
+    try {
+      const { id } = req.params;
+      const adminContext = {
+        adminId: req.user.id,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      };
+      const proyectoActualizado = await proyectoService.pausarProyecto(
+        id,
+        adminContext,
+      );
+      res.status(200).json({
+        mensaje: `Proyecto ID ${id} pausado. Estado: En Espera.`,
+        proyecto: proyectoActualizado,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
 
   /**
    * @async

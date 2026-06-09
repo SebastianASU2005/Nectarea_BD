@@ -461,6 +461,77 @@ const proyectoService = {
 
     return proyectoActualizado;
   },
+  /**
+   * Pausa un proyecto que está en "En proceso", volviéndolo a "En Espera".
+   * Notifica a todos los suscriptores activos y a los administradores.
+   * @param {number} proyectoId - ID del proyecto.
+   * @param {Object} options - Opciones.
+   * @param {number|null} options.adminId - ID del administrador que ejecuta la acción (opcional).
+   * @param {string|null} options.ip - IP del administrador (para auditoría).
+   * @param {string|null} options.userAgent - User-Agent del administrador.
+   * @param {boolean} options.sistema - Si es true, la acción es automática (no se registra auditoría).
+   * @returns {Promise<Proyecto>} Proyecto actualizado.
+   */
+  async pausarProyecto(proyectoId, options = {}) {
+    const { adminId, ip, userAgent, sistema = false } = options;
+    const proyecto = await Proyecto.findByPk(proyectoId);
+    if (!proyecto) throw new Error("Proyecto no encontrado.");
+    if (proyecto.tipo_inversion !== "mensual")
+      throw new Error("Solo los proyectos mensuales pueden ser pausados.");
+    if (proyecto.estado_proyecto !== "En proceso")
+      throw new Error("El proyecto no está en estado 'En proceso'.");
+
+    const datosPrevios = sistema ? null : proyecto.toJSON();
+    const proyectoActualizado = await proyecto.update({
+      estado_proyecto: "En Espera",
+      fecha_inicio_proceso: null,
+      objetivo_notificado: false,
+      // meses_restantes se mantiene igual para poder reanudar después
+    });
+
+    // ========== NOTIFICACIONES (si es sistema o admin) ==========
+    if (sistema || adminId) {
+      // 1. Obtener todos los usuarios suscriptores activos
+      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+      const Usuario = require("../models/usuario");
+      const suscripciones = await SuscripcionProyecto.findAll({
+        where: { id_proyecto: proyecto.id, activo: true },
+        include: [{ model: Usuario, as: "usuario" }],
+      });
+      const usuarios = suscripciones
+        .map((s) => s.usuario)
+        .filter((u) => u && u.email);
+      if (usuarios.length > 0) {
+        // Llama a una nueva función de emailService para notificar pausa
+        await emailService.notificarPausaProyectoMasiva(proyecto, usuarios);
+      }
+
+      // 2. Notificar a administradores
+      const administradores = await usuarioService.findAllAdmins();
+      for (const admin of administradores) {
+        if (admin.email) {
+          await emailService.notificarPausaProyectoAdmin(admin.email, proyecto);
+        }
+      }
+    }
+
+    // ========== AUDITORÍA (solo si es admin, no si es sistema) ==========
+    if (adminId && !sistema) {
+      await auditService.registrar({
+        usuarioId: adminId,
+        accion: "PAUSAR_PROYECTO",
+        entidadTipo: "Proyecto",
+        entidadId: proyecto.id,
+        datosPrevios,
+        datosNuevos: proyectoActualizado.toJSON(),
+        motivo: null,
+        ip,
+        userAgent,
+      });
+    }
+
+    return proyectoActualizado;
+  },
 
   async findAllActivoMensual() {
     return await Proyecto.findAll({

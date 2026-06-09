@@ -479,6 +479,43 @@ const emailService = {
       }
     }
   },
+  /**
+   * Notifica a múltiples suscriptores que el proyecto ha sido pausado.
+   * @param {object} proyecto - Proyecto.
+   * @param {object[]} usuarios - Array de usuarios (con nombre, email).
+   */
+  async notificarPausaProyectoMasiva(proyecto, usuarios) {
+    const subject = `⏸️ Proyecto "${proyecto.nombre_proyecto}" ha sido pausado`;
+    for (const usuario of usuarios) {
+      if (usuario.email) {
+        // Reutiliza la función individual existente
+        await this.notificarPausaProyecto(usuario, proyecto);
+      }
+    }
+  },
+
+  /**
+   * Notifica a un administrador que un proyecto ha sido pausado.
+   * @param {string} adminEmail - Email del administrador.
+   * @param {object} proyecto - Proyecto.
+   */
+  async notificarPausaProyectoAdmin(adminEmail, proyecto) {
+    const subject = `⏸️ Proyecto "${proyecto.nombre_proyecto}" pausado por administrador`;
+    const contenidoInterno = `
+    <h2 style="color: #d9534f;">Proyecto Pausado</h2>
+    <p>El proyecto <strong>"${proyecto.nombre_proyecto}"</strong> (ID: ${proyecto.id}) ha sido pausado manualmente por un administrador.</p>
+    <p>Estado actual: <strong>En Espera</strong>. No se generarán nuevos pagos mensuales hasta que sea reanudado.</p>
+    <p>Si fue una acción no deseada, puedes reanudarlo desde el panel de administración.</p>
+    <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ir al panel</a>
+  `;
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    await this.sendEmail(
+      adminEmail,
+      subject,
+      `Proyecto ${proyecto.nombre_proyecto} pausado.`,
+      html,
+    );
+  },
 
   /**
    * Notifica a un **ADMINISTRADOR** que un proyecto alcanzó su objetivo y ha comenzado.
