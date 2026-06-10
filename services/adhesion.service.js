@@ -306,7 +306,6 @@ const adhesionService = {
           },
           transaction: t,
         });
-        // Si no hay ninguna adhesión sin al menos un pago, iniciar proyecto
         if (adhesionesSinPago === 0) {
           console.log(
             `[adhesionService] Todas las adhesiones del proyecto ${proyecto.id} tienen al menos un pago. Iniciando proyecto automáticamente...`,
@@ -314,9 +313,7 @@ const adhesionService = {
           const proyectoService = require("./proyecto.service");
           await proyectoService.iniciarConteoMensual(proyecto.id, {
             sistema: true,
-            adminId: null,
-            ip: null,
-            userAgent: null,
+            transaction: t, // ✅ PASAR LA TRANSACCIÓN ACTIVA
           });
         }
       }

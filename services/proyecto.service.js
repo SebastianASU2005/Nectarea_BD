@@ -388,97 +388,124 @@ const proyectoService = {
   /**
    * Inicia el conteo mensual de un proyecto (pasa de "En Espera" a "En proceso").
    * @param {number} proyectoId - ID del proyecto.
-   * @param {Object} options - Opciones adicionales.
-   * @param {number|null} options.adminId - ID del administrador que ejecuta la acción (opcional).
-   * @param {string|null} options.ip - IP del administrador (para auditoría).
-   * @param {string|null} options.userAgent - User-Agent del administrador.
-   * @param {boolean} options.sistema - Si es true, la acción es automática (no se registra auditoría).
-   * @returns {Promise<Proyecto>} Proyecto actualizado.
+   * @param {Object} options - Opciones.
+   * @param {number|null} options.adminId - ID del administrador que ejecuta (opcional).
+   * @param {string|null} options.ip - IP del admin.
+   * @param {string|null} options.userAgent - User-Agent.
+   * @param {boolean} options.sistema - Si true, es automático (no auditoría).
+   * @param {Transaction} options.transaction - Transacción de Sequelize (para consistencia).
    */
   async iniciarConteoMensual(proyectoId, options = {}) {
-    const { adminId, ip, userAgent, sistema = false } = options;
-    const proyecto = await Proyecto.findByPk(proyectoId);
-    if (!proyecto) throw new Error("Proyecto no encontrado.");
-    if (proyecto.tipo_inversion !== "mensual")
-      throw new Error("El proyecto no es de tipo 'mensual'.");
-    if (proyecto.estado_proyecto !== "En Espera")
-      throw new Error("El proyecto ya ha iniciado o ha finalizado el proceso.");
-    if (!proyecto.plazo_inversion || proyecto.plazo_inversion <= 0)
-      throw new Error(
-        "El proyecto mensual no tiene un 'plazo_inversion' definido.",
-      );
+    const {
+      adminId,
+      ip,
+      userAgent,
+      sistema = false,
+      transaction = null,
+    } = options;
+    const t = transaction || (await sequelize.transaction());
+    const isExternalTransaction = !!transaction;
 
-    const datosPrevios = sistema ? null : proyecto.toJSON();
-    const proyectoActualizado = await proyecto.update({
-      estado_proyecto: "En proceso",
-      fecha_inicio_proceso: new Date(),
-      meses_restantes: proyecto.meses_restantes || proyecto.plazo_inversion,
-      objetivo_notificado: true, // Se marcará como notificado solo si el envío es exitoso (opcional)
-    });
-
-    // ========== NOTIFICACIONES (si es sistema o admin) ==========
-    if (sistema || adminId) {
-      // 1. Obtener todos los usuarios suscriptores activos
-      const SuscripcionProyecto = require("../models/suscripcion_proyecto");
-      const Usuario = require("../models/usuario");
-
-      const suscripciones = await SuscripcionProyecto.findAll({
-        where: { id_proyecto: proyecto.id, activo: true },
-        include: [{ model: Usuario, as: "usuario" }],
-      });
-
-      console.log(
-        `[iniciarConteoMensual] Proyecto ${proyecto.id} - ${suscripciones.length} suscripciones activas encontradas`,
-      );
-
-      const usuarios = suscripciones
-        .map((s) => s.usuario)
-        .filter((u) => u && u.email);
-
-      console.log(
-        `[iniciarConteoMensual] Usuarios a notificar: ${usuarios.length}`,
-      );
-
-      if (usuarios.length > 0) {
-        await emailService.notificarInicioProyectoMasivo(proyecto, usuarios);
-      } else {
-        console.warn(
-          `[iniciarConteoMensual] No hay usuarios con email para notificar en proyecto ${proyecto.id}`,
+    try {
+      const proyecto = await Proyecto.findByPk(proyectoId, { transaction: t });
+      if (!proyecto) throw new Error("Proyecto no encontrado.");
+      if (proyecto.tipo_inversion !== "mensual")
+        throw new Error("El proyecto no es de tipo 'mensual'.");
+      if (proyecto.estado_proyecto !== "En Espera")
+        throw new Error(
+          "El proyecto ya ha iniciado o ha finalizado el proceso.",
         );
-      }
+      if (!proyecto.plazo_inversion || proyecto.plazo_inversion <= 0)
+        throw new Error("El proyecto no tiene 'plazo_inversion' definido.");
 
-      // 2. Notificar a administradores
-      const administradores = await usuarioService.findAllAdmins();
-      for (const admin of administradores) {
-        if (admin.email) {
-          try {
-            await emailService.notificarInicioProyectoAdmin(
-              admin.email,
+      const datosPrevios = sistema ? null : proyecto.toJSON();
+
+      // Actualizar proyecto DENTRO de la transacción
+      await proyecto.update(
+        {
+          estado_proyecto: "En proceso",
+          fecha_inicio_proceso: new Date(),
+          meses_restantes: proyecto.meses_restantes || proyecto.plazo_inversion,
+          objetivo_notificado: true,
+        },
+        { transaction: t },
+      );
+
+      // ========== NOTIFICACIONES (después del commit) ==========
+      t.afterCommit(async () => {
+        console.log(
+          `[iniciarConteoMensual] Enviando notificaciones post-commit para proyecto ${proyecto.id}`,
+        );
+        try {
+          // Obtener suscripciones activas (YA CONFIRMADAS)
+          const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+          const Usuario = require("../models/usuario");
+          const suscripciones = await SuscripcionProyecto.findAll({
+            where: { id_proyecto: proyecto.id, activo: true },
+            include: [
+              {
+                model: Usuario,
+                as: "usuario",
+                attributes: ["id", "email", "nombre"],
+              },
+            ],
+          });
+          const usuarios = suscripciones
+            .map((s) => s.usuario)
+            .filter((u) => u && u.email);
+          console.log(
+            `[iniciarConteoMensual] Usuarios a notificar: ${usuarios.length}`,
+          );
+          if (usuarios.length > 0) {
+            await emailService.notificarInicioProyectoMasivo(
               proyecto,
+              usuarios,
             );
-          } catch (e) {
-            console.error(`Error al notificar a admin ${admin.id}:`, e.message);
+          } else {
+            console.warn(
+              `[iniciarConteoMensual] No hay usuarios con email para proyecto ${proyecto.id}`,
+            );
           }
+          // Notificar a admins
+          const administradores = await usuarioService.findAllAdmins();
+          for (const admin of administradores) {
+            if (admin.email) {
+              await emailService.notificarInicioProyectoAdmin(
+                admin.email,
+                proyecto,
+              );
+            }
+          }
+        } catch (notifError) {
+          console.error(
+            `[iniciarConteoMensual] Error enviando notificaciones:`,
+            notifError.message,
+          );
         }
-      }
-    }
-
-    // ========== AUDITORÍA (solo si es admin, no si es sistema) ==========
-    if (adminId && !sistema) {
-      await auditService.registrar({
-        usuarioId: adminId,
-        accion: "INICIAR_CONTEO_MENSUAL",
-        entidadTipo: "Proyecto",
-        entidadId: proyecto.id,
-        datosPrevios,
-        datosNuevos: proyectoActualizado.toJSON(),
-        motivo: null,
-        ip,
-        userAgent,
       });
-    }
 
-    return proyectoActualizado;
+      // ========== AUDITORÍA (solo si es admin y no sistema) ==========
+      if (adminId && !sistema) {
+        await auditService.registrar({
+          usuarioId: adminId,
+          accion: "INICIAR_CONTEO_MENSUAL",
+          entidadTipo: "Proyecto",
+          entidadId: proyecto.id,
+          datosPrevios,
+          datosNuevos: proyecto.toJSON(),
+          ip,
+          userAgent,
+          transaccion: t,
+        });
+      }
+
+      if (!isExternalTransaction) await t.commit();
+      return proyecto;
+    } catch (error) {
+      if (!isExternalTransaction) await t.rollback();
+      console.error(`[iniciarConteoMensual] Error:`, error.message);
+      throw error;
+    }
   },
   /**
    * Pausa un proyecto que está en "En proceso", volviéndolo a "En Espera".
