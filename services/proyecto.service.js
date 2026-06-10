@@ -413,33 +413,52 @@ const proyectoService = {
       estado_proyecto: "En proceso",
       fecha_inicio_proceso: new Date(),
       meses_restantes: proyecto.meses_restantes || proyecto.plazo_inversion,
-      objetivo_notificado: true,
+      objetivo_notificado: true, // Se marcará como notificado solo si el envío es exitoso (opcional)
     });
 
-    // ========== NOTIFICACIONES (si es sistema o si es admin) ==========
+    // ========== NOTIFICACIONES (si es sistema o admin) ==========
     if (sistema || adminId) {
       // 1. Obtener todos los usuarios suscriptores activos
       const SuscripcionProyecto = require("../models/suscripcion_proyecto");
       const Usuario = require("../models/usuario");
+
       const suscripciones = await SuscripcionProyecto.findAll({
         where: { id_proyecto: proyecto.id, activo: true },
         include: [{ model: Usuario, as: "usuario" }],
       });
+
+      console.log(
+        `[iniciarConteoMensual] Proyecto ${proyecto.id} - ${suscripciones.length} suscripciones activas encontradas`,
+      );
+
       const usuarios = suscripciones
         .map((s) => s.usuario)
         .filter((u) => u && u.email);
+
+      console.log(
+        `[iniciarConteoMensual] Usuarios a notificar: ${usuarios.length}`,
+      );
+
       if (usuarios.length > 0) {
         await emailService.notificarInicioProyectoMasivo(proyecto, usuarios);
+      } else {
+        console.warn(
+          `[iniciarConteoMensual] No hay usuarios con email para notificar en proyecto ${proyecto.id}`,
+        );
       }
 
       // 2. Notificar a administradores
       const administradores = await usuarioService.findAllAdmins();
       for (const admin of administradores) {
         if (admin.email) {
-          await emailService.notificarInicioProyectoAdmin(
-            admin.email,
-            proyecto,
-          );
+          try {
+            await emailService.notificarInicioProyectoAdmin(
+              admin.email,
+              proyecto,
+            );
+          } catch (e) {
+            console.error(`Error al notificar a admin ${admin.id}:`, e.message);
+          }
         }
       }
     }

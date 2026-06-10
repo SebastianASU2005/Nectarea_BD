@@ -458,26 +458,51 @@ const emailService = {
   async notificarInicioProyectoMasivo(proyecto, usuarios) {
     const subject = `🥳 ¡Objetivo Alcanzado! El proyecto ${proyecto.nombre_proyecto} ha comenzado.`;
 
+    // Deduplicar usuarios por email para no enviar múltiples correos al mismo usuario
+    const uniqueUsers = [];
+    const emailsSet = new Set();
     for (const usuario of usuarios) {
-      if (usuario.email) {
+      if (usuario && usuario.email && !emailsSet.has(usuario.email)) {
+        emailsSet.add(usuario.email);
+        uniqueUsers.push(usuario);
+      }
+    }
+
+    console.log(
+      `[emailService] notificarInicioProyectoMasivo: ${uniqueUsers.length} usuarios únicos a notificar para proyecto ${proyecto.id}`,
+    );
+
+    for (const usuario of uniqueUsers) {
+      if (!usuario.email) continue;
+
+      try {
         const contenidoInterno = `
-              <h2 style="color: #4CAF50; margin-top: 0;">¡Gran Noticia, ${usuario.nombre}!</h2>
-              <p>El proyecto **"${proyecto.nombre_proyecto}"** ha alcanzado el **objetivo de ${proyecto.obj_suscripciones} suscripciones**.</p>
-              <p style="font-weight: bold; color: #0b1b36; font-size: 1.1em;">¡El proceso de inversión ha comenzado!</p>
-              <h3 style="color: #333;">Próximos Pasos</h3>
-              <ul style="list-style: disc; padding-left: 20px; line-height: 2;">
-                  <li>La generación de tu **pago mensual** comenzará el día **1** del próximo mes.</li>
-                  <li>El plazo de pago vencerá el día **10** de cada mes.</li>
-              </ul>
-              <p>Agradecemos tu apoyo. Juntos hacemos realidad este proyecto.</p>
-          `;
+        <h2 style="color: #4CAF50; margin-top: 0;">¡Gran Noticia, ${usuario.nombre}!</h2>
+        <p>El proyecto **"${proyecto.nombre_proyecto}"** ha alcanzado el **objetivo de ${proyecto.obj_suscripciones} suscripciones**.</p>
+        <p style="font-weight: bold; color: #0b1b36; font-size: 1.1em;">¡El proceso de inversión ha comenzado!</p>
+        <h3 style="color: #333;">Próximos Pasos</h3>
+        <ul style="list-style: disc; padding-left: 20px; line-height: 2;">
+          <li>La generación de tu **pago mensual** comenzará el día **1** del próximo mes.</li>
+          <li>El plazo de pago vencerá el día **10** de cada mes.</li>
+        </ul>
+        <p>Agradecemos tu apoyo. Juntos hacemos realidad este proyecto.</p>
+      `;
 
         const html = obtenerPlantillaHtml(contenidoInterno);
         const text = `¡Felicidades, ${usuario.nombre}! El proyecto ${proyecto.nombre_proyecto} ha alcanzado el objetivo de suscripciones (${proyecto.obj_suscripciones}). La generación de pagos mensuales comenzará el día 1 del próximo mes.`;
 
         await this.sendEmail(usuario.email, subject, text, html);
+      } catch (error) {
+        console.error(
+          `[emailService] Error al enviar notificación de inicio a ${usuario.email}:`,
+          error.message,
+        );
+        // Continuamos con el siguiente usuario, no detenemos el proceso
       }
     }
+    console.log(
+      `[emailService] Notificaciones de inicio enviadas a ${uniqueUsers.length} usuarios (proyecto ${proyecto.id})`,
+    );
   },
   /**
    * Notifica a múltiples suscriptores que el proyecto ha sido pausado.
