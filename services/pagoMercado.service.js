@@ -464,6 +464,17 @@ const paymentService = {
     const transaccionService = require("../services/transaccion.service");
     if (!paymentAPI) return null;
 
+    // Mapeo específico para el modelo PagoMercado (enum: pendiente, aprobado, rechazado, devuelto, en_proceso)
+    const PAGO_MERCADO_STATUS_MAP = {
+      approved: "aprobado",
+      pending: "en_proceso",
+      in_process: "en_proceso",
+      rejected: "rechazado",
+      cancelled: "rechazado",
+      refunded: "devuelto",
+      charged_back: "devuelto",
+    };
+
     console.log(
       `➡️ Refrescando estado para Transacción ID: ${transaccionId}, ID proporcionado: ${mpTransactionId}`,
     );
@@ -509,7 +520,8 @@ const paymentService = {
     let pagoMercado = await PagoMercado.findOne({
       where: { id_transaccion: transaccionId },
     });
-    const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
+    const internalStatus =
+      PAGO_MERCADO_STATUS_MAP[paymentData.status] || "en_proceso";
 
     // Validar y formatear monto
     let montoPagado = null;
@@ -533,14 +545,11 @@ const paymentService = {
 
     try {
       if (pagoMercado) {
-        // Actualizar solo los campos que han cambiado
         await pagoMercado.update(pagoData);
-        // Si el ID que teníamos no era el paymentId real, actualizamos también id_transaccion_pasarela
         if (pagoMercado.id_transaccion_pasarela !== paymentIdToUse) {
           await pagoMercado.update({ id_transaccion_pasarela: paymentIdToUse });
         }
       } else {
-        // Crear nuevo registro PagoMercado
         pagoMercado = await PagoMercado.create({
           id_transaccion: transaccionId,
           monto_pagado: montoPagado,
@@ -562,7 +571,7 @@ const paymentService = {
     }
 
     if (
-      internalStatus === "pagado" &&
+      internalStatus === "aprobado" &&
       transaccion.estado_transaccion !== "pagado"
     ) {
       await transaccionService.confirmarTransaccion(transaccionId);
