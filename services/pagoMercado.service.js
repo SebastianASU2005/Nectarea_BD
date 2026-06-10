@@ -333,18 +333,19 @@ const paymentService = {
   async _getPaymentByExternalReference(transaccionId) {
     if (!paymentAPI) return null;
     try {
-      // Buscamos pagos con esa external_reference. Limitamos a 1 y ordenamos por fecha descendente.
-      const searchResult = await paymentAPI.search({
-        external_reference: String(transaccionId),
-        sort: "date_created desc",
-        limit: 1,
+      // Usar el endpoint de búsqueda de pagos por external_reference
+      // Nota: El SDK de MercadoPago no tiene un método directo, debemos usar axios o la búsqueda paginada.
+      // Opción: usar el API de search con external_reference.
+      const url = `https://api.mercadopago.com/v1/payments/search?external_reference=${transaccionId}&limit=1`;
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${MP_LIVE_ACCESS_TOKEN}` },
       });
       if (
-        searchResult &&
-        searchResult.results &&
-        searchResult.results.length > 0
+        response.data &&
+        response.data.results &&
+        response.data.results.length > 0
       ) {
-        return searchResult.results[0];
+        return response.data.results[0];
       }
       return null;
     } catch (error) {
@@ -475,7 +476,6 @@ const paymentService = {
       console.log(
         `   - ID no numérico (parece preferenceId). Buscando paymentId real...`,
       );
-      // Buscar pago por external_reference
       const foundPayment =
         await this._getPaymentByExternalReference(transaccionId);
       if (foundPayment && foundPayment.id) {
@@ -489,7 +489,6 @@ const paymentService = {
         return null;
       }
     } else {
-      // Es numérico, obtener directamente el pago
       try {
         paymentData = await paymentAPI.get({ id: paymentIdToUse });
       } catch (error) {
@@ -502,36 +501,64 @@ const paymentService = {
     }
 
     const transaccion = await Transaccion.findByPk(transaccionId);
-    if (!transaccion) return null;
+    if (!transaccion) {
+      console.warn(`⚠️ Transacción ${transaccionId} no encontrada.`);
+      return null;
+    }
 
     let pagoMercado = await PagoMercado.findOne({
       where: { id_transaccion: transaccionId },
     });
     const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
 
+    // Validar y formatear monto
+    let montoPagado = null;
+    if (paymentData.transaction_amount) {
+      montoPagado = parseFloat(paymentData.transaction_amount).toFixed(2);
+    } else if (paymentData.total_paid_amount) {
+      montoPagado = parseFloat(paymentData.total_paid_amount).toFixed(2);
+    } else {
+      console.warn(
+        `⚠️ No se pudo determinar el monto del pago ${paymentIdToUse}. Usando 0.`,
+      );
+      montoPagado = "0.00";
+    }
+
     const pagoData = {
       estado: internalStatus,
-      tipo_medio_pago: paymentData.payment_type_id,
-      fecha_aprobacion: paymentData.date_approved,
+      tipo_medio_pago: paymentData.payment_type_id || null,
+      fecha_aprobacion: paymentData.date_approved || null,
       detalles_raw: paymentData,
     };
 
-    // Actualizar o crear registro de PagoMercado
-    if (pagoMercado) {
-      await pagoMercado.update(pagoData);
-      // Si el ID que teníamos no era el paymentId real, actualizamos también id_transaccion_pasarela
-      if (pagoMercado.id_transaccion_pasarela !== paymentIdToUse) {
-        await pagoMercado.update({ id_transaccion_pasarela: paymentIdToUse });
+    try {
+      if (pagoMercado) {
+        // Actualizar solo los campos que han cambiado
+        await pagoMercado.update(pagoData);
+        // Si el ID que teníamos no era el paymentId real, actualizamos también id_transaccion_pasarela
+        if (pagoMercado.id_transaccion_pasarela !== paymentIdToUse) {
+          await pagoMercado.update({ id_transaccion_pasarela: paymentIdToUse });
+        }
+      } else {
+        // Crear nuevo registro PagoMercado
+        pagoMercado = await PagoMercado.create({
+          id_transaccion: transaccionId,
+          monto_pagado: montoPagado,
+          metodo_pasarela: "mercadopago",
+          id_transaccion_pasarela: paymentIdToUse,
+          ...pagoData,
+        });
+        await transaccion.update({ id_pago_pasarela: pagoMercado.id });
       }
-    } else {
-      pagoMercado = await PagoMercado.create({
-        id_transaccion: transaccionId,
-        monto_pagado: paymentData.transaction_amount,
-        metodo_pasarela: "mercadopago",
-        id_transaccion_pasarela: paymentIdToUse,
-        ...pagoData,
-      });
-      await transaccion.update({ id_pago_pasarela: pagoMercado.id });
+    } catch (err) {
+      console.error(
+        `❌ Error guardando PagoMercado para transacción ${transaccionId}:`,
+        err.message,
+      );
+      if (err.name === "SequelizeValidationError") {
+        console.error("🔍 Detalles de validación:", err.errors);
+      }
+      return null;
     }
 
     if (
