@@ -1,11 +1,10 @@
-
+// jobs/conciliatePendingPayments.js (versión final)
 const { sequelize, Op } = require("../config/database");
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 const pagoMercadoService = require("../services/pagoMercado.service");
-const transaccionService = require("../services/transaccion.service");
 
-const CONCILIATION_TIMEOUT_MINUTES = 10; // Solo considerar transacciones con más de 30 minutos de antigüedad
+const CONCILIATION_TIMEOUT_MINUTES = 10;
 
 async function conciliatePendingPayments() {
   console.log(`🔍 [Conciliación] Iniciando búsqueda de pagos pendientes no confirmados...`);
@@ -13,7 +12,6 @@ async function conciliatePendingPayments() {
   const fechaLimite = new Date(Date.now() - CONCILIATION_TIMEOUT_MINUTES * 60 * 1000);
 
   try {
-    // Buscar transacciones en estado 'pendiente' o 'en_proceso' con más de 30 minutos
     const transaccionesPendientes = await Transaccion.findAll({
       where: {
         estado_transaccion: { [Op.in]: ["pendiente", "en_proceso"] },
@@ -36,17 +34,15 @@ async function conciliatePendingPayments() {
     console.log(`📊 [Conciliación] Se encontraron ${transaccionesPendientes.length} transacciones pendientes antiguas.`);
 
     for (const transaccion of transaccionesPendientes) {
-      // Si ya tiene un pagoMercado con id_transaccion_pasarela, usar ese para consultar
       let mpTransactionId = null;
       if (transaccion.pagoPasarela && transaccion.pagoPasarela.id_transaccion_pasarela) {
         mpTransactionId = transaccion.pagoPasarela.id_transaccion_pasarela;
       } else {
-        // Si no tiene, no podemos conciliar (no sabemos qué pago consultar)
         console.warn(`⚠️ [Conciliación] Transacción ${transaccion.id} no tiene id_transaccion_pasarela asociado.`);
         continue;
       }
 
-      console.log(`🔄 [Conciliación] Consultando estado de pago MP ${mpTransactionId} para transacción ${transaccion.id}...`);
+      console.log(`🔄 [Conciliación] Consultando estado para transacción ${transaccion.id} (ID MP: ${mpTransactionId})...`);
 
       try {
         const updatedData = await pagoMercadoService.refreshPaymentStatus(

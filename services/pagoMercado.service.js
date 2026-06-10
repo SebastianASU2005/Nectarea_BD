@@ -325,6 +325,36 @@ const paymentService = {
       `No se pudo reembolsar. Último error: ${lastError?.message || "Desconocido"}`,
     );
   },
+  /**
+   * Busca un pago en Mercado Pago usando la referencia externa (nuestro transaccionId).
+   * @param {number} transaccionId - ID de nuestra transacción.
+   * @returns {Promise<object|null>} Datos del pago o null si no se encuentra.
+   */
+  async _getPaymentByExternalReference(transaccionId) {
+    if (!paymentAPI) return null;
+    try {
+      // Buscamos pagos con esa external_reference. Limitamos a 1 y ordenamos por fecha descendente.
+      const searchResult = await paymentAPI.search({
+        external_reference: String(transaccionId),
+        sort: "date_created desc",
+        limit: 1,
+      });
+      if (
+        searchResult &&
+        searchResult.results &&
+        searchResult.results.length > 0
+      ) {
+        return searchResult.results[0];
+      }
+      return null;
+    } catch (error) {
+      console.error(
+        `❌ Error buscando pago por external_reference ${transaccionId}:`,
+        error.message,
+      );
+      return null;
+    }
+  },
 
   async procesarPagosDeMerchantOrder(merchantOrderId) {
     const transaccionService = require("../services/transaccion.service");
@@ -425,54 +455,95 @@ const paymentService = {
     return descripcion;
   },
 
+  /**
+   * Refresca el estado de un pago. Acepta tanto paymentId numérico como preferenceId.
+   * Si se pasa un preferenceId, intenta obtener el paymentId real mediante external_reference.
+   */
   async refreshPaymentStatus(transaccionId, mpTransactionId) {
     const transaccionService = require("../services/transaccion.service");
     if (!paymentAPI) return null;
+
     console.log(
-      `➡️ Refrescando estado para Transacción ID: ${transaccionId}, Pago MP ID: ${mpTransactionId}`,
+      `➡️ Refrescando estado para Transacción ID: ${transaccionId}, ID proporcionado: ${mpTransactionId}`,
     );
-    try {
-      const paymentData = await paymentAPI.get({ id: mpTransactionId });
-      const transaccion = await Transaccion.findByPk(transaccionId);
-      if (!transaccion) return null;
-      let pagoMercado = await PagoMercado.findOne({
-        where: { id_transaccion: transaccionId },
-      });
-      const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
-      const pagoData = {
-        estado: internalStatus,
-        tipo_medio_pago: paymentData.payment_type_id,
-        fecha_aprobacion: paymentData.date_approved,
-        detalles_raw: paymentData,
-      };
-      if (pagoMercado) {
-        await pagoMercado.update(pagoData);
+
+    let paymentIdToUse = mpTransactionId;
+    let paymentData = null;
+
+    // Si el ID proporcionado NO es numérico (ej: contiene guiones), asumimos que es un preferenceId
+    if (!/^\d+$/.test(String(mpTransactionId))) {
+      console.log(
+        `   - ID no numérico (parece preferenceId). Buscando paymentId real...`,
+      );
+      // Buscar pago por external_reference
+      const foundPayment =
+        await this._getPaymentByExternalReference(transaccionId);
+      if (foundPayment && foundPayment.id) {
+        paymentIdToUse = String(foundPayment.id);
+        paymentData = foundPayment;
+        console.log(`   - Encontrado paymentId real: ${paymentIdToUse}`);
       } else {
         console.warn(
-          `   - No se encontró registro PagoMercado para Transacción ${transaccionId}.`,
+          `   - No se encontró ningún pago asociado a la transacción ${transaccionId}.`,
         );
+        return null;
       }
-      if (
-        internalStatus === "pagado" &&
-        transaccion.estado_transaccion !== "pagado"
-      ) {
-        await transaccionService.confirmarTransaccion(transaccionId);
-        await transaccion.reload();
-        console.log(
-          `   - Transacción ${transaccionId} CONFIRMADA por refresh.`,
+    } else {
+      // Es numérico, obtener directamente el pago
+      try {
+        paymentData = await paymentAPI.get({ id: paymentIdToUse });
+      } catch (error) {
+        console.error(
+          `❌ Error obteniendo pago ${paymentIdToUse}:`,
+          error.message,
         );
+        return null;
       }
-      return {
-        transaccion,
-        pagoMercado: pagoMercado ? await pagoMercado.reload() : null,
-      };
-    } catch (error) {
-      console.error(
-        `❌ Error al refrescar estado de pago ${mpTransactionId}:`,
-        error.message,
-      );
-      return null;
     }
+
+    const transaccion = await Transaccion.findByPk(transaccionId);
+    if (!transaccion) return null;
+
+    let pagoMercado = await PagoMercado.findOne({
+      where: { id_transaccion: transaccionId },
+    });
+    const internalStatus = MP_STATUS_MAP[paymentData.status] || "en_proceso";
+
+    const pagoData = {
+      estado: internalStatus,
+      tipo_medio_pago: paymentData.payment_type_id,
+      fecha_aprobacion: paymentData.date_approved,
+      detalles_raw: paymentData,
+    };
+
+    // Actualizar o crear registro de PagoMercado
+    if (pagoMercado) {
+      await pagoMercado.update(pagoData);
+      // Si el ID que teníamos no era el paymentId real, actualizamos también id_transaccion_pasarela
+      if (pagoMercado.id_transaccion_pasarela !== paymentIdToUse) {
+        await pagoMercado.update({ id_transaccion_pasarela: paymentIdToUse });
+      }
+    } else {
+      pagoMercado = await PagoMercado.create({
+        id_transaccion: transaccionId,
+        monto_pagado: paymentData.transaction_amount,
+        metodo_pasarela: "mercadopago",
+        id_transaccion_pasarela: paymentIdToUse,
+        ...pagoData,
+      });
+      await transaccion.update({ id_pago_pasarela: pagoMercado.id });
+    }
+
+    if (
+      internalStatus === "pagado" &&
+      transaccion.estado_transaccion !== "pagado"
+    ) {
+      await transaccionService.confirmarTransaccion(transaccionId);
+      await transaccion.reload();
+      console.log(`   - Transacción ${transaccionId} CONFIRMADA por refresh.`);
+    }
+
+    return { transaccion, pagoMercado };
   },
 };
 
