@@ -22,6 +22,20 @@ const MP_STATUS_MAP = {
   refunded: "devuelto",
   charged_back: "devuelto",
 };
+// ========== COOLDOWN PARA REFRESH ==========
+const refreshCooldown = new Map(); // transaccionId -> timestamp último refresh
+const REFRESH_COOLDOWN_MS = 15000; // 15 segundos mínimo entre refrescos de la misma transacción
+
+// Limpieza automática de cooldowns viejos cada 5 minutos
+setInterval(() => {
+  const now = Date.now();
+  for (const [txId, lastTime] of refreshCooldown.entries()) {
+    if (now - lastTime > 60000) {
+      // más de 1 minuto sin uso
+      refreshCooldown.delete(txId);
+    }
+  }
+}, 300000);
 
 const processedRefunds = new Set();
 const pendingRetries = new Map();
@@ -444,6 +458,7 @@ const paymentControllerObj = {
           await transaccionService.confirmarTransaccion(transaccion.id, {
             transaction: t,
           });
+          console.log(`[Webhook] internalStatus=${internalStatus}, transaccion.id=${transaccion.id}`);
           processedRefunds.add(transactionIdStr);
           setTimeout(() => processedRefunds.delete(transactionIdStr), 60000);
         } else if (
@@ -595,21 +610,73 @@ const paymentControllerObj = {
       const { id_transaccion } = req.params;
       const { refresh } = req.query;
       const userId = req.user.id;
+
       let transaccion = await Transaccion.findOne({
         where: { id: id_transaccion, id_usuario: userId },
       });
-      if (!transaccion)
+      if (!transaccion) {
         return res
           .status(404)
           .json({ error: "Transacción no encontrada o no te pertenece." });
-      const statusFinal = ["pagado", "fallido", "reembolsado"];
+      }
+
+      const statusFinal = ["pagado", "fallido", "reembolsado", "expirado"];
       const needsRefresh =
         refresh === "true" &&
         !statusFinal.includes(transaccion.estado_transaccion);
+
       let pagoMercado = await PagoMercado.findOne({
         where: { id_transaccion: transaccion.id },
         order: [["createdAt", "DESC"]],
       });
+
+      // ========== CONTROL DE COOLDOWN ==========
+      if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
+        const now = Date.now();
+        const lastRefresh = refreshCooldown.get(parseInt(id_transaccion));
+
+        if (lastRefresh && now - lastRefresh < REFRESH_COOLDOWN_MS) {
+          console.log(
+            `⏸️ Cooldown activo para transacción ${id_transaccion} - refresh ignorado`,
+          );
+          // Devolvemos el estado actual sin llamar a MP nuevamente
+          return res.status(200).json({
+            transaccion: {
+              id: transaccion.id,
+              tipo: transaccion.tipo_transaccion,
+              monto: parseFloat(transaccion.monto),
+              estado: transaccion.estado_transaccion,
+              fecha: transaccion.fecha_transaccion,
+              id_inversion: transaccion.id_inversion,
+              id_puja: transaccion.id_puja,
+              id_suscripcion: transaccion.id_suscripcion,
+              id_proyecto: transaccion.id_proyecto,
+            },
+            pagoPasarela: pagoMercado
+              ? {
+                  id: pagoMercado.id,
+                  transaccionIdPasarela: pagoMercado.id_transaccion_pasarela,
+                  monto: parseFloat(pagoMercado.monto_pagado),
+                  estado: pagoMercado.estado,
+                  metodo: pagoMercado.tipo_medio_pago,
+                  fecha: pagoMercado.fecha_aprobacion || pagoMercado.createdAt,
+                }
+              : null,
+            refreshCooldown: true,
+          });
+        }
+
+        // Actualizar timestamp de último refresh
+        refreshCooldown.set(parseInt(id_transaccion), now);
+        // Limpiar después de 1 minuto por si acaso (ya hay limpieza global)
+        setTimeout(() => {
+          if (refreshCooldown.get(parseInt(id_transaccion)) === now) {
+            refreshCooldown.delete(parseInt(id_transaccion));
+          }
+        }, 60000);
+      }
+
+      // Realizar refresh si es necesario (y no está en cooldown)
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
         const updatedData = await pagoMercadoService.refreshPaymentStatus(
           transaccion.id,
@@ -620,6 +687,7 @@ const paymentControllerObj = {
           pagoMercado = updatedData.pagoMercado;
         }
       }
+
       const pagoDetalle = pagoMercado
         ? {
             id: pagoMercado.id,
@@ -630,6 +698,7 @@ const paymentControllerObj = {
             fecha: pagoMercado.fecha_aprobacion || pagoMercado.createdAt,
           }
         : null;
+
       res.status(200).json({
         transaccion: {
           id: transaccion.id,

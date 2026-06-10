@@ -224,6 +224,9 @@ const adhesionService = {
    * Si es así, inicia el proyecto automáticamente.
    */
   async procesarPagoCuota(adhesionId, numeroCuota, transaccionId, t) {
+    console.log(
+      `[procesarPagoCuota] Iniciando: adhesionId=${adhesionId}, cuota=${numeroCuota}, transaccionId=${transaccionId}`,
+    );
     const adhesionConCuotas = await Adhesion.findByPk(adhesionId, {
       transaction: t,
       include: [{ model: PagoAdhesion, as: "pagos" }],
@@ -305,7 +308,9 @@ const adhesionService = {
         });
         // Si no hay ninguna adhesión sin al menos un pago, iniciar proyecto
         if (adhesionesSinPago === 0) {
-          console.log(`[adhesionService] Todas las adhesiones del proyecto ${proyecto.id} tienen al menos un pago. Iniciando proyecto automáticamente...`);
+          console.log(
+            `[adhesionService] Todas las adhesiones del proyecto ${proyecto.id} tienen al menos un pago. Iniciando proyecto automáticamente...`,
+          );
           const proyectoService = require("./proyecto.service");
           await proyectoService.iniciarConteoMensual(proyecto.id, {
             sistema: true,

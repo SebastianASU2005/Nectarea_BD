@@ -598,6 +598,9 @@ const transaccionService = {
   },
 
   async manejarPagoAdhesion(transaccion, montoTransaccion, t) {
+    console.log(
+      `[manejarPagoAdhesion] Iniciando para transacción ${transaccion.id}, id_pago_adhesion: ${transaccion.id_pago_adhesion}`,
+    );
     if (!transaccion.id_pago_adhesion) {
       throw new Error("Transacción 'adhesion' sin id_pago_adhesion");
     }
@@ -611,8 +614,14 @@ const transaccionService = {
     );
 
     if (!pagoAdhesion) {
-      throw new Error("PagoAdhesion no encontrado");
+      throw new Error(
+        `PagoAdhesion ${transaccion.id_pago_adhesion} no encontrado`,
+      );
     }
+
+    console.log(
+      `[manejarPagoAdhesion] PagoAdhesion encontrado: ID ${pagoAdhesion.id}, adhesionId ${pagoAdhesion.adhesion.id}, cuota ${pagoAdhesion.numero_cuota}, estado ${pagoAdhesion.estado}`,
+    );
 
     const adhesionService = require("./adhesion.service");
     await adhesionService.procesarPagoCuota(
@@ -620,6 +629,10 @@ const transaccionService = {
       pagoAdhesion.numero_cuota,
       transaccion.id,
       t,
+    );
+
+    console.log(
+      `[manejarPagoAdhesion] procesarPagoCuota completado exitosamente`,
     );
 
     await resumenCuentaService.actualizarSaldoGeneral(
