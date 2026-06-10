@@ -151,6 +151,9 @@ const adhesionRoutes = require("./routes/adhesion.routes");
 const auditRoutes = require("./routes/audit.routes");
 
 // Importación de las tareas programadas (CRON JOBS)
+const {
+  conciliatePendingPayments,
+} = require("./tasks/conciliatePendingPayments");
 const paymentReminderScheduler = require("./tasks/paymentReminderScheduler");
 const monthlyPaymentGenerationTask = require("./tasks/monthlyPaymentGenerationTask");
 const overduePaymentManager = require("./tasks/OverduePaymentManager");
@@ -284,7 +287,6 @@ async function synchronizeDatabase() {
     // ✅ NUEVO: Inicializar rate limiters DESPUÉS de que la DB esté lista.
     await initRateLimiters();
 
-
     // ==========================================================
     // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
     // ==========================================================
@@ -303,6 +305,12 @@ async function synchronizeDatabase() {
       console.log("🕒 Ejecutando tarea: marcarCuotasAdhesionVencidas");
       await marcarCuotasAdhesionVencidas();
     });
+    cron.schedule("*/10 * * * *", async () => {
+      await conciliatePendingPayments();
+    });
+    console.log(
+      "🔄 Cron de conciliación de pagos pendientes programado cada 30 minutos.",
+    );
     const cleanOldAuditLogs = require("./tasks/cleanAuditLogs");
     cron.schedule("0 2 * * 0", async () => {
       console.log("🕒 Limpiando logs de auditoría antiguos...");
