@@ -100,6 +100,7 @@ const Proyecto = sequelize.define(
     },
   },
   {
+    tableName: "proyecto",
     hooks: {
       beforeUpdate: async (proyecto, options) => {
         // Si el estado cambia a "En Espera", reseteamos el flag de notificación
@@ -113,5 +114,4 @@ const Proyecto = sequelize.define(
     },
   },
 );
-
 module.exports = Proyecto;
