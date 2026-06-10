@@ -211,7 +211,7 @@ async function reembolsarPagoDuplicado(
           false,
         );
       }
-    } 
+    }
   }
 }
 const paymentControllerObj = {
@@ -269,6 +269,20 @@ const paymentControllerObj = {
     } catch (error) {
       await t.rollback();
       console.error("Error al crear/regenerar checkout:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  },
+  /**
+   * Endpoint manual para forzar conciliación de pagos pendientes (solo admin)
+   */
+  async forceConciliation(req, res) {
+    try {
+      const {
+        conciliatePendingPayments,
+      } = require("../jobs/conciliatePendingPayments");
+      await conciliatePendingPayments();
+      res.status(200).json({ message: "Conciliación forzada ejecutada." });
+    } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },

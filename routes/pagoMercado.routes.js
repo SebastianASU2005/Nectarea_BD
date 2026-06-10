@@ -55,6 +55,12 @@ router.get(
   userRateLimiter,
   paymentController.getPaymentStatus,
 );
+router.post(
+  "/admin/force-conciliation",
+  authMiddleware.authenticate,
+  authMiddleware.authorizeAdmin,
+  paymentController.forceConciliation,
+);
 router.post("/webhook/:metodo", (req, res) =>
   paymentController.handleWebhook(req, res),
 );
