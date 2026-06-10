@@ -279,7 +279,7 @@ const paymentControllerObj = {
     try {
       const {
         conciliatePendingPayments,
-      } = require("../jobs/conciliatePendingPayments");
+      } = require("../tasks/conciliatePendingPayments");
       await conciliatePendingPayments();
       res.status(200).json({ message: "Conciliación forzada ejecutada." });
     } catch (error) {
