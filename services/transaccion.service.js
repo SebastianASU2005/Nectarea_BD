@@ -666,13 +666,12 @@ const transaccionService = {
         );
       }
 
-      // ========== 1. VERIFICACIÓN DE DUPLICADO POR ENTIDAD (ANTES QUE TODO) ==========
+      // ========== 1. VERIFICACIÓN DE DUPLICADO POR ENTIDAD ==========
       const esDuplicado = await this._esTransaccionDuplicadaPorEntidad(
         transaccion,
         t,
       );
       if (esDuplicado) {
-        // Marcar la transacción como fallida para que no se reintente
         await transaccion.update(
           {
             estado_transaccion: "fallido",
@@ -681,13 +680,12 @@ const transaccionService = {
           },
           { transaction: t },
         );
-        // Lanzar error especial para que el webhook lo capture y ejecute el reembolso
         throw new Error(
           "DUPLICADO_ENTIDAD: La entidad asociada ya tiene un pago confirmado.",
         );
       }
 
-      // ========== 2. VALIDACIONES DE NEGOCIO (proyecto cerrado, expiración, etc.) ==========
+      // ========== 2. VALIDACIONES DE NEGOCIO (proyecto cerrado, etc.) ==========
       if (
         transaccion.tipo_transaccion === "directo" &&
         transaccion.id_proyecto
@@ -714,17 +712,28 @@ const transaccionService = {
         }
       }
 
+      // ========== VALIDACIÓN DE EXPIRACIÓN (MODIFICADA) ==========
       const haExpirado = await this.verificarYExpirarTransaccionAntigua(
         transaccion,
         t,
       );
       if (haExpirado) {
-        throw new Error(
-          `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
+        // Verificar si ya existe un pago aprobado en PagoMercado
+        const pagoMercado = await PagoMercado.findOne({
+          where: { id_transaccion: transaccion.id, estado: "aprobado" },
+          transaction: t,
+        });
+        if (!pagoMercado) {
+          throw new Error(
+            `Transacción ${transaccionId} expiró. El pago fue rechazado automáticamente por timeout.`,
+          );
+        }
+        console.log(
+          `⚠️ Transacción ${transaccionId} expirada pero tiene pago aprobado. Continuando confirmación.`,
         );
       }
 
-      // ========== 3. LÓGICA DE NEGOCIO SEGÚN TIPO DE TRANSACCIÓN ==========
+      // ========== 3. LÓGICA DE NEGOCIO SEGÚN TIPO ==========
       switch (transaccion.tipo_transaccion) {
         case "mensual":
           await this.manejarPagoMensual(
@@ -781,11 +790,9 @@ const transaccionService = {
       console.log(`✅ Transacción ${transaccionId} confirmada exitosamente.`);
       return transaccion;
     } catch (error) {
-      // Si el error es de duplicado, lo propagamos para que el webhook lo maneje
       throw error;
     }
   },
-
   async _validarEntidadSinPagoPrevisto(transaccion, t) {
     const {
       tipo_transaccion,
