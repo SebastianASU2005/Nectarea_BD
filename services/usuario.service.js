@@ -2,7 +2,6 @@
 
 const Usuario = require("../models/usuario");
 const { Op } = require("sequelize");
-const emailService = require("./email.service");
 const crypto = require("crypto");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Puja = require("../models/puja");
@@ -58,6 +57,7 @@ const usuarioService = {
 
   async resendConfirmationEmail(email) {
     // 1. Buscar cualquier cuenta con ese email (activa o inactiva)
+    const emailService = require("./email.service");
     const usuario = await Usuario.findOne({ where: { email } });
     if (!usuario) {
       throw new Error("No existe una cuenta con ese correo electrónico.");
@@ -96,6 +96,7 @@ const usuarioService = {
 
   async generatePasswordResetToken(email) {
     // Buscar solo usuarios ACTIVOS
+    const emailService = require("./email.service");
     const user = await Usuario.findOne({ where: { email, activo: true } });
     if (!user) return; // No lanzamos error explícito por seguridad (evitar enumeración)
     const resetToken = crypto.randomBytes(20).toString("hex");
@@ -477,6 +478,7 @@ const usuarioService = {
       });
     }
     try {
+      const emailService = require("./email.service");
       if (usuario.email) {
         await emailService.notificarDesactivacionCuenta(usuario);
       }
@@ -611,6 +613,7 @@ const usuarioService = {
     }
 
     try {
+      const emailService = require("./email.service");
       if (usuario.email) {
         await emailService.notificarReactivacionCuenta(usuarioReactivado);
       }

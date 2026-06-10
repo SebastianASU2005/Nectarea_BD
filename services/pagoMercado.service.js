@@ -464,7 +464,6 @@ const paymentService = {
     const transaccionService = require("../services/transaccion.service");
     if (!paymentAPI) return null;
 
-    // Mapeo específico para el modelo PagoMercado (enum: pendiente, aprobado, rechazado, devuelto, en_proceso)
     const PAGO_MERCADO_STATUS_MAP = {
       approved: "aprobado",
       pending: "en_proceso",
@@ -482,7 +481,6 @@ const paymentService = {
     let paymentIdToUse = mpTransactionId;
     let paymentData = null;
 
-    // Si el ID proporcionado NO es numérico (ej: contiene guiones), asumimos que es un preferenceId
     if (!/^\d+$/.test(String(mpTransactionId))) {
       console.log(
         `   - ID no numérico (parece preferenceId). Buscando paymentId real...`,
@@ -523,7 +521,6 @@ const paymentService = {
     const internalStatus =
       PAGO_MERCADO_STATUS_MAP[paymentData.status] || "en_proceso";
 
-    // Validar y formatear monto
     let montoPagado = null;
     if (paymentData.transaction_amount) {
       montoPagado = parseFloat(paymentData.transaction_amount).toFixed(2);
@@ -574,9 +571,24 @@ const paymentService = {
       internalStatus === "aprobado" &&
       transaccion.estado_transaccion !== "pagado"
     ) {
-      await transaccionService.confirmarTransaccion(transaccionId);
-      await transaccion.reload();
-      console.log(`   - Transacción ${transaccionId} CONFIRMADA por refresh.`);
+      const t = await sequelize.transaction();
+      try {
+        await transaccionService.confirmarTransaccion(transaccionId, {
+          transaction: t,
+        });
+        await t.commit();
+        await transaccion.reload();
+        console.log(
+          `   - Transacción ${transaccionId} CONFIRMADA por refresh.`,
+        );
+      } catch (err) {
+        await t.rollback();
+        console.error(
+          `❌ Error confirmando transacción ${transaccionId}:`,
+          err.message,
+        );
+        return null;
+      }
     }
 
     return { transaccion, pagoMercado };
