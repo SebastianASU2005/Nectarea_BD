@@ -220,8 +220,8 @@ const adhesionService = {
   /**
    * Procesa el pago de una cuota de adhesión.
    * Valida orden secuencial y, si es el primer pago de la adhesión,
-   * verifica si todas las adhesiones del proyecto ya tienen al menos una cuota pagada.
-   * Si es así, inicia el proyecto automáticamente.
+   * verifica si todas las adhesiones del proyecto ya tienen al menos una cuota pagada
+   * Y si se alcanzó el cupo total del proyecto. Solo entonces inicia el proyecto.
    */
   async procesarPagoCuota(adhesionId, numeroCuota, transaccionId, t) {
     console.log(
@@ -291,30 +291,42 @@ const adhesionService = {
     );
 
     // 🔥 Si fue el primer pago de esta adhesión, verificar si todas las adhesiones del proyecto tienen al menos un pago
+    // Y además verificar que el cupo del proyecto esté completo (suscripciones_actuales >= obj_suscripciones)
     if (esPrimerPago) {
       const proyecto = await Proyecto.findByPk(adhesion.id_proyecto, {
         transaction: t,
         lock: t.LOCK.UPDATE,
       });
       if (proyecto && proyecto.estado_proyecto === "En Espera") {
-        // Contar adhesiones activas que NO tienen ninguna cuota pagada
-        const adhesionesSinPago = await Adhesion.count({
-          where: {
-            id_proyecto: proyecto.id,
-            estado: { [Op.in]: ["pendiente", "en_curso"] },
-            cuotas_pagadas: 0,
-          },
-          transaction: t,
-        });
-        if (adhesionesSinPago === 0) {
-          console.log(
-            `[adhesionService] Todas las adhesiones del proyecto ${proyecto.id} tienen al menos un pago. Iniciando proyecto automáticamente...`,
-          );
-          const proyectoService = require("./proyecto.service");
-          await proyectoService.iniciarConteoMensual(proyecto.id, {
-            sistema: true,
-            transaction: t, // ✅ PASAR LA TRANSACCIÓN ACTIVA
+        // ✅ NUEVA CONDICIÓN: solo si se alcanzó el objetivo de suscriptores
+        if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
+          // Contar adhesiones activas que NO tienen ninguna cuota pagada
+          const adhesionesSinPago = await Adhesion.count({
+            where: {
+              id_proyecto: proyecto.id,
+              estado: { [Op.in]: ["pendiente", "en_curso"] },
+              cuotas_pagadas: 0,
+            },
+            transaction: t,
           });
+          if (adhesionesSinPago === 0) {
+            console.log(
+              `[adhesionService] Cupo completo (${proyecto.suscripciones_actuales}/${proyecto.obj_suscripciones}) y todas las adhesiones tienen al menos un pago. Iniciando proyecto automáticamente...`,
+            );
+            const proyectoService = require("./proyecto.service");
+            await proyectoService.iniciarConteoMensual(proyecto.id, {
+              sistema: true,
+              transaction: t,
+            });
+          } else {
+            console.log(
+              `[adhesionService] Cupo completo pero aún hay ${adhesionesSinPago} adhesiones sin pagos. No se inicia el proyecto.`,
+            );
+          }
+        } else {
+          console.log(
+            `[adhesionService] No se alcanzó el cupo (${proyecto.suscripciones_actuales}/${proyecto.obj_suscripciones}). Proyecto no iniciado.`,
+          );
         }
       }
     }
@@ -333,7 +345,6 @@ const adhesionService = {
 
     return pagoAdhesion;
   },
-
   /**
    * Cuando se completa la última cuota, activa la suscripción (token = 1, adhesion_completada = true)
    * y crea el resumen de cuenta si no existe.
