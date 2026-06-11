@@ -38,7 +38,7 @@ const pujaService = {
 
       const id_proyecto = lote.id_proyecto;
 
-      // 🔥 VALIDACIÓN DE CONTRATO: Todas las suscripciones activas deben tener contrato firmado
+      // Validación de contrato
       if (id_proyecto) {
         const contratoFirmadoService = require("./contratoFirmado.service");
         const { allSigned, missingContracts } =
@@ -48,11 +48,12 @@ const pujaService = {
           );
         if (!allSigned) {
           throw new Error(
-            `❌ No puedes pujar. El proyecto requiere que todas tus suscripciones activas tengan contrato firmado. Te falta(n) la(s) suscripción(es) ID: ${missingContracts.join(", ")}. Por favor, completa la firma de tus contratos pendientes.`,
+            `❌ No puedes pujar. El proyecto requiere que todas tus suscripciones activas tengan contrato firmado. Te falta(n) la(s) suscripción(es) ID: ${missingContracts.join(", ")}.`,
           );
         }
       }
 
+      // Verificar si ya existe una puja activa del usuario en este lote
       const pujaExistente = await Puja.findOne({
         where: {
           id_usuario: id_usuario,
@@ -63,7 +64,6 @@ const pujaService = {
       });
 
       let pujaActualizada = null;
-
       let pujaMasAlta = null;
       if (lote.id_puja_mas_alta) {
         pujaMasAlta = await Puja.findByPk(lote.id_puja_mas_alta, {
@@ -73,6 +73,7 @@ const pujaService = {
 
       const montoPujaActual = pujaExistente ? pujaExistente.monto_puja : 0;
 
+      // Validaciones de monto
       if (monto_puja <= montoPujaActual) {
         throw new Error(
           "El nuevo monto de la puja debe ser mayor que tu puja actual.",
@@ -94,31 +95,41 @@ const pujaService = {
       }
 
       if (pujaExistente) {
+        // Actualizar puja existente: no se tocan tokens
         await pujaExistente.update(
           { monto_puja: monto_puja },
           { transaction: t },
         );
         pujaActualizada = pujaExistente;
       } else {
+        // Buscar una suscripción ACTIVA con tokens disponibles y adhesión completada
         const suscripcion = await SuscripcionProyecto.findOne({
           where: {
             id_usuario,
             id_proyecto,
+            activo: true, // ✅ CLAVE: solo suscripciones activas
             tokens_disponibles: { [Op.gt]: 0 },
             adhesion_completada: true,
           },
           transaction: t,
           lock: t.LOCK.UPDATE,
+          order: [
+            ["tokens_disponibles", "DESC"],
+            ["createdAt", "ASC"],
+          ], // priorizar más tokens o más antigua
         });
 
-        if (!suscripcion)
+        if (!suscripcion) {
           throw new Error("No tienes tokens de subasta para este proyecto.");
+        }
 
+        // Consumir el token
         await suscripcion.decrement("tokens_disponibles", {
           by: 1,
           transaction: t,
         });
 
+        // Crear nueva puja
         const nuevaPuja = await Puja.create(
           {
             ...data,
@@ -131,6 +142,7 @@ const pujaService = {
         pujaActualizada = nuevaPuja;
       }
 
+      // Actualizar la puja más alta del lote si corresponde
       if (
         !lote.id_puja_mas_alta ||
         monto_puja > (pujaMasAlta ? pujaMasAlta.monto_puja : 0)
