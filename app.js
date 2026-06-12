@@ -305,7 +305,7 @@ async function synchronizeDatabase() {
       console.log("🕒 Ejecutando tarea: marcarCuotasAdhesionVencidas");
       await marcarCuotasAdhesionVencidas();
     });
-    cron.schedule("*/10 * * * *", async () => {
+    cron.schedule("*/30 * * * *", async () => {
       await conciliatePendingPayments();
     });
     console.log(

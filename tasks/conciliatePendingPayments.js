@@ -5,7 +5,7 @@ const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 const pagoMercadoService = require("../services/pagoMercado.service");
 
-const CONCILIATION_TIMEOUT_MINUTES = 10; // Transacciones con más de 10 minutos se consideran antiguas
+const CONCILIATION_TIMEOUT_MINUTES = 30; // Transacciones con más de 30 minutos se consideran antiguas
 const MAX_RETRIES = 5; // Máximo de reintentos antes de abandonar
 const RETRY_DELAY_MS = 1000; // Espera 1 segundo entre refrescos (para no saturar)
 
