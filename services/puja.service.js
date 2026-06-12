@@ -590,10 +590,9 @@ const pujaService = {
             );
           }
 
-          // Notificar a todos los administradores
+          // Notificar a administradores
           const administradores = await usuarioService.findAllAdmins();
           const proyecto = puja.lote.proyectoLote;
-          const usuarioGanador = await Usuario.findByPk(puja.id_usuario);
           for (const admin of administradores) {
             if (admin.email) {
               await emailService.notificarPagoPujaAdmin(
