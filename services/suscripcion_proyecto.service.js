@@ -266,19 +266,19 @@ const suscripcionProyectoService = {
         return suscripcion;
       }
 
-      // Validar que no tenga pujas ganadas y pagadas
+      // ✅ Validar que esta suscripción NO tenga una puja ganada y pagada
       const hasPaidBid = await pujaService.hasWonAndPaidBid(
         suscripcion.id_usuario,
         suscripcion.id_proyecto,
-        { transaction: t },
+        { transaction: t, suscripcionId: suscripcion.id }, // 🔥 pasamos el id de la suscripción
       );
       if (hasPaidBid) {
         throw new Error(
-          "❌ No se puede cancelar la suscripción. El usuario ha ganado y pagado una puja en este proyecto.",
+          "❌ No se puede cancelar esta suscripción porque tiene una puja ganada y pagada en este proyecto.",
         );
       }
 
-      // Verificar si tiene una puja ganadora PENDIENTE de pago
+      // ✅ Verificar si esta suscripción tiene una puja ganadora PENDIENTE de pago
       const Lote = require("../models/lote");
       const lotesDelProyecto = await Lote.findAll({
         where: { id_proyecto: suscripcion.id_proyecto },
@@ -293,6 +293,7 @@ const suscripcionProyectoService = {
             id_usuario: suscripcion.id_usuario,
             id_lote: { [Op.in]: loteIds },
             estado_puja: "ganadora_pendiente",
+            id_suscripcion: suscripcion.id, // ✅ filtrar por esta suscripción
           },
           transaction: t,
         });
@@ -380,10 +381,10 @@ const suscripcionProyectoService = {
         {
           id_usuario: suscripcion.id_usuario,
           descripcion: `Suscripción ${suscripcion.id} al Proyecto ${suscripcion.id_proyecto} cancelada. 
-        Pagos realizados: ${pagosRealizados.length} ($${montoTotalPagado.toFixed(2)})
-        Pagos cancelados: ${pagosCancelados}
-        ${pujaPendiente ? `Puja ganadora #${pujaPendiente.id} cancelada y lote reasignado.` : ""}
-        Motivo: Cancelación voluntaria.`,
+      Pagos realizados: ${pagosRealizados.length} ($${montoTotalPagado.toFixed(2)})
+      Pagos cancelados: ${pagosCancelados}
+      ${pujaPendiente ? `Puja ganadora #${pujaPendiente.id} cancelada y lote reasignado.` : ""}
+      Motivo: Cancelación voluntaria.`,
           monto: montoTotalPagado,
           referencia_id: registroCancelacion.id,
         },

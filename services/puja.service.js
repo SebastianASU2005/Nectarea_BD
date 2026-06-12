@@ -1026,25 +1026,32 @@ const pujaService = {
   /**
    * @async
    * @function hasWonAndPaidBid
-   * @description Verifica si un usuario tiene una puja ganadora y pagada en un proyecto específico.
+   * @description Verifica si un usuario (o una suscripción específica) tiene una puja ganadora y pagada en un proyecto.
+   * @param {number} userId - ID del usuario.
+   * @param {number} projectId - ID del proyecto.
+   * @param {Object} options - Opciones adicionales (transaction, suscripcionId)
+   * @returns {Promise<boolean>}
    */
   async hasWonAndPaidBid(userId, projectId, options = {}) {
-    const { transaction } = options;
+    const { transaction, suscripcionId } = options;
 
-    // Busca via id_lote → lote.id_proyecto para no depender
-    // de que id_proyecto esté correctamente seteado en la puja
+    const whereClause = {
+      id_usuario: userId,
+      estado_puja: "ganadora_pagada",
+    };
+    if (suscripcionId) {
+      whereClause.id_suscripcion = suscripcionId; // ✅ filtrar por suscripción específica
+    }
+
     const pujaPagada = await Puja.findOne({
-      where: {
-        id_usuario: userId,
-        estado_puja: "ganadora_pagada",
-      },
+      where: whereClause,
       include: [
         {
           model: Lote,
           as: "lote",
           where: { id_proyecto: projectId },
           attributes: ["id", "id_proyecto"],
-          required: true, // INNER JOIN — descarta pujas sin lote del proyecto
+          required: true,
         },
       ],
       attributes: ["id"],
