@@ -107,7 +107,7 @@ const pujaService = {
           where: {
             id_usuario,
             id_proyecto,
-            activo: true, // ✅ CLAVE: solo suscripciones activas
+            activo: true,
             tokens_disponibles: { [Op.gt]: 0 },
             adhesion_completada: true,
           },
@@ -116,7 +116,7 @@ const pujaService = {
           order: [
             ["tokens_disponibles", "DESC"],
             ["createdAt", "ASC"],
-          ], // priorizar más tokens o más antigua
+          ],
         });
 
         if (!suscripcion) {
@@ -160,6 +160,7 @@ const pujaService = {
       throw error;
     }
   },
+
   /**
    * @async
    * @function findHighestBidForLote
@@ -308,7 +309,7 @@ const pujaService = {
         throw new Error(`La puja ID ${pujaId} no tiene lote asociado.`);
       }
 
-      // 🆕 VALIDACIÓN CLAVE: Verificar que el usuario sigue suscrito al proyecto del lote
+      // VALIDACIÓN: Verificar que el usuario sigue suscrito al proyecto del lote
       if (puja.lote.id_proyecto) {
         const suscripcionActiva = await SuscripcionProyecto.findOne({
           where: {
@@ -316,7 +317,7 @@ const pujaService = {
             id_proyecto: puja.lote.id_proyecto,
             activo: true,
           },
-          ...options, // propaga la transaction si viene
+          ...options,
         });
 
         if (!suscripcionActiva) {
@@ -546,9 +547,6 @@ const pujaService = {
       });
 
       // ── 8. Devolver token a los otros postores retenidos (top 3 minus ganador) ──
-      // ✅ FIX 2: usar devolverTokenPorImpago individualmente en lugar del
-      // increment masivo condicional, garantizando que postores en
-      // "ganadora_incumplimiento" también recuperen su token.
       const pujasALiberar = await Puja.findAll({
         where: {
           id_lote: lote.id,
@@ -574,6 +572,47 @@ const pujaService = {
         );
       }
 
+      // ── 9. Notificaciones de pago exitoso (después del commit) ──────────
+      t.afterCommit(async () => {
+        try {
+          const usuarioGanador = await Usuario.findByPk(puja.id_usuario);
+          if (usuarioGanador && usuarioGanador.email) {
+            const proyecto = puja.lote.proyectoLote;
+            await emailService.notificarPagoPujaExitosa(
+              usuarioGanador,
+              puja,
+              puja.lote,
+              proyecto,
+            );
+          } else {
+            console.warn(
+              `[procesarPujaGanadora] Usuario ${puja.id_usuario} no tiene email para notificar pago de puja.`,
+            );
+          }
+
+          // Notificar a todos los administradores
+          const administradores = await usuarioService.findAllAdmins();
+          const proyecto = puja.lote.proyectoLote;
+          const usuarioGanador = await Usuario.findByPk(puja.id_usuario);
+          for (const admin of administradores) {
+            if (admin.email) {
+              await emailService.notificarPagoPujaAdmin(
+                admin.email,
+                usuarioGanador,
+                puja,
+                puja.lote,
+                proyecto,
+              );
+            }
+          }
+        } catch (notifError) {
+          console.error(
+            "[procesarPujaGanadora] Error enviando notificaciones de pago:",
+            notifError.message,
+          );
+        }
+      });
+
       if (shouldCommit) await t.commit();
       return { message: "Puja procesada y pagos actualizados exitosamente." };
     } catch (error) {
@@ -582,6 +621,7 @@ const pujaService = {
       throw error;
     }
   },
+
   /**
    * @async
    * @function revertirPagoPujaGanadora
@@ -633,7 +673,7 @@ const pujaService = {
       const lote = await Lote.findByPk(id_lote, { transaction: t });
       if (!lote) throw new Error("Lote no encontrado.");
 
-      // Obtener el TOP 3 (activas + ganadora_pendiente, por si ya se finalizó manual)
+      // Obtener el TOP 3 (activas + ganadora_pendiente)
       const pujasTop3 = await Puja.findAll({
         where: {
           id_lote: id_lote,
@@ -646,7 +686,6 @@ const pujaService = {
       });
 
       const idsTop3 = pujasTop3.map((p) => p.id);
-      const usuariosTop3 = pujasTop3.map((p) => p.id_usuario);
 
       // Obtener TODAS las pujas activas que NO están en el TOP 3 (perdedores)
       const pujasPerdedoras = await Puja.findAll({
@@ -663,7 +702,7 @@ const pujaService = {
       for (const puja of pujasPerdedoras) {
         if (puja.id_suscripcion) {
           await this.devolverTokenPorImpago(
-            null, // userId no necesario porque pasamos suscripcionId
+            null,
             id_lote,
             t,
             puja.id_suscripcion,
@@ -671,7 +710,7 @@ const pujaService = {
         }
       }
 
-      // Marcar pujas perdedoras como "perdedora" (opcional, para limpieza)
+      // Marcar pujas perdedoras como "perdedora"
       await Puja.update(
         { estado_puja: "perdedora" },
         {
@@ -684,9 +723,6 @@ const pujaService = {
         },
       );
 
-      // 🔒 Los usuarios del TOP 3 mantienen sus tokens retenidos hasta que paguen o expiren.
-      // No se les devuelve nada aquí.
-
       await t.commit();
       console.log(
         `[gestionarTokensAlFinalizar] Tokens devueltos a ${pujasPerdedoras.length} perdedores del lote ${id_lote}`,
@@ -696,6 +732,7 @@ const pujaService = {
       throw error;
     }
   },
+
   /**
    * @async
    * @function devolverTokenPorImpago
@@ -717,7 +754,6 @@ const pujaService = {
     const shouldCommit = !externalTransaction;
 
     try {
-      // Si no se pasa suscripcionId, fallar explícitamente
       if (!suscripcionId) {
         throw new Error(
           "devolverTokenPorImpago: se requiere suscripcionId para operar correctamente.",
@@ -743,7 +779,6 @@ const pujaService = {
         return { message: "Suscripción no encontrada." };
       }
 
-      // ✅ SEGURIDAD CRÍTICA: Solo devolver token si la adhesión está completada
       if (!suscripcion.adhesion_completada) {
         console.warn(
           `[devolverTokenPorImpago] 🚫 Suscripción ${suscripcion.id} (usuario ${suscripcion.id_usuario}) ` +
@@ -755,7 +790,6 @@ const pujaService = {
         };
       }
 
-      // Si ya consumió el token en una subasta ganada y pagada, no se devuelve
       if (suscripcion.token_consumido) {
         console.warn(
           `[devolverTokenPorImpago] 🔒 Suscripción ${suscripcion.id} ya consumió su token (token_consumido=true). No se devuelve.`,
@@ -764,7 +798,6 @@ const pujaService = {
         return { message: "Token ya consumido por subasta ganada." };
       }
 
-      // Si ya tiene al menos 1 token, no incrementar (evita duplicados)
       if (suscripcion.tokens_disponibles >= 1) {
         console.log(
           `[devolverTokenPorImpago] ℹ️ Suscripción ${suscripcion.id} ya tiene tokens_disponibles=${suscripcion.tokens_disponibles}. No se incrementa.`,
@@ -773,7 +806,6 @@ const pujaService = {
         return { message: "Token ya disponible." };
       }
 
-      // Proceder a devolver el token
       await suscripcion.increment("tokens_disponibles", {
         by: 1,
         transaction: t,
@@ -790,15 +822,11 @@ const pujaService = {
       throw error;
     }
   },
+
   // -------------------------------------------------------------------
   // FUNCIONES DE CONSULTA (CRON JOB Y ADMINISTRACIÓN)
   // -------------------------------------------------------------------
 
-  /**
-   * @async
-   * @function findGanadoraPendienteByLote
-   * @description Encuentra la puja en estado 'ganadora_pendiente' para un lote.
-   */
   async findGanadoraPendienteByLote(loteId, transaction) {
     return Puja.findOne({
       where: {
@@ -843,11 +871,6 @@ const pujaService = {
     });
   },
 
-  /**
-   * @async
-   * @function findExpiredGanadoraPendiente
-   * @description Busca todas las pujas ganadoras pendientes cuyo plazo de pago ha expirado. (Para CRON JOB).
-   */
   async findExpiredGanadoraPendiente() {
     return Puja.findAll({
       where: {
@@ -901,11 +924,6 @@ const pujaService = {
     });
   },
 
-  /**
-   * @async
-   * @function findExpiredGanadoraPendienteByLote
-   * @description Encuentra la puja vencida para un lote dado. (Para CRON JOB).
-   */
   async findExpiredGanadoraPendienteByLote(loteId, transaction) {
     return Puja.findOne({
       where: {
@@ -953,11 +971,6 @@ const pujaService = {
     });
   },
 
-  /**
-   * @async
-   * @function findNextHighestBid
-   * @description Encuentra la siguiente puja más alta en estado 'activa'.
-   */
   async findNextHighestBid(loteId, transaction) {
     const estadosExcluidos = [
       "ganadora_pendiente",
@@ -1011,11 +1024,6 @@ const pujaService = {
     });
   },
 
-  /**
-   * @async
-   * @function clearBidsByLoteId
-   * @description Elimina todas las pujas de un lote (Hard delete).
-   */
   async clearBidsByLoteId(loteId, transaction) {
     return Puja.destroy({
       where: { id_lote: loteId },
@@ -1040,7 +1048,7 @@ const pujaService = {
       estado_puja: "ganadora_pagada",
     };
     if (suscripcionId) {
-      whereClause.id_suscripcion = suscripcionId; // ✅ filtrar por suscripción específica
+      whereClause.id_suscripcion = suscripcionId;
     }
 
     const pujaPagada = await Puja.findOne({
@@ -1065,7 +1073,6 @@ const pujaService = {
   // FUNCIONES CRUD Y BÚSQUEDA BÁSICAS
   // -------------------------------------------------------------------
 
-  /** @async @function findByIdAndUserId @description Busca una puja activa por ID y ID de usuario. */
   async findByIdAndUserId(id, userId) {
     return Puja.findOne({
       where: { id, id_usuario: userId, activo: true },
@@ -1114,7 +1121,6 @@ const pujaService = {
     });
   },
 
-  /** @async @function findByUserId @description Busca todas las pujas activas de un usuario. */
   async findByUserId(userId) {
     return Puja.findAll({
       where: { id_usuario: userId, activo: true },
@@ -1176,21 +1182,18 @@ const pujaService = {
     });
   },
 
-  /** @async @function updateByIdAndUserId @description Actualiza una puja por ID y ID de usuario. */
   async updateByIdAndUserId(id, userId, data) {
     const puja = await this.findByIdAndUserId(id, userId);
     if (!puja) return null;
     return puja.update(data);
   },
 
-  /** @async @function softDeleteByIdAndUserId @description Realiza un borrado suave (soft delete) por ID y ID de usuario. */
   async softDeleteByIdAndUserId(id, userId) {
     const puja = await this.findByIdAndUserId(id, userId);
     if (!puja) return null;
     return puja.update({ activo: false });
   },
 
-  /** @async @function findAll @description Obtiene todas las pujas (admin). */
   async findAll() {
     return Puja.findAll({
       include: [
@@ -1249,7 +1252,6 @@ const pujaService = {
     });
   },
 
-  /** @async @function findAllActivo @description Obtiene todas las pujas activas (admin). */
   async findAllActivo() {
     return Puja.findAll({
       where: { activo: true },
@@ -1309,15 +1311,9 @@ const pujaService = {
     });
   },
 
-  /** * @async
-   * @function findById
-   * @description Busca una puja por ID con todas sus asociaciones.
-   * @param {number} id - ID de la puja.
-   * @param {object} [options={}] - Opciones adicionales (transaction, lock, etc.).
-   */
   async findById(id, options = {}) {
     return await Puja.findByPk(id, {
-      ...options, // 👈 Importante: permite pasar la transacción y otras configs
+      ...options,
       include: [
         {
           model: Usuario,
@@ -1358,7 +1354,6 @@ const pujaService = {
           model: SuscripcionProyecto,
           as: "suscripcion",
           attributes: ["id", "id_usuario", "id_proyecto", "tokens_disponibles"],
-          // Agregamos el proyecto asociado a la suscripción si es necesario para los cálculos de cuotas
           include: [
             {
               association: "proyectoAsociado",
@@ -1388,28 +1383,18 @@ const pujaService = {
     });
   },
 
-  /** @async @function update @description Actualiza una puja por ID (admin). */
   async update(id, data) {
     const puja = await this.findById(id);
     if (!puja) return null;
     return puja.update(data);
   },
 
-  /** @async @function softDelete @description Realiza un borrado suave por ID (admin). */
   async softDelete(id) {
     const puja = await this.findById(id);
     if (!puja) return null;
     return puja.update({ activo: false });
   },
 
-  /**
-   * @async
-   * @function cancelarPujaGanadoraAnticipada
-   * @description CANCELACIÓN MANUAL por administrador de una puja ganadora_pendiente.
-   * @param {number} pujaId - ID de la puja ganadora a cancelar
-   * @param {string} motivoCancelacion - Razón administrativa (opcional)
-   * @returns {Promise<object>} Resultado de la operación
-   */
   async cancelarPujaGanadoraAnticipada(
     pujaId,
     motivoCancelacion = "Cancelación administrativa",
@@ -1417,7 +1402,6 @@ const pujaService = {
     ip = null,
     userAgent = null,
   ) {
-    const emailService = require("./email.service");
     const MensajeService = require("./mensaje.service");
     const LoteService = require("./lote.service");
 
@@ -1492,7 +1476,6 @@ const pujaService = {
 
       await LoteService.procesarImpagoLote(loteId, t);
 
-      // Registrar auditoría
       await auditService.registrar({
         usuarioId: adminId,
         accion: "CANCELAR_PUJA_GANADORA_ADMIN",
@@ -1524,18 +1507,7 @@ const pujaService = {
       throw error;
     }
   },
-  /**
-   * @async
-   * @function forzarPagoPujaGanadora
-   * @description Permite a un administrador marcar una puja como pagada (ganadora_pagada)
-   * y ejecutar toda la lógica de excedente, sin pasar por la pasarela de pago.
-   * @param {number} pujaId - ID de la puja en estado 'ganadora_pendiente'
-   * @param {number} adminId - ID del administrador que fuerza el pago
-   * @param {string} [motivo] - Razón del forzado (opcional)
-   * @param {string} [ip] - IP del admin
-   * @param {string} [userAgent] - User-Agent
-   * @returns {Promise<object>}
-   */
+
   async forzarPagoPujaGanadora(
     pujaId,
     adminId,
@@ -1545,7 +1517,6 @@ const pujaService = {
   ) {
     const t = await sequelize.transaction();
     try {
-      // 1. Obtener la puja con sus relaciones necesarias (similar a procesarPujaGanadora)
       const puja = await this.findById(pujaId, {
         transaction: t,
         lock: t.LOCK.UPDATE,
@@ -1557,11 +1528,8 @@ const pujaService = {
         );
       }
 
-      // 2. Ejecutar la lógica de negocio completa (mismo flujo que procesarPujaGanadora)
-      // Se reutiliza la misma función pasándole la transacción ya iniciada
       await this.procesarPujaGanadora(pujaId, t);
 
-      // 3. Registrar auditoría
       await auditService.registrar({
         usuarioId: adminId,
         accion: "FORZAR_PAGO_PUJA",
@@ -1585,27 +1553,11 @@ const pujaService = {
       throw error;
     }
   },
-  /**
-   * @async
-   * @function retirarPuja
-   * @description Permite cancelar una puja en estado 'activa' y devolver el token al usuario.
-   *
-   * REGLAS DE NEGOCIO:
-   * - La puja DEBE estar en estado 'activa'
-   * - La subasta del lote DEBE estar en estado 'activa'
-   * - Puede ser llamada por el propio usuario O por un administrador
-   * - Si era la puja más alta, se recalcula cuál es la nueva más alta
-   *
-   * @param {number} pujaId       - ID de la puja a retirar
-   * @param {number} requesterId  - ID del usuario que hace la solicitud
-   * @param {boolean} esAdmin     - true si quien ejecuta la acción es administrador
-   * @returns {Promise<{ message: string, tokenDevuelto: boolean, pujaId: number, usuarioAfectado: number, loteId: number }>}
-   */
+
   async retirarPuja(pujaId, requesterId, esAdmin = false) {
     const t = await sequelize.transaction();
 
     try {
-      // ── 1. Obtener la puja con su lote y suscripción ──────────────────────
       const puja = await Puja.findByPk(pujaId, {
         include: [
           {
@@ -1636,7 +1588,6 @@ const pujaService = {
         throw new Error(`Puja ID ${pujaId} no encontrada.`);
       }
 
-      // ── 2. Verificar permisos ─────────────────────────────────────────────
       if (!esAdmin && puja.id_usuario !== requesterId) {
         throw {
           statusCode: 403,
@@ -1644,7 +1595,6 @@ const pujaService = {
         };
       }
 
-      // ── 3. Validar estado de la puja ──────────────────────────────────────
       if (puja.estado_puja !== "activa") {
         throw {
           statusCode: 409,
@@ -1652,7 +1602,6 @@ const pujaService = {
         };
       }
 
-      // ── 4. Validar estado de la subasta del lote ──────────────────────────
       if (!puja.lote) {
         throw new Error("Lote asociado a la puja no encontrado.");
       }
@@ -1664,13 +1613,11 @@ const pujaService = {
         };
       }
 
-      // ── 5. Marcar la puja como cancelada ──────────────────────────────────
       await puja.update(
         { estado_puja: "cancelada", activo: false },
         { transaction: t },
       );
 
-      // ── 6. Devolver el token a la suscripción usando el servicio validado ─
       let tokenDevuelto = false;
       let mensajeToken = "";
 
@@ -1682,7 +1629,6 @@ const pujaService = {
             t,
             puja.suscripcion.id,
           );
-          // resultado.message puede ser "Token devuelto exitosamente." u otros mensajes
           tokenDevuelto = resultado.message === "Token devuelto exitosamente.";
           mensajeToken = resultado.message;
         } catch (err) {
@@ -1695,7 +1641,6 @@ const pujaService = {
         }
       }
 
-      // ── 7. Si era la puja más alta del lote, recalcular la nueva más alta ─
       const lote = puja.lote;
       if (lote.id_puja_mas_alta === puja.id) {
         const nuevaPujaMasAlta = await Puja.findOne({
@@ -1728,13 +1673,7 @@ const pujaService = {
       throw error;
     }
   },
-  /**
-   * @async
-   * @function findOne
-   * @description Busca una puja con criterios de búsqueda arbitrarios.
-   * @param {object} options - Opciones de Sequelize ({ where, transaction, ... }).
-   * @returns {Promise<Puja|null>}
-   */
+
   async findOne(options = {}) {
     const { where, transaction, ...rest } = options;
     return Puja.findOne({
@@ -1743,8 +1682,8 @@ const pujaService = {
       ...rest,
     });
   },
+
   async solicitarCancelacion(pujaId, userId, motivo) {
-    // Traer la puja CON el usuario y el lote para el email
     const puja = await Puja.findByPk(pujaId, {
       include: [
         {
@@ -1785,7 +1724,6 @@ const pujaService = {
       motivo_cancelacion: motivo || null,
     });
 
-    // Notificar admins — ahora puja.usuario existe
     try {
       const admins = await usuarioService.findAllAdmins();
       for (const admin of admins) {
@@ -1810,16 +1748,11 @@ const pujaService = {
         "Solicitud enviada. Un administrador revisará tu caso a la brevedad.",
     };
   },
-  /**
-   * @param {number} suscripcionId
-   * @param {string|string[]} [estado_puja] - Opcional: filtra por uno o varios estados de puja.
-   * @returns {Promise<Puja[]>}
-   */
+
   async findBySuscripcionId(suscripcionId, estado_puja = null) {
     const where = { id_suscripcion: suscripcionId };
 
     if (estado_puja) {
-      // Si es un array, usamos Op.in; si es string, filtro exacto
       if (Array.isArray(estado_puja)) {
         where.estado_puja = { [Op.in]: estado_puja };
       } else {

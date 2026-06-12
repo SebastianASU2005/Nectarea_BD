@@ -505,6 +505,152 @@ const emailService = {
     );
   },
   /**
+   * @async
+   * @function notificarPagoPujaExitosa
+   * @description Notifica al usuario que el pago de su puja ganadora ha sido confirmado exitosamente.
+   * @param {object} usuario - Objeto del usuario (debe contener nombre, email).
+   * @param {object} puja - Objeto de la puja (con monto_puja, id).
+   * @param {object} lote - Objeto del lote (con nombre_lote, id).
+   * @param {object} proyecto - Objeto del proyecto (con nombre_proyecto).
+   */
+  async notificarPagoPujaExitosa(usuario, puja, lote, proyecto) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = `✅ Pago confirmado - Ganaste el Lote #${lote.id} (${lote.nombre_lote})`;
+    const montoPagado = parseFloat(puja.monto_puja).toFixed(2);
+    const fechaPago = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">¡Pago recibido! Ahora eres propietario del lote 🎉</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Te confirmamos que hemos recibido el pago de <strong style="color: #4CAF50;">$${montoPagado}</strong> por el lote <strong>"${lote.nombre_lote}"</strong> del proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+
+    <h3 style="color: #0b1b36;">Detalles de la operación</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Lote:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${lote.nombre_lote} (ID ${lote.id})</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Monto pagado:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">$${montoPagado}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Fecha de pago:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${fechaPago}</td>
+      </tr>
+    </table>
+
+    <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
+      <p><strong>📌 Próximos pasos:</strong></p>
+      <ul>
+        <li>Un asesor se pondrá en contacto contigo para coordinar la firma del contrato de compra-venta o cesión de derechos.</li>
+        <li>Recibirás instrucciones para la inscripción registral y el proceso de transferencia.</li>
+      </ul>
+    </div>
+
+    <p style="margin-top: 20px;">Gracias por confiar en Loteplan. ¡Pronto serás dueño de tu terreno!</p>
+    <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ver mis pujas ganadas
+    </a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Hemos recibido tu pago de $${montoPagado} por el lote ${lote.nombre_lote}. Un asesor te contactará pronto.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
+
+  /**
+   * @async
+   * @function notificarPagoPujaAdmin
+   * @description Notifica a los administradores que un usuario ha pagado su puja ganadora, para que brinden asesoramiento.
+   * @param {string} adminEmail - Correo del administrador.
+   * @param {object} usuario - Objeto del usuario (nombre, email, teléfono si está disponible).
+   * @param {object} puja - Objeto de la puja (monto_puja, id).
+   * @param {object} lote - Objeto del lote (nombre_lote, id).
+   * @param {object} proyecto - Objeto del proyecto (nombre_proyecto).
+   */
+  async notificarPagoPujaAdmin(adminEmail, usuario, puja, lote, proyecto) {
+    if (!adminEmail) return;
+
+    const subject = `💰 PAGO DE PUJA CONFIRMADO - ${usuario.nombre} - Lote #${lote.id}`;
+    const montoPagado = parseFloat(puja.monto_puja).toFixed(2);
+    const fechaPago = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">Pago de puja confirmado</h2>
+    <p>El usuario <strong>${usuario.nombre}</strong> (${usuario.email}) ha completado el pago de su puja ganadora.</p>
+
+    <h3>📋 Detalles de la operación</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Usuario ID:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.id}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Nombre:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.nombre} ${usuario.apellido || ""}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Email:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.email}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Teléfono:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${usuario.numero_telefono || "No registrado"}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Proyecto:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.nombre_proyecto} (ID ${proyecto.id})</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Lote:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${lote.nombre_lote} (ID ${lote.id})</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Monto pagado:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">$${montoPagado}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Fecha de pago:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${fechaPago}</td>
+      </tr>
+    </table>
+
+    <div style="border-left: 4px solid #FF5733; padding: 15px; background-color: #fff3e0; margin: 20px 0;">
+      <p style="font-weight: bold;">📌 ACCIÓN REQUERIDA:</p>
+      <p>El usuario debe recibir asesoramiento para la firma del contrato y la transferencia del terreno. Contacta al cliente para coordinar los pasos siguientes:</p>
+      <ul>
+        <li>Preparar el contrato de compra-venta o cesión de derechos.</li>
+        <li>Organizar la firma presencial o notarial si corresponde.</li>
+        <li>Gestionar la inscripción registral.</li>
+      </ul>
+    </div>
+
+    <a href="${process.env.FRONTEND_URL}/admin/lote-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ir al panel de administración
+    </a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `El usuario ${usuario.nombre} (${usuario.email}) ha pagado $${montoPagado} por el lote ${lote.nombre_lote}. Contactar para asesoramiento.`;
+
+    await this.sendEmail(adminEmail, subject, textPlain, html);
+  },
+  /**
    * Notifica a múltiples suscriptores que el proyecto ha sido pausado.
    * @param {object} proyecto - Proyecto.
    * @param {object[]} usuarios - Array de usuarios (con nombre, email).
