@@ -9,7 +9,7 @@ const Proyecto = require("../models/proyecto");
 dotenv.config();
 
 // ✅ CONTROL EXPLÍCITO: Cambia EMAIL_PROVIDER en .env para alternar entre proveedores
-// Valores válidos: 'gmail' | 'resend'
+// Valores válidos: 'gmail' | 'resend' | 'smtp'
 const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || "gmail";
 
 let transporter;
@@ -20,20 +20,28 @@ if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
   resend = new Resend(process.env.RESEND_API_KEY);
   console.log("✅ Configurado email con Resend (Producción)");
 } else {
-  // 💻 LOCAL / RAILWAY: Usar Gmail con Nodemailer
+  // 💻 LOCAL / RAILWAY / CUALQUIER SMTP: Usar Nodemailer con configuración genérica
+  const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+  const smtpPort = parseInt(process.env.SMTP_PORT || "587");
+  const smtpSecure = process.env.SMTP_SECURE === "true";
+
   transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, // ⚠️ Usar App Password de Google, NO la contraseña normal
+      pass: process.env.EMAIL_PASS,
     },
+    // Opcional: descomentar si hay problemas de certificados
+    // tls: { rejectUnauthorized: false }
   });
-  console.log("✅ Configurado email con Gmail/Nodemailer");
+
+  console.log(`✅ Configurado email con SMTP (${smtpHost}:${smtpPort})`);
 }
 
 /**
  * Genera la plantilla base HTML que envuelve el contenido específico del correo.
- * Utiliza tablas para garantizar la compatibilidad con clientes de correo antiguos.
  * @param {string} contenidoPrincipalHtml - El HTML específico del cuerpo del correo.
  * @returns {string} El HTML completo del correo electrónico.
  */
@@ -70,6 +78,12 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
                   <p style="margin: 0; color: #ffffff; font-size: 14px; font-family: Arial, sans-serif;">
                     <a href="${process.env.FRONTEND_URL}" style="color: #ffffff; text-decoration: none;">© ${new Date().getFullYear()} Loteplan.com</a>
                   </p>
+                  <p style="margin: 10px 0 0 0; color: #cccccc; font-size: 12px;">
+                    Este mensaje es enviado automáticamente, por favor no respondas a este correo.
+                  </p>
+                  <p style="margin: 5px 0 0 0; color: #cccccc; font-size: 12px;">
+                    Para consultas, contáctanos en <a href="mailto:consultas@loteplan.com" style="color: #ffffff;">consultas@loteplan.com</a>
+                  </p>
                 </td>
               </tr>
             </table>
@@ -85,7 +99,7 @@ function obtenerPlantillaHtml(contenidoPrincipalHtml) {
 const emailService = {
   /**
    * Función base para enviar un correo electrónico.
-   * Detecta automáticamente si usar Resend (producción) o Gmail/Nodemailer (local/Railway).
+   * Detecta automáticamente si usar Resend (producción) o SMTP (local/Railway/Godaddy).
    * @param {string} to - Destinatario.
    * @param {string} subject - Asunto.
    * @param {string} text - Cuerpo en texto plano (fallback).
@@ -93,46 +107,43 @@ const emailService = {
    */
   async sendEmail(to, subject, text, html) {
     try {
+      // Agregar aviso de "no responder" al texto plano
+      const avisoText = `\n\n---\nEste mensaje es enviado automáticamente, por favor no respondas a este correo.\nSi necesitas ayuda, escríbenos a consultas@loteplan.com`;
+      const textConAviso = text + avisoText;
+
       if (EMAIL_PROVIDER === "resend" && resend) {
         // 🌐 USAR RESEND (Producción)
         const { data, error } = await resend.emails.send({
-          from: "Loteplan <onboarding@resend.dev>",
+          from: `"Loteplan" <${process.env.EMAIL_USER}>`,
           to: [to],
           subject: subject,
           html: html,
         });
-
         if (error) {
           console.error(`❌ Error Resend al enviar a ${to}:`, error);
           throw error;
         }
-
         console.log(`✅ Email enviado via Resend a ${to} (ID: ${data.id})`);
       } else {
-        // 💻 USAR GMAIL/NODEMAILER (Local/Railway)
+        // 💻 USAR SMTP (Local/Railway/Godaddy)
         const mailOptions = {
-          from: process.env.EMAIL_USER,
+          from: `"Loteplan" <${process.env.EMAIL_USER}>`,
           to,
           subject,
-          text,
+          text: textConAviso, // ← texto con el aviso
           html,
         };
-
         await transporter.sendMail(mailOptions);
-        console.log(`✅ Email enviado via Gmail/Nodemailer a ${to}`);
+        console.log(`✅ Email enviado via SMTP a ${to}`);
       }
     } catch (error) {
       console.error(`❌ Error al enviar correo a ${to}:`, error);
       throw error;
     }
   },
+
   /**
    * Notifica a los suscriptores activos de un proyecto sobre un cambio en la cuota mensual.
-   * Si se pasa `usuarioDestinatario`, envía solo a ese usuario (útil para evitar duplicados).
-   * @param {object} proyecto - Objeto del proyecto (debe tener id y nombre_proyecto)
-   * @param {string[]} cambios - Array de strings describiendo cada cambio
-   * @param {string|null} mensajeAdmin - Mensaje personalizado del administrador (opcional)
-   * @param {object|null} usuarioDestinatario - Usuario específico (opcional, si se pasa solo envía a él)
    */
   async notificarCambioCuotaProyecto(
     proyecto,
@@ -143,7 +154,6 @@ const emailService = {
     if (!proyecto || !proyecto.id) return;
 
     let destinatarios = [];
-
     if (usuarioDestinatario) {
       destinatarios = [usuarioDestinatario];
     } else {
@@ -159,7 +169,6 @@ const emailService = {
           },
         ],
       });
-      // Agrupar por email para evitar duplicados
       const map = new Map();
       for (const sus of suscripciones) {
         const usuario = sus.usuario;
@@ -202,13 +211,11 @@ const emailService = {
       `✅ Notificaciones de cambio de cuota enviadas a ${destinatarios.length} destinatario(s) del proyecto ${proyecto.id}`,
     );
   },
+
   /**
-   * Notifica a todos los administradores que una inversión directa ha sido pagada
-   * y que se debe contactar al inversor para la firma presencial del contrato.
-   * @param {object} inversion - Objeto de la inversión (con proyecto y usuario incluidos)
+   * Notifica a todos los administradores que una inversión directa ha sido pagada.
    */
   async notificarInversionDirectaPagada(inversion) {
-    // Obtener todos los administradores activos
     const administradores = await usuarioService.findAllAdmins();
     if (administradores.length === 0) return;
 
@@ -261,13 +268,11 @@ const emailService = {
       }
     }
   },
+
   /**
    * @async
    * @function notificarInversionPagada
    * @description Notifica al usuario que su inversión directa ha sido pagada exitosamente.
-   * @param {object} usuario - Objeto del usuario (nombre, email).
-   * @param {object} proyecto - Objeto del proyecto.
-   * @param {number} monto - Monto de la inversión.
    */
   async notificarInversionPagada(usuario, proyecto, monto) {
     if (!usuario || !usuario.email) return;
@@ -312,12 +317,9 @@ const emailService = {
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+
   /**
    * Notifica a los usuarios que una subasta ha iniciado.
-   * LÓGICA DE NEGOCIO: Diferencia entre subasta **Pública** y **Privada**.
-   * @param {string} email - Correo del destinatario.
-   * @param {object} lote - Datos del lote (id, nombre_lote, monto_base_lote, fecha_fin).
-   * @param {boolean} esSubastaPrivada - Indica exclusividad.
    */
   async notificarInicioSubasta(email, lote, esSubastaPrivada) {
     const tipoSubasta = esSubastaPrivada ? "Privada" : "Pública";
@@ -353,8 +355,6 @@ const emailService = {
 
   /**
    * Envía el correo electrónico de confirmación de cuenta.
-   * @param {object} user - Objeto del usuario (nombre, email).
-   * @param {string} token - Token de confirmación.
    */
   async sendConfirmationEmail(user, token) {
     const confirmationLink = `${process.env.FRONTEND_URL}/api/auth/confirmar_email/${token}`;
@@ -383,10 +383,6 @@ const emailService = {
 
   /**
    * Notifica al usuario que ha ganado un lote.
-   * @param {object} user - Ganador.
-   * @param {number} loteId - ID del lote ganado.
-   * @param {string} fechaLimite - Fecha límite de pago.
-   * @param {boolean} [esReasignacion=false] - Indica si la victoria fue por reasignación.
    */
   async notificarGanadorPuja(
     user,
@@ -407,6 +403,7 @@ const emailService = {
           <h3 style="color: #333;">Detalles y Plazo de Pago</h3>
           <p>Tienes **90 días** para completar el pago.</p>
           <p style="font-size: 1.1em; font-weight: bold; color: #FF5733;">La fecha límite de pago es: **${fechaLimite}**.</p>
+          <p>Si tienes dudas, contacta a soporte.</p>
           <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Gestionar Pago
           </a>
@@ -424,8 +421,6 @@ const emailService = {
 
   /**
    * Notifica al usuario que ha perdido un lote por no cumplir con el plazo de pago.
-   * @param {object} user - Usuario incumplidor.
-   * @param {number} loteId - ID del lote perdido.
    */
   async notificarImpago(user, loteId) {
     const subject = `Importante: Lote #${loteId} Perdido por Impago`;
@@ -435,6 +430,7 @@ const emailService = {
           <p>Lamentamos informarte que has **perdido el Lote #${loteId}** debido a que el plazo de 90 días para realizar el pago ha expirado.</p>
           <p style="font-weight: bold; color: #4CAF50; font-size: 1.1em;">Tu token de subasta ha sido devuelto a tu cuenta.</p>
           <p>El lote ha sido reasignado al siguiente postor.</p>
+          <p>Si necesitas ayuda, contacta a soporte.</p>
           <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ver Mi Cuenta
           </a>
@@ -451,14 +447,11 @@ const emailService = {
   },
 
   /**
-   * Notifica a **MÚLTIPLES USUARIOS** que el proyecto alcanzó su objetivo y ha comenzado.
-   * @param {object} proyecto - Proyecto de Sequelize.
-   * @param {object[]} usuarios - Lista de usuarios a notificar.
+   * Notifica a MÚLTIPLES USUARIOS que el proyecto alcanzó su objetivo y ha comenzado.
    */
   async notificarInicioProyectoMasivo(proyecto, usuarios) {
     const subject = `🥳 ¡Objetivo Alcanzado! El proyecto ${proyecto.nombre_proyecto} ha comenzado.`;
 
-    // Deduplicar usuarios por email para no enviar múltiples correos al mismo usuario
     const uniqueUsers = [];
     const emailsSet = new Set();
     for (const usuario of usuarios) {
@@ -486,6 +479,7 @@ const emailService = {
           <li>El plazo de pago vencerá el día **10** de cada mes.</li>
         </ul>
         <p>Agradecemos tu apoyo. Juntos hacemos realidad este proyecto.</p>
+        <p>Si tienes dudas, contacta a soporte.</p>
       `;
 
         const html = obtenerPlantillaHtml(contenidoInterno);
@@ -497,21 +491,17 @@ const emailService = {
           `[emailService] Error al enviar notificación de inicio a ${usuario.email}:`,
           error.message,
         );
-        // Continuamos con el siguiente usuario, no detenemos el proceso
       }
     }
     console.log(
       `[emailService] Notificaciones de inicio enviadas a ${uniqueUsers.length} usuarios (proyecto ${proyecto.id})`,
     );
   },
+
   /**
    * @async
    * @function notificarPagoPujaExitosa
    * @description Notifica al usuario que el pago de su puja ganadora ha sido confirmado exitosamente.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre, email).
-   * @param {object} puja - Objeto de la puja (con monto_puja, id).
-   * @param {object} lote - Objeto del lote (con nombre_lote, id).
-   * @param {object} proyecto - Objeto del proyecto (con nombre_proyecto).
    */
   async notificarPagoPujaExitosa(usuario, puja, lote, proyecto) {
     if (!usuario || !usuario.email) return;
@@ -556,6 +546,7 @@ const emailService = {
     </div>
 
     <p style="margin-top: 20px;">Gracias por confiar en Loteplan. ¡Pronto serás dueño de tu terreno!</p>
+    <p>Si tienes preguntas, contacta a soporte.</p>
     <a href="${process.env.FRONTEND_URL}/client/finanzas/pujas" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ver mis pujas ganadas
     </a>
@@ -570,12 +561,7 @@ const emailService = {
   /**
    * @async
    * @function notificarPagoPujaAdmin
-   * @description Notifica a los administradores que un usuario ha pagado su puja ganadora, para que brinden asesoramiento.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} usuario - Objeto del usuario (nombre, email, teléfono si está disponible).
-   * @param {object} puja - Objeto de la puja (monto_puja, id).
-   * @param {object} lote - Objeto del lote (nombre_lote, id).
-   * @param {object} proyecto - Objeto del proyecto (nombre_proyecto).
+   * @description Notifica a los administradores que un usuario ha pagado su puja ganadora.
    */
   async notificarPagoPujaAdmin(adminEmail, usuario, puja, lote, proyecto) {
     if (!adminEmail) return;
@@ -640,6 +626,7 @@ const emailService = {
       </ul>
     </div>
 
+    <p>Para cualquier consulta adicional, contacta a soporte.</p>
     <a href="${process.env.FRONTEND_URL}/admin/lote-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ir al panel de administración
     </a>
@@ -650,16 +637,14 @@ const emailService = {
 
     await this.sendEmail(adminEmail, subject, textPlain, html);
   },
+
   /**
    * Notifica a múltiples suscriptores que el proyecto ha sido pausado.
-   * @param {object} proyecto - Proyecto.
-   * @param {object[]} usuarios - Array de usuarios (con nombre, email).
    */
   async notificarPausaProyectoMasiva(proyecto, usuarios) {
     const subject = `⏸️ Proyecto "${proyecto.nombre_proyecto}" ha sido pausado`;
     for (const usuario of usuarios) {
       if (usuario.email) {
-        // Reutiliza la función individual existente
         await this.notificarPausaProyecto(usuario, proyecto);
       }
     }
@@ -667,8 +652,6 @@ const emailService = {
 
   /**
    * Notifica a un administrador que un proyecto ha sido pausado.
-   * @param {string} adminEmail - Email del administrador.
-   * @param {object} proyecto - Proyecto.
    */
   async notificarPausaProyectoAdmin(adminEmail, proyecto) {
     const subject = `⏸️ Proyecto "${proyecto.nombre_proyecto}" pausado por administrador`;
@@ -677,6 +660,7 @@ const emailService = {
     <p>El proyecto <strong>"${proyecto.nombre_proyecto}"</strong> (ID: ${proyecto.id}) ha sido pausado manualmente por un administrador.</p>
     <p>Estado actual: <strong>En Espera</strong>. No se generarán nuevos pagos mensuales hasta que sea reanudado.</p>
     <p>Si fue una acción no deseada, puedes reanudarlo desde el panel de administración.</p>
+    <p>Consultas a soporte.</p>
     <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ir al panel</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -689,9 +673,7 @@ const emailService = {
   },
 
   /**
-   * Notifica a un **ADMINISTRADOR** que un proyecto alcanzó su objetivo y ha comenzado.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} proyecto - Proyecto de Sequelize.
+   * Notifica a un ADMINISTRADOR que un proyecto alcanzó su objetivo y ha comenzado.
    */
   async notificarInicioProyectoAdmin(adminEmail, proyecto) {
     const subject = `🟢 INICIO DE PROYECTO- ${proyecto.nombre_proyecto}`;
@@ -715,9 +697,7 @@ const emailService = {
   },
 
   /**
-   * Notifica a un **USUARIO/SUSCRIPTOR** la pausa de un proyecto.
-   * @param {object} user - Usuario/suscriptor.
-   * @param {object} proyecto - Proyecto.
+   * Notifica a un USUARIO/SUSCRIPTOR la pausa de un proyecto.
    */
   async notificarPausaProyecto(user, proyecto) {
     const subject = `🚨 ¡Importante! Proyecto ${proyecto.nombre_proyecto} PAUSADO`;
@@ -729,6 +709,7 @@ const emailService = {
           <p>Razón: El número de **suscripciones activas** (${proyecto.suscripciones_actuales}) ha caído por debajo del mínimo requerido (${proyecto.suscripciones_minimas}).</p>
           <p style="font-weight: bold; color: #d9534f; font-size: 1.1em;">Consecuencia: Dejaremos de generar pagos mensuales y de descontar meses del plazo.</p>
           <p>Te notificaremos tan pronto como se reanude.</p>
+          <p>Para más información, contacta a soporte.</p>
       `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -737,9 +718,7 @@ const emailService = {
   },
 
   /**
-   * Notifica a un **ADMINISTRADOR** la reversión de un proyecto.
-   * @param {string} adminEmail - Correo del admin.
-   * @param {object} proyecto - Proyecto.
+   * Notifica a un ADMINISTRADOR la reversión de un proyecto.
    */
   async notificarReversionAdmin(adminEmail, proyecto) {
     const subject = `🛑 ALERTA CRÍTICA: Proyecto Revertido - ${proyecto.nombre_proyecto}`;
@@ -750,6 +729,7 @@ const emailService = {
           <p>Razón: Las suscripciones activas cayeron a **${proyecto.suscripciones_actuales}** (mínimo requerido: ${proyecto.suscripciones_minimas}).</p>
           <p style="font-weight: bold; color: #d9534f; font-size: 1.1em;">Se han pausado la generación de pagos y el conteo de meses.</p>
           <p>Por favor, revise el estado del proyecto y las suscripciones asociadas en el panel de administración.</p>
+          
       `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -763,9 +743,7 @@ const emailService = {
   },
 
   /**
-   * Notifica a un **ADMINISTRADOR** que un proyecto ha completado su plazo.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} proyecto - Proyecto finalizado.
+   * Notifica a un ADMINISTRADOR que un proyecto ha completado su plazo.
    */
   async notificarFinalizacionAdmin(adminEmail, proyecto) {
     const subject = `✅ PROYECTO FINALIZADO - Acción: ${proyecto.nombre_proyecto}`;
@@ -781,6 +759,7 @@ const emailService = {
               <li>Revisar el estado de los **lotes** pendientes de subastar (si aplica).</li>
           </ul>
           <p style="font-weight: bold; color: #d9534f; font-size: 1.1em;">El proyecto ha dejado de contar meses y notificar pagos. **Actúe inmediatamente**.</p>
+          <p>Para dudas, contacte soporte.</p>
           <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir al Panel de Administración
           </a>
@@ -798,11 +777,6 @@ const emailService = {
 
   /**
    * Notifica al usuario que se ha generado su pago mensual.
-   * @param {object} user - Usuario.
-   * @param {object} proyecto - Proyecto.
-   * @param {number} cuota - Número de la cuota.
-   * @param {number} monto - Monto del pago.
-   * @param {string} fechaVencimiento - Fecha límite de pago.
    */
   async notificarPagoGenerado(user, proyecto, cuota, monto, fechaVencimiento) {
     const subject = `Recordatorio de Pago: ${proyecto.nombre_proyecto} - Cuota ${cuota}`;
@@ -818,6 +792,7 @@ const emailService = {
               <li><strong style="color: #FF5733;">Fecha Límite de Pago:</strong> **${fechaVencimiento}**</li>
           </ul>
           <p>Por favor, realiza el pago antes de la fecha límite para evitar recargos.</p>
+          <p>Si tienes dudas, contacta soporte.</p>
           <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir a Mis Pagos
           </a>
@@ -836,8 +811,6 @@ const emailService = {
 
   /**
    * Envía un correo con el enlace para restablecer la contraseña.
-   * @param {object} user - Usuario.
-   * @param {string} token - Token de restablecimiento.
    */
   async sendPasswordResetEmail(user, token) {
     const resetLink = `${process.env.FRONTEND_URL}/restablecer_contrasena?token=${token}`;
@@ -850,6 +823,7 @@ const emailService = {
               Restablecer Contraseña
           </a>
           <p>Si no solicitaste esto, puedes ignorar este correo. El enlace expira en 1 hora.</p>
+          <p>Si necesitas ayuda, contacta a soporte.</p>
           <small style="word-break: break-all; color: #808080;">${resetLink}</small>
       `;
 
@@ -866,11 +840,6 @@ const emailService = {
   /**
    * @async
    * @function notificarReembolsoUsuario
-   * @description Notifica al usuario que su transacción falló e informa sobre el estado del reembolso.
-   * @param {object} user - Objeto del usuario (debe contener nombre y email).
-   * @param {object} transaccion - Objeto de la transacción (debe contener monto, tipo_transaccion, id).
-   * @param {string} motivoFallo - Razón del fallo de la lógica de negocio.
-   * @param {boolean} reembolsoExitoso - Indica si el intento de reembolso en MP fue exitoso.
    */
   async notificarReembolsoUsuario(
     user,
@@ -915,7 +884,7 @@ const emailService = {
                   <p style="color: #FF5733; font-weight: bold; font-size: 1.1em; margin: 0;"><strong>🛠️ Acción Inmediata Requerida:</strong></p>
                   <p style="margin-top: 5px; margin-bottom: 0;">Para asegurar que recibas tu devolución, por favor **contáctanos inmediatamente** indicando la **Transacción #${transaccion.id}**.</p>
               </div>
-              <a href="[URL_A_SOPORTE]" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: ${colorTitulo}; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+              <a href="mailto:consultas@loteplan.com" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: ${colorTitulo}; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
                   Contactar a Soporte Loteplan
               </a>
           `;
@@ -942,13 +911,7 @@ const emailService = {
   },
 
   /**
-   * Notifica al **ADMINISTRADOR** sobre un pago vencido, diferenciando si es cuota de adhesión o cuota mensual.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} user - Usuario incumplidor.
-   * @param {object} proyecto - Proyecto asociado.
-   * @param {object} pago - Pago vencido (puede contener campo opcional `tipo: 'adhesion'`).
-   * @param {number} montoBase - Monto base del pago.
-   * @param {number} recargoTotal - Recargo aplicado.
+   * Notifica al ADMINISTRADOR sobre un pago vencido.
    */
   async notificarPagoVencidoAdmin(
     adminEmail,
@@ -958,7 +921,6 @@ const emailService = {
     montoBase,
     recargoTotal,
   ) {
-    // Determinar tipo de pago (por defecto mensual)
     const tipo = pago.tipo === "adhesion" ? "adhesion" : "mensual";
     const tipoPagoTexto =
       tipo === "adhesion" ? "Cuota de Adhesión" : "Cuota Mensual de Ahorro";
@@ -977,6 +939,7 @@ const emailService = {
         <li><strong style="color: #555;">Fecha Vencimiento:</strong> ${pago.fecha_vencimiento}</li>
     </ul>
     <p style="font-weight: bold;">Se ha enviado una alerta al cliente. Por favor, realice el seguimiento correspondiente.</p>
+    <p>Para consultas, contacta a soporte.</p>
   `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -987,16 +950,10 @@ const emailService = {
       html,
     );
   },
+
   /**
    * @async
    * @function notificarPagoVencidoUsuario
-   * @description Notifica al usuario que su pago (mensual o de adhesión) ha vencido,
-   *              informándole el monto con recargos y las consecuencias.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre, email).
-   * @param {object} proyecto - Proyecto asociado.
-   * @param {object} pago - Pago vencido (contiene mes, monto, fecha_vencimiento, y opcional tipo: 'adhesion').
-   * @param {number} montoBase - Monto original sin recargo.
-   * @param {number} recargoTotal - Recargo acumulado aplicado.
    */
   async notificarPagoVencidoUsuario(
     usuario,
@@ -1044,12 +1001,13 @@ const emailService = {
     </div>
 
     <p style="margin-top: 20px;">Te recomendamos regularizar tu situación lo antes posible para evitar la pérdida de beneficios.</p>
+    <p>Si tienes dudas, contacta a soporte.</p>
 
     <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Pagar Ahora
     </a>
 
-    <p style="margin-top: 20px;">Si ya realizaste el pago, por favor ignora este mensaje. En caso de dudas, contacta a soporte.</p>
+    <p style="margin-top: 20px;">Si ya realizaste el pago, por favor ignora este mensaje. En caso de dudas, contacta soporte.</p>
     <p>Saludos cordiales,<br>El Equipo de Loteplan.com</p>
   `;
 
@@ -1062,11 +1020,6 @@ const emailService = {
   /**
    * @async
    * @function notificarRecordatorioPago
-   * @description Envía un recordatorio al usuario de que su pago está próximo a vencer.
-   * @param {object} usuario - Objeto del usuario.
-   * @param {object} proyecto - Objeto del proyecto asociado.
-   * @param {object} pago - Objeto del pago.
-   * @param {string} email_empresa - Email de la empresa (opcional).
    */
   async notificarRecordatorioPago(usuario, proyecto, pago, email_empresa) {
     if (!usuario || !usuario.email) return;
@@ -1087,6 +1040,7 @@ const emailService = {
               <p>Tu cuota **#${pago.mes}** de **$${montoCuota}** para el proyecto **"${proyecto.nombre_proyecto}"** está próxima a vencer.</p>
               <h3 style="color: #FF5733;">Fecha Límite: ${fechaVencimiento}</h3>
               <p>Te recomendamos realizar el pago antes de la fecha límite para evitar los recargos por mora que se aplican diariamente.</p>
+              <p>Si necesitas ayuda, contacta a soporte.</p>
               <a href="${process.env.FRONTEND_URL}/client/finanzas/pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
                   Revisar y Pagar
               </a>
@@ -1106,12 +1060,6 @@ const emailService = {
   /**
    * @async
    * @function notificarReembolsoAdminMejorada
-   * @description Notifica a un administrador sobre un reembolso automático con detalles del resultado.
-   * @param {string} adminEmail - Correo del administrador.
-   * @param {object} user - Objeto del usuario.
-   * @param {object} transaccion - Objeto de la transacción.
-   * @param {string} motivoFallo - Mensaje de error de la lógica de negocio.
-   * @param {object} detallesReembolso - {reembolsoExitoso, errorReembolso, idPagoMP}
    */
   async notificarReembolsoAdminMejorada(
     adminEmail,
@@ -1184,6 +1132,7 @@ const emailService = {
                         : "Estado del proyecto cambió durante el proceso de pago."
                   }
               </p>
+              <p>Para consultas, contacta a soporte.</p>
           `;
 
     const adminHtml = obtenerPlantillaHtml(contenidoInterno);
@@ -1199,9 +1148,6 @@ const emailService = {
   /**
    * @async
    * @function notificarSuscripcionExitosa
-   * @description Confirma al usuario que su suscripción al proyecto se completó con éxito.
-   * @param {string} userEmail - Correo del usuario.
-   * @param {object} proyecto - Objeto del proyecto asociado.
    */
   async notificarSuscripcionExitosa(userEmail, proyecto) {
     if (!userEmail) return;
@@ -1230,6 +1176,7 @@ const emailService = {
           </table>
           
           <p style="font-weight: bold; margin-top: 20px;">Mantente atento a las actualizaciones del proyecto en tu panel de control.</p>
+          <p>Si tienes dudas, contacta a soporte.</p>
           <a href="${process.env.FRONTEND_URL}/client/dashboard" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
               Ir a Mi Panel
           </a>
@@ -1248,11 +1195,6 @@ const emailService = {
   /**
    * @async
    * @function notificarPagoRecibido
-   * @description Notifica al usuario que su pago mensual ha sido procesado exitosamente.
-   * @param {object} usuario - Objeto del usuario.
-   * @param {object} proyecto - Objeto del proyecto.
-   * @param {number} monto - Monto del pago procesado.
-   * @param {number} mesPago - Número de la cuota pagada.
    */
   async notificarPagoRecibido(usuario, proyecto, monto, mesPago) {
     if (!usuario || !usuario.email) return;
@@ -1290,6 +1232,7 @@ const emailService = {
       </table>
 
       <p style="margin-top: 20px;">¡Gracias por tu compromiso con este proyecto!</p>
+      <p>Si tienes preguntas, contacta a soporte.</p>
       
       <a href="${process.env.FRONTEND_URL}/client/finanzas/inversiones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
         Ver Mi Panel de Inversiones
@@ -1309,8 +1252,6 @@ const emailService = {
   /**
    * @async
    * @function notificarDesactivacionCuenta
-   * @description Notifica al usuario que su cuenta ha sido desactivada exitosamente.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre, email, nombre_usuario).
    */
   async notificarDesactivacionCuenta(usuario) {
     if (!usuario || !usuario.email) return;
@@ -1363,7 +1304,7 @@ const emailService = {
         <h3 style="color: #2e7d32; margin-top: 0; font-size: 16px;">💡 ¿Cambiaste de Opinión?</h3>
         <p style="margin: 5px 0; color: #2e7d32;">Si deseas <strong>reactivar tu cuenta</strong> en el futuro, puedes contactarnos en cualquier momento:</p>
         <p style="margin: 10px 0;">
-          <strong>Email de Soporte:</strong> <a href="mailto:soporte@loteplan.com" style="color: #0b1b36; text-decoration: none; font-weight: bold;">soporte@loteplan.com</a>
+          <strong>Email de Consultas:</strong> <a href="mailto:consultas@loteplan.com" style="color: #0b1b36; text-decoration: none; font-weight: bold;">consultas@loteplan.com</a>
         </p>
         <p style="margin: 5px 0; font-size: 13px; color: #555;">Necesitaremos verificar tu identidad antes de proceder con la reactivación.</p>
       </div>
@@ -1396,7 +1337,6 @@ const emailService = {
   - No recibirás más notificaciones
   - No podrás descargar contratos firmados
 
-  Si deseas reactivar tu cuenta en el futuro, contáctanos en: soporte@loteplan.com
 
   Saludos,
   El Equipo de Loteplan.com
@@ -1404,6 +1344,11 @@ const emailService = {
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+
+  /**
+   * @async
+   * @function notificarSolicitudCancelacionPuja
+   */
   async notificarSolicitudCancelacionPuja(
     adminEmail,
     { puja, usuario, motivo },
@@ -1490,6 +1435,7 @@ const emailService = {
       </ul>
     </div>
 
+    <p>Para cualquier duda consulte a soporte</a>.</p>
     <a href="${process.env.FRONTEND_URL}/admin/lote-pagos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ir al Panel de Administración
     </a>
@@ -1520,8 +1466,6 @@ Ingresá al panel de administración para decidir la acción a tomar.
   /**
    * @async
    * @function notificarReactivacionCuenta
-   * @description Notifica al usuario que su cuenta ha sido reactivada exitosamente.
-   * @param {object} usuario - Objeto del usuario (debe contener nombre, email, nombre_usuario).
    */
   async notificarReactivacionCuenta(usuario) {
     if (!usuario || !usuario.email) return;
@@ -1580,6 +1524,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
         <p style="margin: 5px 0; color: #856404;">Recuerda que tus seguridades fueron desactivadas (2FA), necesitas activarlas nuevamente para realizar operaciones por medio de la página.</p>
       </div>
 
+      <p>Si necesitas ayuda, contacta a soporte.</p>
       <a href="${process.env.FRONTEND_URL}" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
         Iniciar Sesión Ahora
       </a>
@@ -1606,6 +1551,8 @@ Ingresá al panel de administración para decidir la acción a tomar.
   - Email: ${usuario.email}
   - Estado: Activa ✅
 
+  Si necesitas ayuda, escríbenos a: consultas@loteplan.com
+
   ¡Nos alegra tenerte de vuelta!
 
   Saludos,
@@ -1614,13 +1561,10 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+
   /**
    * @async
    * @function notificarCancelacionSuscripcion
-   * @description Notifica al usuario que su suscripción ha sido cancelada exitosamente.
-   * @param {string} userEmail - Correo del usuario.
-   * @param {object} proyecto - Objeto del proyecto asociado.
-   * @param {object} metrics - Métricas de la cancelación (pagos_cancelados, pagos_realizados, monto_total_pagado).
    */
   async notificarCancelacionSuscripcion(userEmail, proyecto, metrics) {
     if (!userEmail) return;
@@ -1674,7 +1618,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
       <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
         <h3 style="color: #2e7d32; margin-top: 0; font-size: 16px;">💰 Información Importante sobre Devoluciones</h3>
         <p style="margin: 5px 0; color: #2e7d32;">El equipo de Loteplan revisará tu caso para determinar si corresponde alguna devolución del monto pagado, según las políticas de cancelación del proyecto.</p>
-        <p style="margin: 10px 0; color: #2e7d32;">Si tienes alguna duda sobre este proceso, por favor contáctanos a <strong>soporte@loteplan.com</strong>.</p>
+        <p style="margin: 10px 0; color: #2e7d32;">Si tienes alguna duda sobre este proceso, por favor contacta con soporte</p>
       </div>
 
       <h3 style="color: #0b1b36;">🔐 Recordatorios Importantes</h3>
@@ -1708,7 +1652,6 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
   El equipo de Loteplan revisará tu caso para determinar si corresponde alguna devolución.
 
-  Si tienes dudas, contáctanos en: soporte@loteplan.com
 
   Saludos,
   El Equipo de Loteplan.com
@@ -1716,7 +1659,8 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
     await this.sendEmail(userEmail, subject, textPlain, html);
   },
-  // ==================== NUEVAS FUNCIONES PARA ADHESIONES ====================
+
+  // ==================== FUNCIONES PARA ADHESIONES ====================
 
   /**
    * Notifica al usuario que ha creado un plan de pagos de adhesión.
@@ -1730,6 +1674,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     const cuotasTotales = adhesion.cuotas_totales;
     let planTexto = "";
     if (planPago === "contado") planTexto = "Pago de contado (1 cuota)";
+    else if (planPago === "3_cuotas") planTexto = "3 cuotas mensuales";
     else if (planPago === "6_cuotas") planTexto = "6 cuotas mensuales";
     else planTexto = "12 cuotas mensuales";
 
@@ -1746,6 +1691,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     </ul>
     <p>Las fechas de vencimiento de cada cuota son el día <strong>10 de cada mes</strong>. Recibirás recordatorios y podrás pagar desde tu panel de usuario.</p>
     <p style="font-weight: bold;">Recuerda que una vez que completes el 100% de las cuotas, tu suscripción al proyecto se activará automáticamente.</p>
+    <p>Si tienes dudas, contacta a soporte.</p>
     <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver mis adhesiones</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -1775,6 +1721,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
       <li><strong>Cuotas restantes:</strong> ${cuotasRestantes}</li>
     </ul>
     ${cuotasRestantes === 0 ? '<p style="color: #4CAF50; font-weight: bold;">🎉 ¡Felicidades! Has completado el pago total de la adhesión. Tu suscripción al proyecto será activada en breve.</p>' : ""}
+    <p>Para consultas, contacta a nuestro soporte.</p>
     <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Ver detalles</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -1785,11 +1732,9 @@ Ingresá al panel de administración para decidir la acción a tomar.
       html,
     );
   },
+
   /**
-   * Notifica al usuario que su período de pausa (standby) ha finalizado
-   * y que la generación de cuotas se reanudará normalmente.
-   * @param {object} usuario - Objeto del usuario (nombre, email)
-   * @param {object} proyecto - Proyecto asociado
+   * Notifica al usuario que su período de pausa (standby) ha finalizado.
    */
   async notificarStandbyFinalizado(usuario, proyecto) {
     if (!usuario || !usuario.email) return;
@@ -1816,6 +1761,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     </div>
 
     <p style="margin-top: 20px;">Si deseas <strong>cancelar tu suscripción</strong> o solicitar una nueva pausa, por favor contacta con el equipo de administración.</p>
+    <p>Para más información, contacte a soporte</p>
     
     <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ver Mis Suscripciones
@@ -1829,11 +1775,9 @@ Ingresá al panel de administración para decidir la acción a tomar.
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },
+
   /**
    * Notifica al usuario que un administrador ha activado el período de pausa (standby) de 6 meses.
-   * @param {object} usuario - Objeto del usuario (nombre, email)
-   * @param {object} proyecto - Proyecto asociado
-   * @param {Date|string} fechaFin - Fecha en que finaliza la pausa (YYYY-MM-DD)
    */
   async notificarStandbyActivado(usuario, proyecto, fechaFin) {
     if (!usuario || !usuario.email) return;
@@ -1863,7 +1807,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     <p><strong>Fecha de finalización de la pausa:</strong> ${fechaFormateada}</p>
     <p>A partir de esa fecha, el sistema reactivará automáticamente la generación de tus cuotas.</p>
     
-    <p style="margin-top: 20px;">Si tienes dudas, contacta con el equipo de soporte.</p>
+    <p style="margin-top: 20px;">Si tienes dudas, contacta con el equipo de soporte</p>
     
     <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
       Ver Mis Suscripciones
@@ -1889,6 +1833,7 @@ Ingresá al panel de administración para decidir la acción a tomar.
     <p>Has completado el pago total del <strong>${adhesion.cuotas_totales} cuotas</strong> del plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
     <p style="font-weight: bold; font-size: 1.1em;">✅ Tu suscripción ya está activa y cuentas con <strong>1 token de inversión</strong> disponible para participar en las subastas de lotes de este proyecto.</p>
     <p>A partir de ahora, se generarán tus cuotas mensuales de inversión (el monto mensual del proyecto) y deberás pagarlas antes del día 10 de cada mes.</p>
+    <p>Si tienes preguntas, escríbe a soporte</p>
     <a href="${process.env.FRONTEND_URL}/client/finanzas/suscripciones" style="display: inline-block; padding: 12px 25px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Ir a mis suscripciones</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
@@ -1911,8 +1856,8 @@ Ingresá al panel de administración para decidir la acción a tomar.
     <p>Hola <strong>${user.nombre}</strong>,</p>
     <p>Te informamos que tu plan de adhesión para el proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha sido cancelado.</p>
     <p><strong>Motivo de cancelación:</strong> ${motivoTexto}</p>
-    <p>Si no solicitaste esta cancelación o necesitas más información, por favor contacta a nuestro equipo de soporte.</p>
-    <a href="mailto:soporte@loteplan.com" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Contactar soporte</a>
+    <p>Si no solicitaste esta cancelación o necesitas más información, por favor contacta a nuestro equipo de soporte</p>
+    <a href="mailto:consultas@loteplan.com" style="display: inline-block; padding: 12px 25px; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px;">Contactar soporte</a>
   `;
     const html = obtenerPlantillaHtml(contenidoInterno);
     await this.sendEmail(
