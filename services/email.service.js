@@ -20,24 +20,17 @@ if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
   resend = new Resend(process.env.RESEND_API_KEY);
   console.log("✅ Configurado email con Resend (Producción)");
 } else {
-  // 💻 LOCAL / RAILWAY / CUALQUIER SMTP: Usar Nodemailer con configuración genérica
-  const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
-  const smtpPort = parseInt(process.env.SMTP_PORT || "587");
-  const smtpSecure = process.env.SMTP_SECURE === "true";
-
+  // 💻 USAR GOOGLE WORKSPACE (cuenta corporativa)
   transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpSecure,
+    service: "GmailWorkspace", // ← Servicio específico para cuentas de Google Workspace
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: process.env.EMAIL_USER, // tu correo corporativo (ej: administracion@loteplan.com)
+      pass: process.env.EMAIL_PASS, // la contraseña de esa cuenta (NO es contraseña de aplicación)
     },
-    // Opcional: descomentar si hay problemas de certificados
-    // tls: { rejectUnauthorized: false }
   });
-
-  console.log(`✅ Configurado email con SMTP (${smtpHost}:${smtpPort})`);
+  console.log(
+    `✅ Configurado email con Google Workspace (${process.env.EMAIL_USER})`,
+  );
 }
 
 /**
