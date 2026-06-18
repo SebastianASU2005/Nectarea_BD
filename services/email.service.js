@@ -17,37 +17,27 @@ let resend;
 
 // ========== CONFIGURACIÓN DE TRANSPORTE ==========
 if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
-  // 🌐 PRODUCCIÓN: Usar Resend
+  // Resend (si lo usas)
   resend = new Resend(process.env.RESEND_API_KEY);
   console.log("✅ Configurado email con Resend (Producción)");
 } else {
-  // 💻 USAR GMAIL (normal o Workspace) con configuración SMTP explícita
-  const EMAIL_USER = process.env.EMAIL_USER;
-  const EMAIL_PASS = process.env.EMAIL_PASS;
-
-  if (!EMAIL_USER || !EMAIL_PASS) {
-    console.error(
-      "❌ ERROR: EMAIL_USER o EMAIL_PASS no están definidos en las variables de entorno.",
-    );
-    // Opcional: puedes crear un transporter ficticio para que no falle el inicio, pero mejor lanzar error.
-    throw new Error("Faltan credenciales de correo electrónico");
-  }
-
-  console.log(`📧 Configurando email con: ${EMAIL_USER}`);
+  // 💻 CONFIGURACIÓN SMTP EXPLÍCITA (la misma que funcionó en /test-smtp)
+  const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+  const smtpPort = parseInt(process.env.SMTP_PORT || "587");
+  const smtpSecure = process.env.SMTP_SECURE === "true";
 
   transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false, // true para 465, false para 587
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
     auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS,
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
     },
-    // Descomenta si tienes problemas con certificados:
-    // tls: { rejectUnauthorized: false }
+    tls: { rejectUnauthorized: false }, // Importante en Railway
   });
 
-  console.log(`✅ Configurado email con Gmail (${EMAIL_USER})`);
+  console.log(`✅ Configurado email con SMTP (${smtpHost}:${smtpPort})`);
 }
 /**
  * Genera la plantilla base HTML que envuelve el contenido específico del correo.
