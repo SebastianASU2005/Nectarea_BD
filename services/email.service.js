@@ -16,16 +16,29 @@ let transporter;
 let resend;
 
 // ========== CONFIGURACIÓN DE TRANSPORTE ==========
+// ========== CONFIGURACIÓN DE TRANSPORTE ==========
 if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
-  // Resend (si lo usas)
+  // 🌐 USAR RESEND (alternativa)
   resend = new Resend(process.env.RESEND_API_KEY);
   console.log("✅ Configurado email con Resend (Producción)");
+} else if (EMAIL_PROVIDER === "oauth2" && process.env.GOOGLE_REFRESH_TOKEN) {
+  // 🔐 USAR OAUTH2 (para Google Workspace)
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      type: "OAuth2",
+      user: process.env.EMAIL_USER,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+    },
+  });
+  console.log(`✅ Configurado email con OAuth2 (${process.env.EMAIL_USER})`);
 } else {
-  // 💻 CONFIGURACIÓN SMTP EXPLÍCITA (la misma que funcionó en /test-smtp)
+  // 💻 FALLBACK: SMTP estándar (para desarrollo o cuentas sin OAuth2)
   const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
   const smtpPort = parseInt(process.env.SMTP_PORT || "587");
   const smtpSecure = process.env.SMTP_SECURE === "true";
-
   transporter = nodemailer.createTransport({
     host: smtpHost,
     port: smtpPort,
@@ -34,9 +47,8 @@ if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    tls: { rejectUnauthorized: false }, // Importante en Railway
+    tls: { rejectUnauthorized: false },
   });
-
   console.log(`✅ Configurado email con SMTP (${smtpHost}:${smtpPort})`);
 }
 /**
