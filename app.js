@@ -358,13 +358,13 @@ async function synchronizeDatabase() {
       // ======================================================
       try {
         await emailService.sendEmail(
-          "administracion@loteplan.com", // Cambia por tu email si quieres verlo
+          "astudillo5677@gmail.com", // Cambia por tu email si quieres verlo
           "🧪 Prueba OAuth2 - Loteplan (inicio de servidor)",
           "Correo de prueba automático al iniciar el servidor.",
           "<h1>✅ Configuración OAuth2 correcta</h1><p>El envío automático funciona.</p><p>Este correo se envía cada vez que se reinicia el servidor.</p>",
         );
         console.log(
-          "✅ Correo de prueba enviado con OAuth2 a administracion@loteplan.com",
+          "✅ Correo de prueba enviado con OAuth2 a astudillo5677@gmail",
         );
       } catch (error) {
         console.error(
