@@ -93,7 +93,29 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage: storage });
+app.get('/test-smtp', async (req, res) => {
+  const nodemailer = require('nodemailer');
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'loteplan.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 5000, // 5 segundos
+  });
 
+  try {
+    // Verificar conexión
+    await transporter.verify();
+    res.send('✅ Conexión SMTP exitosa');
+  } catch (error) {
+    console.error('❌ Error SMTP:', error.message);
+    res.status(500).send(`❌ Error: ${error.message}`);
+  }
+});
 // ====================================================================
 // 3. IMPORTACIÓN DE MODELOS (CRÍTICO)
 // ====================================================================
