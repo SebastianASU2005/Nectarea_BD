@@ -1,4 +1,4 @@
-// Archivo: app.js (CORREGIDO + ONE-TIME CONVERSION)
+// Archivo: app.js (CORREGIDO + ONE-TIME CONVERSION + TEST EMAIL OAUTH2)
 
 const express = require("express");
 const app = express();
@@ -13,6 +13,9 @@ const paymentController = require("./controllers/pagoMercado.controller");
 
 // Carga las variables de entorno
 require("dotenv").config();
+
+// ✅ IMPORTAMOS EL SERVICIO DE EMAIL PARA LAS PRUEBAS
+const emailService = require("./services/email.service");
 
 // ===============================================
 // 1. VERIFICACIÓN DE VARIABLES DE ENTORNO CRÍTICAS
@@ -93,29 +96,25 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage: storage });
-app.get('/test-smtp', async (req, res) => {
-  const nodemailer = require('nodemailer');
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'loteplan.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 5000, // 5 segundos
-  });
 
+// ================================================================
+// 🧪 RUTA DE PRUEBA DE EMAIL (con OAuth2)
+// ================================================================
+app.get("/test-email", async (req, res) => {
   try {
-    // Verificar conexión
-    await transporter.verify();
-    res.send('✅ Conexión SMTP exitosa');
+    await emailService.sendEmail(
+      "administracion@loteplan.com", // Cambia por tu correo si quieres probar
+      "🧪 Prueba manual OAuth2",
+      "Correo de prueba desde endpoint /test-email",
+      "<h1>✅ Funciona</h1><p>El envío con OAuth2 está operativo.</p>",
+    );
+    res.send("✅ Correo de prueba enviado correctamente (OAuth2)");
   } catch (error) {
-    console.error('❌ Error SMTP:', error.message);
+    console.error("❌ Error en /test-email:", error.message);
     res.status(500).send(`❌ Error: ${error.message}`);
   }
 });
+
 // ====================================================================
 // 3. IMPORTACIÓN DE MODELOS (CRÍTICO)
 // ====================================================================
@@ -340,7 +339,8 @@ async function synchronizeDatabase() {
     });
 
     // Inicia el servidor de Express
-    app.listen(PORT, "0.0.0.0", () => {
+    app.listen(PORT, "0.0.0.0", async () => {
+      // <-- async añadido
       console.log(`Servidor escuchando en puerto ${PORT}`);
       console.log("=".repeat(70));
       console.log("📋 ORDEN DE MIDDLEWARES CONFIGURADO:");
@@ -352,6 +352,27 @@ async function synchronizeDatabase() {
       console.log("   6. Rutas con Multer (KYC, Contratos, Imágenes)");
       console.log("   7. Resto de rutas de la API");
       console.log("=".repeat(70));
+
+      // ======================================================
+      // 🧪 PRUEBA DE CORREO CON OAUTH2 AL ARRANCAR EL SERVIDOR
+      // ======================================================
+      try {
+        await emailService.sendEmail(
+          "administracion@loteplan.com", // Cambia por tu email si quieres verlo
+          "🧪 Prueba OAuth2 - Loteplan (inicio de servidor)",
+          "Correo de prueba automático al iniciar el servidor.",
+          "<h1>✅ Configuración OAuth2 correcta</h1><p>El envío automático funciona.</p><p>Este correo se envía cada vez que se reinicia el servidor.</p>",
+        );
+        console.log(
+          "✅ Correo de prueba enviado con OAuth2 a administracion@loteplan.com",
+        );
+      } catch (error) {
+        console.error(
+          "❌ Error al enviar correo de prueba con OAuth2:",
+          error.message,
+        );
+        // No detenemos el servidor, solo mostramos el error.
+      }
     });
   } catch (error) {
     console.error("Error al sincronizar la base de datos:", error);
