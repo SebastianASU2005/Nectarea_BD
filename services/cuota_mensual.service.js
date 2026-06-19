@@ -120,80 +120,97 @@ const cuotaMensualService = {
 
   /**
    * Compara dos versiones de una cuota y envía UN correo por usuario (no por suscripción).
+   * Si un envío falla, se registra y continúa con los demás.
    */
   async _notifySubscribersIfChanged(oldCuota, newCuota, customMessage = null) {
-    const cambios = [];
+    try {
+      const cambios = [];
 
-    const compare = (oldVal, newVal, desc) => {
-      if (Number(oldVal) !== Number(newVal)) {
-        cambios.push(desc);
-      }
-    };
+      const compare = (oldVal, newVal, desc) => {
+        if (Number(oldVal) !== Number(newVal)) {
+          cambios.push(desc);
+        }
+      };
 
-    compare(
-      oldCuota.valor_mensual_final,
-      newCuota.valor_mensual_final,
-      `Monto mensual final: $${Number(oldCuota.valor_mensual_final).toFixed(2)} → $${Number(newCuota.valor_mensual_final).toFixed(2)}`,
-    );
-    compare(
-      oldCuota.porcentaje_plan,
-      newCuota.porcentaje_plan,
-      `Porcentaje del plan: ${formatearPorcentaje(oldCuota.porcentaje_plan)} → ${formatearPorcentaje(newCuota.porcentaje_plan)}`,
-    );
-    compare(
-      oldCuota.porcentaje_administrativo,
-      newCuota.porcentaje_administrativo,
-      `Carga administrativa: ${formatearPorcentaje(oldCuota.porcentaje_administrativo)} → ${formatearPorcentaje(newCuota.porcentaje_administrativo)}`,
-    );
-    compare(
-      oldCuota.valor_cemento,
-      newCuota.valor_cemento,
-      `Valor del cemento: $${Number(oldCuota.valor_cemento).toFixed(2)} → $${Number(newCuota.valor_cemento).toFixed(2)}`,
-    );
-    compare(
-      oldCuota.valor_cemento_unidades,
-      newCuota.valor_cemento_unidades,
-      `Unidades de cemento: ${oldCuota.valor_cemento_unidades} → ${newCuota.valor_cemento_unidades}`,
-    );
-
-    if (cambios.length === 0) return;
-
-    const proyecto = await Proyecto.findByPk(newCuota.id_proyecto, {
-      attributes: ["id", "nombre_proyecto"],
-    });
-    if (!proyecto) return;
-
-    // Obtener suscripciones activas del proyecto, pero agrupar por usuario
-    const suscripciones = await SuscripcionProyecto.findAll({
-      where: { id_proyecto: proyecto.id, activo: true },
-      include: [
-        {
-          model: Usuario,
-          as: "usuario",
-          attributes: ["id", "email", "nombre"],
-        },
-      ],
-    });
-
-    // Usar un Set/Mapeo para evitar duplicados por email
-    const usuariosUnicos = new Map();
-    for (const sus of suscripciones) {
-      const usuario = sus.usuario;
-      if (usuario && usuario.email && !usuariosUnicos.has(usuario.email)) {
-        usuariosUnicos.set(usuario.email, usuario);
-      }
-    }
-
-    if (usuariosUnicos.size === 0) return;
-
-    // Enviar un correo por usuario (no por suscripción)
-    for (const usuario of usuariosUnicos.values()) {
-      await emailService.notificarCambioCuotaProyecto(
-        proyecto,
-        cambios,
-        customMessage,
-        usuario,
+      compare(
+        oldCuota.valor_mensual_final,
+        newCuota.valor_mensual_final,
+        `Monto mensual final: $${Number(oldCuota.valor_mensual_final).toFixed(2)} → $${Number(newCuota.valor_mensual_final).toFixed(2)}`,
       );
+      compare(
+        oldCuota.porcentaje_plan,
+        newCuota.porcentaje_plan,
+        `Porcentaje del plan: ${formatearPorcentaje(oldCuota.porcentaje_plan)} → ${formatearPorcentaje(newCuota.porcentaje_plan)}`,
+      );
+      compare(
+        oldCuota.porcentaje_administrativo,
+        newCuota.porcentaje_administrativo,
+        `Carga administrativa: ${formatearPorcentaje(oldCuota.porcentaje_administrativo)} → ${formatearPorcentaje(newCuota.porcentaje_administrativo)}`,
+      );
+      compare(
+        oldCuota.valor_cemento,
+        newCuota.valor_cemento,
+        `Valor del cemento: $${Number(oldCuota.valor_cemento).toFixed(2)} → $${Number(newCuota.valor_cemento).toFixed(2)}`,
+      );
+      compare(
+        oldCuota.valor_cemento_unidades,
+        newCuota.valor_cemento_unidades,
+        `Unidades de cemento: ${oldCuota.valor_cemento_unidades} → ${newCuota.valor_cemento_unidades}`,
+      );
+
+      if (cambios.length === 0) return;
+
+      const proyecto = await Proyecto.findByPk(newCuota.id_proyecto, {
+        attributes: ["id", "nombre_proyecto"],
+      });
+      if (!proyecto) return;
+
+      // Obtener suscripciones activas del proyecto, pero agrupar por usuario
+      const suscripciones = await SuscripcionProyecto.findAll({
+        where: { id_proyecto: proyecto.id, activo: true },
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "email", "nombre"],
+          },
+        ],
+      });
+
+      // Usar un Set/Mapeo para evitar duplicados por email
+      const usuariosUnicos = new Map();
+      for (const sus of suscripciones) {
+        const usuario = sus.usuario;
+        if (usuario && usuario.email && !usuariosUnicos.has(usuario.email)) {
+          usuariosUnicos.set(usuario.email, usuario);
+        }
+      }
+
+      if (usuariosUnicos.size === 0) return;
+
+      // Enviar un correo por usuario, capturando fallos individuales
+      for (const usuario of usuariosUnicos.values()) {
+        try {
+          await emailService.notificarCambioCuotaProyecto(
+            proyecto,
+            cambios,
+            customMessage,
+            usuario,
+          );
+        } catch (error) {
+          console.error(
+            `[cuota_mensualService] Error al notificar cambio de cuota al usuario ${usuario.email}:`,
+            error.message,
+          );
+          // Continuar con el siguiente usuario
+        }
+      }
+    } catch (error) {
+      console.error(
+        `[cuota_mensualService] Error en _notifySubscribersIfChanged (proyecto ${newCuota.id_proyecto}):`,
+        error.message,
+      );
+      // No re-lanzamos para que el error quede registrado pero no interrumpa el flujo
     }
   },
 

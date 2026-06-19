@@ -34,14 +34,14 @@ const adhesionService = {
       // 🔒 Bloquear proyecto para operación atómica
       await proyecto.reload({ transaction: t, lock: t.LOCK.UPDATE });
 
-      // 2. Verificar cupo disponible (suscripciones_actuales representa cupos reservados)
+      // 2. Verificar cupo disponible
       if (proyecto.suscripciones_actuales >= proyecto.obj_suscripciones) {
         throw new Error(
           `El proyecto ya alcanzó su límite de ${proyecto.obj_suscripciones} suscriptores.`,
         );
       }
 
-      // 3. Obtener la cuota mensual más reciente (valor móvil)
+      // 3. Obtener la cuota mensual más reciente
       const cuotaMensual = await CuotaMensual.findOne({
         where: { id_proyecto: proyectoId },
         order: [["createdAt", "DESC"]],
@@ -71,7 +71,7 @@ const adhesionService = {
       }
       const montoPorCuota = montoTotal / cuotasTotales;
 
-      // 4. Crear la SUSCRIPCIÓN (con adhesion_completada = false)
+      // 4. Crear la SUSCRIPCIÓN
       const nuevaSuscripcion = await SuscripcionProyecto.create(
         {
           id_usuario: usuarioId,
@@ -87,7 +87,7 @@ const adhesionService = {
         { transaction: t },
       );
 
-      // ✅ Reservar cupo (incrementar suscripciones_actuales)
+      // Reservar cupo
       await proyecto.increment("suscripciones_actuales", {
         by: 1,
         transaction: t,
@@ -150,15 +150,22 @@ const adhesionService = {
 
       await t.commit();
 
-      // Notificar al usuario por email
-      const usuario = await Usuario.findByPk(usuarioId);
-      const proyectoCompleto = await Proyecto.findByPk(proyectoId);
-      await emailService.notificarAdhesionCreada(
-        usuario,
-        adhesion,
-        proyectoCompleto,
-        planPago,
-      );
+      // 📧 Notificar al usuario (no interrumpe si falla)
+      try {
+        const usuario = await Usuario.findByPk(usuarioId);
+        const proyectoCompleto = await Proyecto.findByPk(proyectoId);
+        await emailService.notificarAdhesionCreada(
+          usuario,
+          adhesion,
+          proyectoCompleto,
+          planPago,
+        );
+      } catch (error) {
+        console.error(
+          `[crearAdhesion] Error al enviar notificación de adhesión creada (usuario ${usuarioId}):`,
+          error.message,
+        );
+      }
 
       // Retornar la adhesión con sus pagos y suscripción
       const adhesionConPagos = await Adhesion.findByPk(adhesion.id, {
@@ -332,18 +339,24 @@ const adhesionService = {
     }
 
     // Notificar por email después del commit
+    // 🔥 Notificación (después del commit, no interrumpe)
     t.afterCommit(async () => {
-      const usuario = await Usuario.findByPk(adhesion.id_usuario);
-      const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
-      await emailService.notificarCuotaAdhesionPagada(
-        usuario,
-        adhesion,
-        pagoAdhesion,
-        proyecto,
-      );
+      try {
+        const usuario = await Usuario.findByPk(adhesion.id_usuario);
+        const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
+        await emailService.notificarCuotaAdhesionPagada(
+          usuario,
+          adhesion,
+          pagoAdhesion,
+          proyecto,
+        );
+      } catch (error) {
+        console.error(
+          `[procesarPagoCuota] Error al notificar pago de cuota:`,
+          error.message,
+        );
+      }
     });
-
-    return pagoAdhesion;
   },
   /**
    * Cuando se completa la última cuota, activa la suscripción (token = 1, adhesion_completada = true)
@@ -383,14 +396,21 @@ const adhesionService = {
     }
 
     transaction.afterCommit(async () => {
-      const usuario = await Usuario.findByPk(adhesion.id_usuario);
-      const proyectoCompleto = await Proyecto.findByPk(adhesion.id_proyecto);
-      await emailService.notificarAdhesionCompletada(
-        usuario,
-        adhesion,
-        suscripcion,
-        proyectoCompleto,
-      );
+      try {
+        const usuario = await Usuario.findByPk(adhesion.id_usuario);
+        const proyectoCompleto = await Proyecto.findByPk(adhesion.id_proyecto);
+        await emailService.notificarAdhesionCompletada(
+          usuario,
+          adhesion,
+          suscripcion,
+          proyectoCompleto,
+        );
+      } catch (error) {
+        console.error(
+          `[_completarAdhesionYActivarSuscripcion] Error al notificar adhesión completada:`,
+          error.message,
+        );
+      }
     });
   },
 
@@ -474,7 +494,7 @@ const adhesionService = {
           { transaction: t },
         );
 
-        // ✅ Siempre liberar el cupo (independientemente de si tenía pagos o no)
+        // ✅ Siempre liberar el cupo
         const proyecto = await Proyecto.findByPk(adhesion.id_proyecto, {
           transaction: t,
           lock: t.LOCK.UPDATE,
@@ -534,20 +554,41 @@ const adhesionService = {
 
       if (shouldCommit) await t.commit();
 
-      const notificar = async () => {
-        const usuario = await Usuario.findByPk(adhesion.id_usuario);
-        const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
-        await emailService.notificarAdhesionCancelada(
-          usuario,
-          adhesion,
-          proyecto,
-          motivo,
-        );
-      };
+      // 📧 Notificaciones (sin interrumpir)
       if (shouldCommit) {
-        await notificar();
+        try {
+          const usuario = await Usuario.findByPk(adhesion.id_usuario);
+          const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
+          await emailService.notificarAdhesionCancelada(
+            usuario,
+            adhesion,
+            proyecto,
+            motivo,
+          );
+        } catch (error) {
+          console.error(
+            `[cancelarAdhesion] Error al notificar cancelación:`,
+            error.message,
+          );
+        }
       } else if (externalTransaction) {
-        externalTransaction.afterCommit(notificar);
+        externalTransaction.afterCommit(async () => {
+          try {
+            const usuario = await Usuario.findByPk(adhesion.id_usuario);
+            const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
+            await emailService.notificarAdhesionCancelada(
+              usuario,
+              adhesion,
+              proyecto,
+              motivo,
+            );
+          } catch (error) {
+            console.error(
+              `[cancelarAdhesion] Error al notificar cancelación (afterCommit):`,
+              error.message,
+            );
+          }
+        });
       }
 
       return { message: "Adhesión cancelada exitosamente." };
@@ -684,25 +725,30 @@ const adhesionService = {
         transaccion: t,
       });
 
-      await t.commit();
-
-      const usuario = await Usuario.findByPk(adhesion.id_usuario);
-      const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
-      await emailService.notificarCuotaAdhesionPagada(
-        usuario,
-        adhesion,
-        pagoAdhesion,
-        proyecto,
-      );
-      if (nuevoEstado === "completada") {
-        const suscripcion = await SuscripcionProyecto.findByPk(
-          adhesion.id_suscripcion,
-        );
-        await emailService.notificarAdhesionCompletada(
+      try {
+        const usuario = await Usuario.findByPk(adhesion.id_usuario);
+        const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
+        await emailService.notificarCuotaAdhesionPagada(
           usuario,
           adhesion,
-          suscripcion,
+          pagoAdhesion,
           proyecto,
+        );
+        if (nuevoEstado === "completada") {
+          const suscripcion = await SuscripcionProyecto.findByPk(
+            adhesion.id_suscripcion,
+          );
+          await emailService.notificarAdhesionCompletada(
+            usuario,
+            adhesion,
+            suscripcion,
+            proyecto,
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[forzarPagoCuota] Error al enviar notificaciones:`,
+          error.message,
         );
       }
 

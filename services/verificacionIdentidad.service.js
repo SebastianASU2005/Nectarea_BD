@@ -1,6 +1,7 @@
 const VerificacionIdentidad = require("../models/verificacion_identidad");
 const Usuario = require("../models/usuario");
-const storageService = require("./storage"); // ✅ reemplazo
+const storageService = require("./storage");
+const emailService = require("./email.service"); // ✅ Importado
 
 const verificacionIdentidadService = {
   /**
@@ -222,6 +223,12 @@ const verificacionIdentidadService = {
           ],
           required: false,
         },
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email", "nombre_usuario"],
+          required: false,
+        },
       ],
     });
   },
@@ -254,6 +261,13 @@ const verificacionIdentidadService = {
 
     const registro = await VerificacionIdentidad.findOne({
       where: { id_usuario },
+      include: [
+        {
+          model: Usuario,
+          as: "usuario",
+          attributes: ["id", "nombre", "apellido", "email"],
+        },
+      ],
     });
 
     if (!registro) {
@@ -275,7 +289,29 @@ const verificacionIdentidadService = {
       motivo_rechazo: estado === "RECHAZADA" ? motivo_rechazo.trim() : null,
     };
 
-    return registro.update(updateData);
+    const registroActualizado = await registro.update(updateData);
+
+    // 📧 Notificaciones (no interrumpen)
+    try {
+      const usuario = registro.usuario;
+      if (usuario && usuario.email) {
+        if (estado === "APROBADA") {
+          await emailService.notificarVerificacionAprobada(usuario);
+        } else {
+          await emailService.notificarVerificacionRechazada(
+            usuario,
+            motivo_rechazo,
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        `[updateVerificationStatus] Error al enviar notificación KYC al usuario ${id_usuario}:`,
+        error.message,
+      );
+    }
+
+    return registroActualizado;
   },
 
   /**

@@ -386,18 +386,34 @@ const pagoService = {
         { transaction: t },
       );
 
-      await emailService.notificarPagoRecibido(
-        usuario,
-        proyecto,
-        pagoLock.monto,
-        pagoLock.mes,
-      );
+      // 📧 Notificación por email (no interrumpe)
+      try {
+        await emailService.notificarPagoRecibido(
+          usuario,
+          proyecto,
+          pagoLock.monto,
+          pagoLock.mes,
+        );
+      } catch (error) {
+        console.error(
+          `[markAsPaid] Error al enviar email de pago recibido al usuario ${usuario.id}:`,
+          error.message,
+        );
+      }
 
-      const contenido = `Tu pago de $${pagoLock.monto} para la cuota #${pagoLock.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
-      await mensajeService.crear(
-        { id_remitente: 1, id_receptor: usuario.id, contenido: contenido },
-        { transaction: t },
-      );
+      // 📨 Mensaje de sistema (no interrumpe)
+      try {
+        const contenido = `Tu pago de $${pagoLock.monto} para la cuota #${pagoLock.mes} del proyecto "${proyecto.nombre_proyecto}" ha sido procesado exitosamente.`;
+        await mensajeService.crear(
+          { id_remitente: 1, id_receptor: usuario.id, contenido: contenido },
+          { transaction: t },
+        );
+      } catch (error) {
+        console.error(
+          `[markAsPaid] Error al crear mensaje de sistema para el usuario ${usuario.id}:`,
+          error.message,
+        );
+      }
 
       return pagoLock;
     } catch (error) {

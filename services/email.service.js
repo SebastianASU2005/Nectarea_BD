@@ -1878,6 +1878,64 @@ Ingresá al panel de administración para decidir la acción a tomar.
       html,
     );
   },
+  /**
+   * @async
+   * @function notificarVerificacionAprobada
+   * @description Notifica al usuario que su verificación de identidad fue aprobada.
+   * @param {Object} usuario - Objeto del usuario (debe tener email, nombre).
+   */
+  async notificarVerificacionAprobada(usuario) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = "✅ Verificación de Identidad Aprobada";
+    const contenidoInterno = `
+    <h2 style="color: #4CAF50; margin-top: 0;">¡Verificación Aprobada!</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Te informamos que tu verificación de identidad ha sido <strong style="color: #4CAF50;">aprobada exitosamente</strong>.</p>
+    <p>Ya puedes acceder a todas las funcionalidades de la plataforma sin restricciones.</p>
+    <p>Si tienes alguna duda, contacta a soporte.</p>
+    <a href="${process.env.FRONTEND_URL}/perfil" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Ir a Mi Perfil
+    </a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Hola ${usuario.nombre}, tu verificación de identidad ha sido aprobada exitosamente.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
+
+  /**
+   * @async
+   * @function notificarVerificacionRechazada
+   * @description Notifica al usuario que su verificación de identidad fue rechazada.
+   * @param {Object} usuario - Objeto del usuario (debe tener email, nombre).
+   * @param {string} motivo - Motivo del rechazo.
+   */
+  async notificarVerificacionRechazada(usuario, motivo) {
+    if (!usuario || !usuario.email) return;
+
+    const subject = "❌ Verificación de Identidad Rechazada";
+    const contenidoInterno = `
+    <h2 style="color: #d9534f; margin-top: 0;">Verificación Rechazada</h2>
+    <p>Hola <strong>${usuario.nombre}</strong>,</p>
+    <p>Lamentamos informarte que tu verificación de identidad ha sido <strong style="color: #d9534f;">rechazada</strong>.</p>
+    <div style="border-left: 4px solid #d9534f; padding: 15px; background-color: #ffe6e6; margin: 20px 0;">
+      <p style="font-weight: bold;">Motivo del rechazo:</p>
+      <p style="margin: 5px 0;">${motivo || "No se especificó un motivo."}</p>
+    </div>
+    <p>Puedes volver a enviar tu documentación corrigiendo los aspectos señalados.</p>
+    <p>Si necesitas ayuda, contacta a soporte.</p>
+    <a href="${process.env.FRONTEND_URL}/kyc" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #FF5733; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Reintentar Verificación
+    </a>
+  `;
+
+    const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `Hola ${usuario.nombre}, tu verificación de identidad ha sido rechazada. Motivo: ${motivo || "No especificado"}.`;
+
+    await this.sendEmail(usuario.email, subject, textPlain, html);
+  },
 };
 
 module.exports = emailService;

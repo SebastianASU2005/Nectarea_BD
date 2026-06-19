@@ -443,23 +443,39 @@ const loteService = {
       const fechaLimiteStr = fechaVencimiento.toLocaleDateString("es-ES");
 
       if (nuevoGanador) {
-        await emailService.notificarGanadorPuja(
-          nuevoGanador,
-          lote.id,
-          fechaLimiteStr,
-          true,
-        );
-        const contenidoMsg = `¡Felicidades! El Lote #${lote.id} te ha sido reasignado (eras el siguiente postor) debido al impago del anterior usuario. Tienes 90 días, hasta el ${fechaLimiteStr}, para completar el pago.`;
-        await mensajeService.enviarMensajeSistema(
-          nuevoGanador.id,
-          contenidoMsg,
-        );
+        // 📧 Envío de email (no interrumpe)
+        try {
+          await emailService.notificarGanadorPuja(
+            nuevoGanador,
+            lote.id,
+            fechaLimiteStr,
+            true,
+          );
+        } catch (error) {
+          console.error(
+            `[asignarSiguientePuja] Error al notificar al nuevo ganador (usuario ${nuevoGanador.id}):`,
+            error.message,
+          );
+        }
+
+        // Mensaje de sistema (puede fallar pero no es crítico)
+        try {
+          const contenidoMsg = `¡Felicidades! El Lote #${lote.id} te ha sido reasignado (eras el siguiente postor) debido al impago del anterior usuario. Tienes 90 días, hasta el ${fechaLimiteStr}, para completar el pago.`;
+          await mensajeService.enviarMensajeSistema(
+            nuevoGanador.id,
+            contenidoMsg,
+          );
+        } catch (error) {
+          console.error(
+            `[asignarSiguientePuja] Error al enviar mensaje de sistema al usuario ${nuevoGanador.id}:`,
+            error.message,
+          );
+        }
       }
       return siguientePuja;
     }
     return null;
   },
-
   /**
    * @async
    * @function prepararLoteParaReingreso
@@ -585,7 +601,7 @@ const loteService = {
           pujaGanadoraFallida.id_usuario,
           loteId,
           t,
-          pujaGanadoraFallida.id_suscripcion, // ✅ añadido
+          pujaGanadoraFallida.id_suscripcion,
         );
         console.log(
           `[${SERVICE_NAME}] ✅ Token devuelto al usuario ${pujaGanadoraFallida.id_usuario}.`,
@@ -636,21 +652,33 @@ const loteService = {
           { transaction: t },
         );
 
-        // ✅ CORRECCIÓN: NO devolver tokens a los demás postores activos.
-        // Solo se devuelve el token del fallido (ya se hizo arriba).
-        // Los demás mantienen su token retenido hasta que el nuevo ganador pague o falle.
+        // 📧 Notificar al nuevo ganador (no interrumpe)
+        try {
+          await emailService.notificarGanadorPuja(
+            siguientePuja.usuario,
+            loteId,
+            nuevaFechaLimite.toLocaleDateString("es-ES"),
+            true,
+          );
+        } catch (error) {
+          console.error(
+            `[procesarImpagoLote] Error al notificar al nuevo ganador (usuario ${siguientePuja.id_usuario}):`,
+            error.message,
+          );
+        }
 
-        await emailService.notificarGanadorPuja(
-          siguientePuja.usuario,
-          loteId,
-          nuevaFechaLimite.toLocaleDateString("es-ES"),
-          true,
-        );
-
-        await mensajeService.enviarMensajeSistema(
-          siguientePuja.id_usuario,
-          `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString("es-ES")}).`,
-        );
+        // Mensaje de sistema
+        try {
+          await mensajeService.enviarMensajeSistema(
+            siguientePuja.id_usuario,
+            `🎉 ¡Eres el Nuevo Ganador! Tu puja para el Lote #${loteId} ha sido reasignada como ganadora. Tienes 90 días para pagar (hasta ${nuevaFechaLimite.toLocaleDateString("es-ES")}).`,
+          );
+        } catch (error) {
+          console.error(
+            `[procesarImpagoLote] Error al enviar mensaje de sistema al usuario ${siguientePuja.id_usuario}:`,
+            error.message,
+          );
+        }
 
         console.log(
           `[${SERVICE_NAME}] ✅ Lote ${loteId} reasignado a usuario ${siguientePuja.id_usuario}.`,

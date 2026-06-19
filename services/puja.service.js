@@ -1467,11 +1467,28 @@ const pujaService = {
       );
 
       const motivoCompleto = `${motivoCancelacion}. Tu puja ganadora ha sido cancelada administrativamente.`;
-      await emailService.notificarImpago(usuarioIncumplidor, loteId);
-      await MensajeService.enviarMensajeSistema(
-        usuarioIncumplidor.id,
-        motivoCompleto,
-      );
+
+      // 📧 Notificaciones (no interrumpen)
+      try {
+        await emailService.notificarImpago(usuarioIncumplidor, loteId);
+      } catch (error) {
+        console.error(
+          `[${SERVICE_NAME}] Error al enviar email de impago al usuario ${usuarioIncumplidor.id}:`,
+          error.message,
+        );
+      }
+
+      try {
+        await MensajeService.enviarMensajeSistema(
+          usuarioIncumplidor.id,
+          motivoCompleto,
+        );
+      } catch (error) {
+        console.error(
+          `[${SERVICE_NAME}] Error al enviar mensaje de sistema al usuario ${usuarioIncumplidor.id}:`,
+          error.message,
+        );
+      }
 
       await LoteService.procesarImpagoLote(loteId, t);
 
@@ -1723,6 +1740,7 @@ const pujaService = {
       motivo_cancelacion: motivo || null,
     });
 
+    // 📧 Notificar a administradores (no interrumpe)
     try {
       const admins = await usuarioService.findAllAdmins();
       for (const admin of admins) {
@@ -1736,7 +1754,7 @@ const pujaService = {
       }
     } catch (err) {
       console.error(
-        `Error al notificar admins sobre solicitud de cancelación (puja ${pujaId}):`,
+        `[solicitarCancelacion] Error al notificar admins sobre solicitud de cancelación (puja ${pujaId}):`,
         err.message,
       );
     }
