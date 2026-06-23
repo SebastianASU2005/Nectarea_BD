@@ -415,27 +415,64 @@ const paymentControllerObj = {
         const estadosFinales = ["pagado", "fallido", "reembolsado", "expirado"];
         if (estadosFinales.includes(transaccion.estado_transaccion)) {
           await t.rollback(); // Liberamos la transacción
-          console.log(
-            `⏳ Transacción ${id_transaccion} ya está en estado final (${transaccion.estado_transaccion}). Ignorando webhook del pago ${transactionIdStr}.`,
-          );
-          // Crear el registro faltante para que no se repita el webhook
-          await PagoMercado.create({
-            id_transaccion: transaccion.id,
-            monto_pagado: transaccion.monto,
-            metodo_pasarela: metodo,
-            estado: internalStatus, // Usamos el estado que vino en el webhook
-            id_transaccion_pasarela: transactionIdStr,
-            tipo_medio_pago: paymentDetails?.payment_method_type,
-            fecha_aprobacion: paymentDetails?.date_approved,
-            detalles_raw: {
-              ...rawDetails,
-              webhook_ignorado_por_estado_final: true,
-            },
+
+          // Verificar si el pago ya existe en la BD (por si acaso)
+          const pagoYaRegistrado = await PagoMercado.findOne({
+            where: { id_transaccion_pasarela: transactionIdStr },
           });
+
+          if (pagoYaRegistrado) {
+            console.log(
+              `ℹ️ El pago MP ${transactionIdStr} ya fue registrado (estado: ${pagoYaRegistrado.estado}). Ignorando webhook.`,
+            );
+            return res.status(200).send("OK - Pago ya registrado");
+          }
+
           console.log(
-            `✅ Registro faltante creado para pago ${transactionIdStr} (transacción ya finalizada).`,
+            `⏳ Transacción ${id_transaccion} ya está en estado final (${transaccion.estado_transaccion}). Pago ${transactionIdStr} no registrado.`,
           );
-          return res.status(200).send("OK - Transacción ya finalizada");
+
+          // 🔥 DECISIÓN: Si el pago está APROBADO, lo reembolsamos
+          if (internalStatus === "aprobado") {
+            console.log(
+              `⚠️ Pago ${transactionIdStr} está aprobado pero la transacción ya está finalizada. Reembolsando...`,
+            );
+            // Ejecutar reembolso (usamos la función existente)
+            await reembolsarPagoDuplicado(
+              transaccion,
+              transactionIdStr,
+              metodo,
+              false,
+            );
+            // La función ya crea el registro en PagoMercado con estado "devuelto"
+            return res
+              .status(200)
+              .send("OK - Reembolsado por duplicado en estado final");
+          } else {
+            // Si el pago no está aprobado (rejected, pending, etc.), solo registramos para evitar futuros webhooks
+            console.log(
+              `ℹ️ Pago ${transactionIdStr} no está aprobado (${internalStatus}). Solo se registra.`,
+            );
+            await PagoMercado.create({
+              id_transaccion: transaccion.id,
+              monto_pagado: transaccion.monto,
+              metodo_pasarela: metodo,
+              estado: internalStatus,
+              id_transaccion_pasarela: transactionIdStr,
+              tipo_medio_pago: paymentDetails?.payment_method_type,
+              fecha_aprobacion: paymentDetails?.date_approved,
+              detalles_raw: {
+                ...rawDetails,
+                webhook_ignorado_por_estado_final: true,
+              },
+            });
+            console.log(
+              `✅ Registro faltante creado para pago ${transactionIdStr} (transacción ya finalizada, estado ${internalStatus}).`,
+            );
+            return res
+              .status(200)
+              .send("OK - Transacción ya finalizada, pago no aprobado");
+          }
         }
 
         // ========== FLUJO NORMAL: Transacción NO pagada ==========
