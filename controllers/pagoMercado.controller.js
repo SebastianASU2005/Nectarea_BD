@@ -1,6 +1,8 @@
 // Archivo: controllers/pagoMercado.controller.js
-// VERSIÓN FINAL – Con verificación de firma + logs optimizados + detección de duplicados mejorada
-// 🔥 MEJORA: Verificación del estado real en MP antes de reembolsar para evitar reembolsos falsos
+// VERSIÓN CORREGIDA – Seguridad ante reembolsos indebidos
+// 🔥 MEJORA: Verificación de estado final ANTES de cualquier reembolso
+// 🔥 MEJORA: Creación de registro faltante en PagoMercado para pagos ya finalizados
+// 🔥 MEJORA: Protección contra reembolsos de pagos antiguos legítimos
 
 const transaccionService = require("../services/transaccion.service");
 const pagoMercadoService = require("../services/pagoMercado.service");
@@ -43,6 +45,7 @@ const pendingRetries = new Map();
 const processingPayments = new Set();
 const refundNotified = new Set();
 
+// ========== FUNCIONES AUXILIARES ==========
 function verifySignatureForId(req, dataId) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   const signatureHeader = req.headers["x-signature"];
@@ -229,6 +232,7 @@ async function reembolsarPagoDuplicado(
   }
 }
 
+// ========== CONTROLADOR PRINCIPAL ==========
 const paymentControllerObj = {
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
@@ -333,7 +337,7 @@ const paymentControllerObj = {
       return res.status(200).send("OK");
     }
 
-    // ========== VERIFICACIÓN DE FIRMA (ACTIVADA) ==========
+    // ========== VERIFICACIÓN DE FIRMA ==========
     const signatureValid = verifySignatureForId(req, dataId);
     if (!signatureValid) {
       console.error(
@@ -380,7 +384,7 @@ const paymentControllerObj = {
     processingPayments.add(transactionIdStr);
 
     try {
-      // 🔍 PRIMERO: Verificar si el pago ya existe en BD
+      // 🔍 PRIMERO: Verificar si el pago ya existe en BD (rápido)
       const pagoExistente = await PagoMercado.findOne({
         where: { id_transaccion_pasarela: transactionIdStr },
       });
@@ -407,92 +411,31 @@ const paymentControllerObj = {
           return res.status(404).send("Transacción no encontrada");
         }
 
-        // ⚠️ CASO CRÍTICO: Transacción ya está pagada pero no hay registro en PagoMercado
-        if (transaccion.estado_transaccion === "pagado") {
-          // 🔍 Verificar si el pago existe en BD (doble check con lock)
-          const existing = await PagoMercado.findOne({
-            where: { id_transaccion_pasarela: transactionIdStr },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
+        // ========== 🔥 NUEVA REGLA DE ORO: Estado final ==========
+        const estadosFinales = ["pagado", "fallido", "reembolsado", "expirado"];
+        if (estadosFinales.includes(transaccion.estado_transaccion)) {
+          await t.rollback(); // Liberamos la transacción
+          console.log(
+            `⏳ Transacción ${id_transaccion} ya está en estado final (${transaccion.estado_transaccion}). Ignorando webhook del pago ${transactionIdStr}.`,
+          );
+          // Crear el registro faltante para que no se repita el webhook
+          await PagoMercado.create({
+            id_transaccion: transaccion.id,
+            monto_pagado: transaccion.monto,
+            metodo_pasarela: metodo,
+            estado: internalStatus, // Usamos el estado que vino en el webhook
+            id_transaccion_pasarela: transactionIdStr,
+            tipo_medio_pago: paymentDetails?.payment_method_type,
+            fecha_aprobacion: paymentDetails?.date_approved,
+            detalles_raw: {
+              ...rawDetails,
+              webhook_ignorado_por_estado_final: true,
+            },
           });
-          if (existing) {
-            await t.commit();
-            return res.status(200).send("OK - Pago ya registrado");
-          }
-
-          // 🚨 No encontramos el pago en BD, pero la transacción está pagada.
-          // 🔍 Consultamos el estado real en MP para tomar una decisión informada.
-          await t.rollback(); // Liberamos la transacción antes de consultar MP
-
-          try {
-            // Intentamos obtener el payment desde MP
-            const paymentData =
-              await pagoMercadoService._getPaymentByExternalReference(
-                id_transaccion,
-              );
-
-            // Si el pago aún está aprobado en MP, NO reembolsamos
-            if (paymentData && paymentData.status === "approved") {
-              console.log(
-                `ℹ️ Pago ${transactionIdStr} sigue aprobado en MP (estado: ${paymentData.status}). No se reembolsa.`,
-              );
-              // Guardamos el registro en BD para futuros webhooks
-              const saveT = await sequelize.transaction();
-              try {
-                await PagoMercado.create(
-                  {
-                    id_transaccion: transaccion.id,
-                    monto_pagado: transaccion.monto,
-                    metodo_pasarela: metodo,
-                    estado: "aprobado",
-                    id_transaccion_pasarela: transactionIdStr,
-                    detalles_raw: {
-                      webhook_ignorado: true,
-                      motivo: "pago_ya_aprobado_en_MP",
-                      payment_status: paymentData.status,
-                    },
-                  },
-                  { transaction: saveT },
-                );
-                await saveT.commit();
-                console.log(
-                  `✅ Registro de pago recuperado para ${transactionIdStr}`,
-                );
-              } catch (err) {
-                await saveT.rollback();
-                console.error(
-                  `❌ Error guardando pago recuperado:`,
-                  err.message,
-                );
-              }
-              return res
-                .status(200)
-                .send("OK - Pago ya aprobado en MP - no reembolso");
-            }
-
-            // Si el pago no está aprobado (rejected, cancelled, etc.), reembolsamos
-            console.log(
-              `⚠️ Pago ${transactionIdStr} no está aprobado en MP (status: ${paymentData?.status}). Reembolsando...`,
-            );
-            if (pendingRetries.has(transactionIdStr)) {
-              clearTimeout(pendingRetries.get(transactionIdStr));
-              pendingRetries.delete(transactionIdStr);
-            }
-            await reembolsarPagoDuplicado(
-              transaccion,
-              transactionIdStr,
-              metodo,
-              false,
-            );
-            return res.status(200).send("OK - Duplicado procesado");
-          } catch (error) {
-            console.error(
-              `❌ Error consultando MP para ${transactionIdStr}:`,
-              error.message,
-            );
-            // En caso de error al consultar MP, NO reembolsamos para evitar falsos positivos
-            return res.status(200).send("OK - Error consultando MP");
-          }
+          console.log(
+            `✅ Registro faltante creado para pago ${transactionIdStr} (transacción ya finalizada).`,
+          );
+          return res.status(200).send("OK - Transacción ya finalizada");
         }
 
         // ========== FLUJO NORMAL: Transacción NO pagada ==========
@@ -565,8 +508,10 @@ const paymentControllerObj = {
         await t.rollback();
         console.error(`❌ Error en webhook:`, error.message);
 
+        // ========== MANEJO DE ERRORES ==========
+        // Lista de errores que SÍ deben reembolsar (pero solo si la transacción NO está en estado final)
         const erroresReembolsables = [
-          "DUPLICADO_ENTIDAD",
+          // "DUPLICADO_ENTIDAD", // ELIMINADO para evitar reembolsos de pagos antiguos
           "ya no está disponible para inversión",
           "proyecto ya no está disponible",
           "proyecto está en estado: Finalizado",
@@ -575,11 +520,55 @@ const paymentControllerObj = {
           "ya fue revertida",
         ];
 
+        // 🔥 Verificar si el error debe reembolsar
         const debeReembolsar = erroresReembolsables.some((msg) =>
           error.message.includes(msg),
         );
 
-        if (debeReembolsar) {
+        // 🔥 Si el error es DUPLICADO_ENTIDAD, lo manejamos de forma especial:
+        // solo reembolsamos si la transacción NO está en estado final (por si acaso)
+        const esDuplicadoEntidad = error.message.includes("DUPLICADO_ENTIDAD");
+
+        if (debeReembolsar || esDuplicadoEntidad) {
+          // Obtener la transacción nuevamente (puede que no esté en el scope)
+          const transaccionActual = await Transaccion.findByPk(id_transaccion);
+          if (!transaccionActual) {
+            console.error(
+              `No se pudo obtener la transacción ${id_transaccion} para evaluar reembolso.`,
+            );
+            return res.status(200).send("OK - Error interno");
+          }
+
+          // Si la transacción ya está en estado final, NO reembolsamos
+          if (estadosFinales.includes(transaccionActual.estado_transaccion)) {
+            console.log(
+              `⚠️ Error "${error.message}" pero la transacción ${id_transaccion} ya está en estado final (${transaccionActual.estado_transaccion}). NO se reembolsa.`,
+            );
+            // Guardar registro faltante si no existe
+            const existing = await PagoMercado.findOne({
+              where: { id_transaccion_pasarela: transactionIdStr },
+            });
+            if (!existing) {
+              await PagoMercado.create({
+                id_transaccion: transaccionActual.id,
+                monto_pagado: transaccionActual.monto,
+                metodo_pasarela: metodo,
+                estado: internalStatus || "aprobado",
+                id_transaccion_pasarela: transactionIdStr,
+                detalles_raw: {
+                  ...rawDetails,
+                  webhook_ignorado_por_estado_final_y_error: true,
+                  error: error.message,
+                },
+              });
+              console.log(
+                `✅ Registro faltante creado para pago ${transactionIdStr} (estado final).`,
+              );
+            }
+            return res.status(200).send("OK - Error en estado final, ignorado");
+          }
+
+          // Si la transacción NO está en estado final, procedemos con el reembolso
           console.log(
             `⚠️ Error reembolsable detectado: "${error.message}". Reembolsando pago MP ${transactionIdStr}...`,
           );
@@ -587,28 +576,20 @@ const paymentControllerObj = {
             clearTimeout(pendingRetries.get(transactionIdStr));
             pendingRetries.delete(transactionIdStr);
           }
-          if (!transaccion) {
-            transaccion = await Transaccion.findByPk(id_transaccion);
-          }
-          if (transaccion) {
-            await reembolsarPagoDuplicado(
-              transaccion,
-              transactionIdStr,
-              metodo,
-              false,
-            );
-          } else {
-            console.error(
-              "No se pudo obtener la transacción original para reembolsar el pago.",
-            );
-          }
+          await reembolsarPagoDuplicado(
+            transaccionActual,
+            transactionIdStr,
+            metodo,
+            false,
+          );
           return res.status(200).send("OK - Reembolsado por error de negocio");
         }
 
+        // Si no es un error reembolsable, solo registramos y devolvemos OK
         if (error.name === "SequelizeValidationError") {
           console.error("🔍 Detalles de validación:", error.errors);
         }
-        return res.status(200).send("OK - Error interno");
+        return res.status(200).send("OK - Error interno no reembolsable");
       }
     } finally {
       processingPayments.delete(transactionIdStr);
