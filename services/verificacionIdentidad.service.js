@@ -251,7 +251,7 @@ const verificacionIdentidadService = {
     }
 
     if (
-      estado === "RECHAZADA" &&
+      estado === "RECHAZADA" &&  
       (!motivo_rechazo || motivo_rechazo.trim() === "")
     ) {
       throw new Error(

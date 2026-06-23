@@ -1,5 +1,6 @@
 // Archivo: controllers/pagoMercado.controller.js
 // VERSIÓN FINAL – Con verificación de firma + logs optimizados + detección de duplicados mejorada
+// 🔥 MEJORA: Verificación del estado real en MP antes de reembolsar para evitar reembolsos falsos
 
 const transaccionService = require("../services/transaccion.service");
 const pagoMercadoService = require("../services/pagoMercado.service");
@@ -22,6 +23,7 @@ const MP_STATUS_MAP = {
   refunded: "devuelto",
   charged_back: "devuelto",
 };
+
 // ========== COOLDOWN PARA REFRESH ==========
 const refreshCooldown = new Map(); // transaccionId -> timestamp último refresh
 const REFRESH_COOLDOWN_MS = 15000; // 15 segundos mínimo entre refrescos de la misma transacción
@@ -31,7 +33,6 @@ setInterval(() => {
   const now = Date.now();
   for (const [txId, lastTime] of refreshCooldown.entries()) {
     if (now - lastTime > 60000) {
-      // más de 1 minuto sin uso
       refreshCooldown.delete(txId);
     }
   }
@@ -137,7 +138,6 @@ async function reembolsarPagoDuplicado(
       // ========== NOTIFICAR SOLO UNA VEZ POR PAYMENT ID ==========
       if (!refundNotified.has(paymentIdStr)) {
         refundNotified.add(paymentIdStr);
-        // Limpieza después de 1 hora para evitar acumulación
         setTimeout(() => refundNotified.delete(paymentIdStr), 3600000);
 
         const user = await User.findByPk(transaccion.id_usuario);
@@ -228,6 +228,7 @@ async function reembolsarPagoDuplicado(
     }
   }
 }
+
 const paymentControllerObj = {
   async createCheckoutGenerico(req, res) {
     const userId = req.user.id;
@@ -286,9 +287,7 @@ const paymentControllerObj = {
       res.status(500).json({ error: error.message });
     }
   },
-  /**
-   * Endpoint manual para forzar conciliación de pagos pendientes (solo admin)
-   */
+
   async forceConciliation(req, res) {
     try {
       const {
@@ -379,7 +378,9 @@ const paymentControllerObj = {
       return res.status(200).send("OK - en proceso");
     }
     processingPayments.add(transactionIdStr);
+
     try {
+      // 🔍 PRIMERO: Verificar si el pago ya existe en BD
       const pagoExistente = await PagoMercado.findOne({
         where: { id_transaccion_pasarela: transactionIdStr },
       });
@@ -389,10 +390,12 @@ const paymentControllerObj = {
         );
         return res.status(200).send("OK - Pago ya registrado");
       }
+
       let transaccion;
       const t = await sequelize.transaction({
         isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
       });
+
       try {
         transaccion = await Transaccion.findByPk(id_transaccion, {
           transaction: t,
@@ -403,7 +406,10 @@ const paymentControllerObj = {
           console.error(`Transacción ${id_transaccion} no encontrada.`);
           return res.status(404).send("Transacción no encontrada");
         }
+
+        // ⚠️ CASO CRÍTICO: Transacción ya está pagada pero no hay registro en PagoMercado
         if (transaccion.estado_transaccion === "pagado") {
+          // 🔍 Verificar si el pago existe en BD (doble check con lock)
           const existing = await PagoMercado.findOne({
             where: { id_transaccion_pasarela: transactionIdStr },
             transaction: t,
@@ -413,23 +419,88 @@ const paymentControllerObj = {
             await t.commit();
             return res.status(200).send("OK - Pago ya registrado");
           }
-          await t.rollback();
-          if (pendingRetries.has(transactionIdStr)) {
-            clearTimeout(pendingRetries.get(transactionIdStr));
-            pendingRetries.delete(transactionIdStr);
+
+          // 🚨 No encontramos el pago en BD, pero la transacción está pagada.
+          // 🔍 Consultamos el estado real en MP para tomar una decisión informada.
+          await t.rollback(); // Liberamos la transacción antes de consultar MP
+
+          try {
+            // Intentamos obtener el payment desde MP
+            const paymentData =
+              await pagoMercadoService._getPaymentByExternalReference(
+                id_transaccion,
+              );
+
+            // Si el pago aún está aprobado en MP, NO reembolsamos
+            if (paymentData && paymentData.status === "approved") {
+              console.log(
+                `ℹ️ Pago ${transactionIdStr} sigue aprobado en MP (estado: ${paymentData.status}). No se reembolsa.`,
+              );
+              // Guardamos el registro en BD para futuros webhooks
+              const saveT = await sequelize.transaction();
+              try {
+                await PagoMercado.create(
+                  {
+                    id_transaccion: transaccion.id,
+                    monto_pagado: transaccion.monto,
+                    metodo_pasarela: metodo,
+                    estado: "aprobado",
+                    id_transaccion_pasarela: transactionIdStr,
+                    detalles_raw: {
+                      webhook_ignorado: true,
+                      motivo: "pago_ya_aprobado_en_MP",
+                      payment_status: paymentData.status,
+                    },
+                  },
+                  { transaction: saveT },
+                );
+                await saveT.commit();
+                console.log(
+                  `✅ Registro de pago recuperado para ${transactionIdStr}`,
+                );
+              } catch (err) {
+                await saveT.rollback();
+                console.error(
+                  `❌ Error guardando pago recuperado:`,
+                  err.message,
+                );
+              }
+              return res
+                .status(200)
+                .send("OK - Pago ya aprobado en MP - no reembolso");
+            }
+
+            // Si el pago no está aprobado (rejected, cancelled, etc.), reembolsamos
+            console.log(
+              `⚠️ Pago ${transactionIdStr} no está aprobado en MP (status: ${paymentData?.status}). Reembolsando...`,
+            );
+            if (pendingRetries.has(transactionIdStr)) {
+              clearTimeout(pendingRetries.get(transactionIdStr));
+              pendingRetries.delete(transactionIdStr);
+            }
+            await reembolsarPagoDuplicado(
+              transaccion,
+              transactionIdStr,
+              metodo,
+              false,
+            );
+            return res.status(200).send("OK - Duplicado procesado");
+          } catch (error) {
+            console.error(
+              `❌ Error consultando MP para ${transactionIdStr}:`,
+              error.message,
+            );
+            // En caso de error al consultar MP, NO reembolsamos para evitar falsos positivos
+            return res.status(200).send("OK - Error consultando MP");
           }
-          await reembolsarPagoDuplicado(
-            transaccion,
-            transactionIdStr,
-            metodo,
-            false,
-          );
-          return res.status(200).send("OK - Duplicado procesado");
         }
+
+        // ========== FLUJO NORMAL: Transacción NO pagada ==========
         let pagoMercado = await PagoMercado.findOne({
           where: { id_transaccion: transaccion.id },
           transaction: t,
         });
+
         const pagoData = {
           estado: internalStatus,
           id_transaccion_pasarela: transactionIdStr,
@@ -437,6 +508,7 @@ const paymentControllerObj = {
           fecha_aprobacion: paymentDetails?.date_approved,
           detalles_raw: rawDetails,
         };
+
         if (!pagoMercado) {
           pagoMercado = await PagoMercado.create(
             {
@@ -454,11 +526,14 @@ const paymentControllerObj = {
         } else {
           await pagoMercado.update(pagoData, { transaction: t });
         }
+
         if (internalStatus === "aprobado") {
           await transaccionService.confirmarTransaccion(transaccion.id, {
             transaction: t,
           });
-          console.log(`[Webhook] internalStatus=${internalStatus}, transaccion.id=${transaccion.id}`);
+          console.log(
+            `[Webhook] internalStatus=${internalStatus}, transaccion.id=${transaccion.id}`,
+          );
           processedRefunds.add(transactionIdStr);
           setTimeout(() => processedRefunds.delete(transactionIdStr), 60000);
         } else if (
@@ -480,6 +555,7 @@ const paymentControllerObj = {
             { transaction: t },
           );
         }
+
         await t.commit();
         console.log(
           `✅ Webhook procesado: Transacción ${id_transaccion} -> ${internalStatus}`,
@@ -639,7 +715,6 @@ const paymentControllerObj = {
           console.log(
             `⏸️ Cooldown activo para transacción ${id_transaccion} - refresh ignorado`,
           );
-          // Devolvemos el estado actual sin llamar a MP nuevamente
           return res.status(200).json({
             transaccion: {
               id: transaccion.id,
@@ -666,9 +741,7 @@ const paymentControllerObj = {
           });
         }
 
-        // Actualizar timestamp de último refresh
         refreshCooldown.set(parseInt(id_transaccion), now);
-        // Limpiar después de 1 minuto por si acaso (ya hay limpieza global)
         setTimeout(() => {
           if (refreshCooldown.get(parseInt(id_transaccion)) === now) {
             refreshCooldown.delete(parseInt(id_transaccion));
@@ -676,7 +749,6 @@ const paymentControllerObj = {
         }, 60000);
       }
 
-      // Realizar refresh si es necesario (y no está en cooldown)
       if (needsRefresh && pagoMercado?.id_transaccion_pasarela) {
         const updatedData = await pagoMercadoService.refreshPaymentStatus(
           transaccion.id,

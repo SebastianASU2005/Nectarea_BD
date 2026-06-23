@@ -1,4 +1,4 @@
-// tasks/vencerCuotasAdhesion.js (versión corregida con notificación a administradores)
+// tasks/vencerCuotasAdhesion.js (versión corregida)
 const { sequelize, Op } = require("../config/database");
 const PagoAdhesion = require("../models/PagoAdhesion");
 const Adhesion = require("../models/adhesion");
@@ -69,24 +69,26 @@ async function marcarCuotasAdhesionVencidas() {
       }
       actualizadas++;
 
-      // 1. Notificar al usuario
+      // 1. Notificar al usuario (usando la función existente)
       const usuario = await usuarioService.findById(adhesion.id_usuario);
       const proyecto = adhesion.proyecto;
       if (usuario && usuario.email && proyecto) {
-        await emailService.notificarPagoVencidoCliente(
+        // ✅ Usamos notificarPagoVencidoUsuario y pasamos tipo: "adhesion"
+        await emailService.notificarPagoVencidoUsuario(
           usuario,
           proyecto,
           {
             monto: nuevoMonto,
             mes: cuota.numero_cuota,
             fecha_vencimiento: cuota.fecha_vencimiento,
+            tipo: "adhesion", // <-- campo clave para que el correo identifique adhesión
           },
           montoOriginal,
           recargo,
         );
       }
 
-      // 2. Notificar a todos los administradores
+      // 2. Notificar a todos los administradores (llamada correcta)
       const administradores = await usuarioService.findAllAdmins();
       for (const admin of administradores) {
         if (admin.email) {
@@ -99,7 +101,7 @@ async function marcarCuotasAdhesionVencidas() {
               mes: cuota.numero_cuota,
               monto: nuevoMonto,
               fecha_vencimiento: cuota.fecha_vencimiento,
-              tipo: "adhesion", // <-- NUEVO: identificar como cuota de adhesión
+              tipo: "adhesion",
             },
             montoOriginal,
             recargo,
