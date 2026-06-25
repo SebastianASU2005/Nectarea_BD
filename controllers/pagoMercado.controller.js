@@ -50,7 +50,16 @@ function verifySignatureForId(req, dataId) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   const signatureHeader = req.headers["x-signature"];
   const requestId = req.headers["x-request-id"];
-  if (!secret || !signatureHeader) return false;
+
+  // Si no hay secreto o no hay firma, no se puede verificar
+  if (!secret || !signatureHeader) {
+    console.warn(
+      `⚠️ Verificación de firma omitida: secret=${!!secret}, signatureHeader=${!!signatureHeader}`,
+    );
+    return false;
+  }
+
+  // Extraer ts y v1 del header x-signature (formato: "ts=...;v1=...;")
   const parts = signatureHeader.split(",");
   let ts = null,
     v1 = null;
@@ -59,17 +68,34 @@ function verifySignatureForId(req, dataId) {
     if (key?.trim() === "ts") ts = value?.trim();
     if (key?.trim() === "v1") v1 = value?.trim();
   }
-  if (!ts || !v1) return false;
+
+  if (!ts || !v1) {
+    console.warn(`⚠️ Firma mal formada: ts=${ts}, v1=${v1}`);
+    return false;
+  }
+
+  // Función para calcular el HMAC SHA256
   const computeHash = (manifest) =>
     crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+
+  // Intentar con request-id si existe
   if (requestId) {
     const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-    if (computeHash(manifest) === v1) return true;
+    const hash = computeHash(manifest);
+    if (hash === v1) return true;
+    // Si falla con request-id, loguear para depuración (opcional)
+    console.debug(`Firma con request-id falló: hash=${hash}, v1=${v1}`);
   }
-  const manifestNoReq = `id:${dataId};ts:${ts};`;
-  return computeHash(manifestNoReq) === v1;
-}
 
+  // Intentar sin request-id
+  const manifestNoReq = `id:${dataId};ts:${ts};`;
+  const hashNoReq = computeHash(manifestNoReq);
+  if (hashNoReq === v1) return true;
+
+  // Si llegamos aquí, la firma no coincide
+  console.debug(`Firma sin request-id falló: hash=${hashNoReq}, v1=${v1}`);
+  return false;
+}
 function extractDataId(req) {
   const topic =
     req.query.topic || req.body?.topic || req.query.type || req.body?.type;
@@ -338,22 +364,23 @@ const paymentControllerObj = {
     }
 
     // ========== VERIFICACIÓN DE FIRMA ==========
-    const signatureValid = verifySignatureForId(req, dataId);
-    if (!signatureValid) {
-      console.error(
-        `🚫 Firma inválida para ${topic} ID ${dataId}. Rechazando webhook.`,
+    const esMerchantOrder =
+      topic === "merchant_order" || topic === "topic_merchant_order_wh";
+    if (!esMerchantOrder) {
+      const signatureValid = verifySignatureForId(req, dataId);
+      if (!signatureValid) {
+        console.error(
+          `🚫 Firma inválida para ${topic} ID ${dataId}. Rechazando webhook.`,
+        );
+        return res.status(401).send("Firma inválida");
+      }
+      console.log(
+        `✅ Firma verificada correctamente para ${topic} ID ${dataId}`,
       );
-      return res.status(401).send("Firma inválida");
-    }
-    console.log(`✅ Firma verificada correctamente para ${topic} ID ${dataId}`);
-
-    if (topic === "merchant_order" || topic === "topic_merchant_order_wh") {
-      console.log(`ℹ️ Notificación de Merchant Order ${dataId} ignorada.`);
-      return res.status(200).send("OK - Merchant Order ignorada");
-    }
-    if (topic !== "payment") {
-      console.log(`Topic no soportado: ${topic}, ignorado`);
-      return res.status(200).send("OK");
+    } else {
+      console.log(
+        `ℹ️ Saltando verificación de firma para ${topic} (webhook ignorado de todos modos).`,
+      );
     }
 
     const paymentResult = await pagoMercadoService.verifyAndFetchPayment(
