@@ -1,5 +1,4 @@
-// Archivo: app.js (CORREGIDO + ONE-TIME CONVERSION + TEST EMAIL OAUTH2)
-
+// Archivo: app.js (CORREGIDO - TRUST PROXY PARA RAILWAY)
 const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,12 +34,19 @@ if (!MP_ACCESS_TOKEN || !HOST_URL) {
     "=========================================================================",
   );
 }
-if (process.env.NODE_ENV === "production") {
-  app.set("trust proxy", 1); // Confiar en el primer proxy (Render)
-  console.log("✅ Trust proxy habilitado para producción");
-} else {
-  app.set("trust proxy", false); // No confiar en proxies en desarrollo
+
+// ===============================================
+// ✅ CONFIGURACIÓN DE TRUST PROXY (CORREGIDA)
+// ===============================================
+// En producción (Railway, Render, etc.) siempre hay proxy.
+// Activamos trust proxy en cualquier entorno que no sea 'development' local.
+if (process.env.NODE_ENV === "development") {
+  app.set("trust proxy", false);
   console.log("⚠️ Trust proxy deshabilitado (desarrollo local)");
+} else {
+  // En producción o cualquier otro entorno (Railway, staging, etc.)
+  app.set("trust proxy", true); // Confiar en todos los proxies
+  console.log("✅ Trust proxy habilitado (confiar en todos los proxies)");
 }
 
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)

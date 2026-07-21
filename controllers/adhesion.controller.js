@@ -307,6 +307,8 @@ exports.iniciarCancelacionAdhesion = async (req, res) => {
     const esAdmin = req.user.rol === "admin";
     const { motivo } = req.body;
     const ip = req.ip || req.headers["x-forwarded-for"] || null;
+    console.log("📌 IP obtenida:", ip);
+    console.log("📌 Cabeceras:", req.headers);
     const userAgent = req.get("user-agent") || null;
 
     // Validar existencia de la adhesión
