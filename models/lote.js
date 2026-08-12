@@ -128,6 +128,18 @@ const Lote = sequelize.define(
       allowNull: true,
       comment: "Nombre del propietario o corredor (opcional, anónimo si null)",
     },
+    situacion_juridica: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment:
+        'Describe la situación jurídica del lote (ej: "Escriturable", "Por token", "En trámite")',
+    },
+    estado_urbanistico: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment:
+        'Describe el estado urbanístico (ej: "Servicios básicos verificados, apto construcción")',
+    },
   },
   {
     tableName: "lote",
