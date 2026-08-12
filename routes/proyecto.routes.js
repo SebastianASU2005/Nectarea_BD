@@ -113,5 +113,6 @@ router.delete(
   authMiddleware.authorizeAdmin,
   proyectoController.softDelete,
 );
+router.get("/search/by-budget", proyectoController.findByBudget);
 
 module.exports = router;

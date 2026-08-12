@@ -58,7 +58,8 @@ const Lote = sequelize.define(
       type: DataTypes.INTEGER,
       defaultValue: 0,
       allowNull: false,
-      comment: "Contador de veces que el ganador potencial ha incumplido el pago.",
+      comment:
+        "Contador de veces que el ganador potencial ha incumplido el pago.",
     },
     excedente_visualizacion: {
       type: DataTypes.DECIMAL(10, 2),
@@ -70,7 +71,8 @@ const Lote = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
       allowNull: false,
-      comment: "Si es true, el lote no aparece en rankings ni estadísticas de favoritos.",
+      comment:
+        "Si es true, el lote no aparece en rankings ni estadísticas de favoritos.",
     },
 
     // ── Ubicación geográfica ──────────────────────────────────────────
@@ -87,11 +89,44 @@ const Lote = sequelize.define(
       validate: { min: -180, max: 180 },
     },
 
-  
     map_url: {
       type: DataTypes.TEXT,
       allowNull: true,
       comment: "URL embebida del mapa (Google Maps embed, OpenStreetMap, etc.)",
+    },
+    /**
+     * Fuente de abastecimiento del lote.
+     * - 'propia': desarrollo inmobiliario propio de Loteplan.
+     * - 'corredor': acuerdo con corredor inmobiliario externo.
+     */
+    fuente_abastecimiento: {
+      type: DataTypes.ENUM("propia", "corredor"),
+      allowNull: true,
+      defaultValue: "propia",
+      comment:
+        "Origen del lote: propia (desarrollo propio) o corredor (tercero)",
+    },
+
+    /**
+     * Estado actual de incorporación del lote al proyecto.
+     * - 'incorporado': ya está disponible y escriturable.
+     * - 'pendiente_negociacion': aún en proceso de negociación o verificación.
+     */
+    estado_actual: {
+      type: DataTypes.ENUM("negociacion_avanzada", "pendiente_negociacion"),
+      allowNull: true,
+      defaultValue: "pendiente_negociacion",
+      comment:
+        "Estado de disponibilidad: incorporado o pendiente de negociación",
+    },
+    /**
+     * Nombre del propietario o corredor (opcional).
+     * Si es NULL, se considera anónimo o no especificado.
+     */
+    fuente_nombre: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "Nombre del propietario o corredor (opcional, anónimo si null)",
     },
   },
   {
@@ -99,7 +134,7 @@ const Lote = sequelize.define(
     timestamps: true,
     createdAt: "fecha_creacion",
     updatedAt: "fecha_actualizacion",
-  }
+  },
 );
 
 module.exports = Lote;

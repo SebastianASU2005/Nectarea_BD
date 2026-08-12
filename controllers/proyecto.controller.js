@@ -447,6 +447,47 @@ const proyectoController = {
       res.status(500).json({ error: error.message });
     }
   },
+  /**
+   * GET /api/proyectos/search/by-budget?budget=500000
+   * Devuelve todos los proyectos mensuales activos que se ajustan al presupuesto.
+   */
+  async findByBudget(req, res) {
+    try {
+      const { budget } = req.query;
+      const budgetNumber = parseFloat(budget);
+      if (!budgetNumber || budgetNumber <= 0) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "El parámetro 'budget' es requerido y debe ser un número positivo.",
+        });
+      }
+
+      const proyectos = await proyectoService.findByMonthlyBudget(budgetNumber);
+
+      // 🆕 Manejo específico para cuando no hay resultados
+      if (proyectos.length === 0) {
+        return res.status(200).json({
+          success: true,
+          mensaje: `No hay proyectos con cuota mensual ≤ ${budgetNumber}. Te recomendamos ajustar tu presupuesto o contactarnos para buscar alternativas.`,
+          total: 0,
+          data: [],
+          // 🔥 Opcional: Devuelve el proyecto más barato disponible como "alternativa"
+          alternativa: await proyectoService.findCheapestMonthlyProject(),
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        mensaje: `Proyectos encontrados con cuota mensual ≤ ${budgetNumber}`,
+        total: proyectos.length,
+        data: proyectos,
+      });
+    } catch (error) {
+      console.error("❌ Error en findByBudget:", error.message);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
 };
 
 module.exports = proyectoController;

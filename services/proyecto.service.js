@@ -760,6 +760,100 @@ const proyectoService = {
       porcentaje_avance: parseFloat(p.porcentaje_avance).toFixed(2),
     }));
   },
+  /**
+   * Encuentra todos los proyectos activos de tipo 'mensual'
+   * cuya cuota mensual (monto_inversion) sea <= budget.
+   * Incluye los lotes activos, sus imágenes y la puja más alta.
+   *
+   * @param {number} budget - Monto máximo mensual que el usuario puede pagar.
+   * @returns {Promise<Proyecto[]>}
+   */
+  async findByMonthlyBudget(budget) {
+    if (!budget || isNaN(budget) || budget <= 0) {
+      throw new Error("El presupuesto mensual debe ser un número positivo.");
+    }
+
+    return await Proyecto.findAll({
+      where: {
+        activo: true,
+        tipo_inversion: "mensual",
+        monto_inversion: {
+          [Op.lte]: budget,
+        },
+      },
+      include: [
+        {
+          model: Lote,
+          as: "lotes",
+          where: { activo: true },
+          required: false, // Proyectos sin lotes aún también aparecerán (pero con array vacío)
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              where: { activo: true },
+              required: false,
+              order: [["createdAt", "DESC"]],
+            },
+            {
+              model: Puja,
+              as: "pujaMasAlta",
+              required: false,
+              attributes: ["id", "monto_puja", "id_usuario", "estado_puja"],
+            },
+          ],
+        },
+        {
+          model: Imagen,
+          as: "imagenes",
+          where: { activo: true },
+          required: false,
+          order: [["createdAt", "DESC"]],
+        },
+      ],
+      order: [
+        ["monto_inversion", "ASC"], // Proyectos más económicos primero
+      ],
+    });
+  },
+  /**
+   * Encuentra el proyecto mensual activo con la cuota mensual más baja.
+   * Útil para ofrecer una alternativa cuando no hay proyectos dentro del presupuesto.
+   */
+  async findCheapestMonthlyProject() {
+    return await Proyecto.findOne({
+      where: {
+        activo: true,
+        tipo_inversion: "mensual",
+        monto_inversion: {
+          [Op.gt]: 0, // Asegurar que tenga un precio válido
+        },
+      },
+      include: [
+        {
+          model: Lote,
+          as: "lotes",
+          where: { activo: true },
+          required: false,
+          include: [
+            {
+              model: Imagen,
+              as: "imagenes",
+              where: { activo: true },
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Imagen,
+          as: "imagenes",
+          where: { activo: true },
+          required: false,
+        },
+      ],
+      order: [["monto_inversion", "ASC"]], // El más barato primero
+    });
+  },
 };
 
 module.exports = proyectoService;
