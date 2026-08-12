@@ -1,7 +1,20 @@
-require('dotenv').config();
+require("dotenv").config();
 
 module.exports = {
-  // Aquí puedes agregar otras variables de configuración
-  // Como el email de la empresa para notificaciones.
-  email_empresa: process.env.EMAIL_EMPRESA,
+  development: {
+    url: process.env.DATABASE_URL,
+    dialect: "postgres",
+    logging: false,
+  },
+  production: {
+    url: process.env.DATABASE_URL,
+    dialect: "postgres",
+    logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
+    },
+  },
 };
