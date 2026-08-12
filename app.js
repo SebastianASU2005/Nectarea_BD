@@ -259,7 +259,7 @@ async function synchronizeDatabase() {
     // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
-    await Lote.sync({ alter: true });
+    //await Lote.sync({ alter: true });
     await SuscripcionProyecto.sync({ alter: true });
     await SuscripcionCancelada.sync({ alter: true });
     await CuotaMensual.sync({ alter: true });
@@ -288,7 +288,7 @@ async function synchronizeDatabase() {
     // ==========================================================
     await Usuario.sync({ alter: true });
     await Proyecto.sync({ alter: true });
-    await Lote.sync({ alter: true });
+    //await Lote.sync({ alter: true });
     await SuscripcionProyecto.sync({ alter: true });
     await SuscripcionCancelada.sync({ alter: true });
     await CuotaMensual.sync({ alter: true });
