@@ -761,22 +761,22 @@ const proyectoService = {
     }));
   },
   /**
-   * Encuentra todos los proyectos activos de tipo 'mensual'
-   * cuya cuota mensual (monto_inversion) sea <= budget.
-   * Incluye los lotes activos, sus imágenes y la puja más alta.
-   *
-   * @param {number} budget - Monto máximo mensual que el usuario puede pagar.
-   * @returns {Promise<Proyecto[]>}
+   * Busca proyectos activos de un tipo específico (mensual o directo)
+   * cuyo monto_inversion sea <= budget.
+   * Incluye lotes, imágenes y puja más alta.
    */
-  async findByMonthlyBudget(budget) {
+  async findByBudgetAndType(budget, tipoInversion = "mensual") {
     if (!budget || isNaN(budget) || budget <= 0) {
-      throw new Error("El presupuesto mensual debe ser un número positivo.");
+      throw new Error("El presupuesto debe ser un número positivo.");
+    }
+    if (!["mensual", "directo"].includes(tipoInversion)) {
+      throw new Error("El tipo de inversión debe ser 'mensual' o 'directo'.");
     }
 
     return await Proyecto.findAll({
       where: {
         activo: true,
-        tipo_inversion: "mensual",
+        tipo_inversion: tipoInversion,
         monto_inversion: {
           [Op.lte]: budget,
         },
@@ -786,7 +786,7 @@ const proyectoService = {
           model: Lote,
           as: "lotes",
           where: { activo: true },
-          required: false, // Proyectos sin lotes aún también aparecerán (pero con array vacío)
+          required: false,
           include: [
             {
               model: Imagen,
@@ -811,23 +811,19 @@ const proyectoService = {
           order: [["createdAt", "DESC"]],
         },
       ],
-      order: [
-        ["monto_inversion", "ASC"], // Proyectos más económicos primero
-      ],
+      order: [["monto_inversion", "ASC"]],
     });
   },
   /**
-   * Encuentra el proyecto mensual activo con la cuota mensual más baja.
-   * Útil para ofrecer una alternativa cuando no hay proyectos dentro del presupuesto.
+   * Encuentra el proyecto más barato de un tipo específico.
+   * Útil para ofrecer alternativa cuando no hay coincidencias.
    */
-  async findCheapestMonthlyProject() {
+  async findCheapestByType(tipoInversion) {
     return await Proyecto.findOne({
       where: {
         activo: true,
-        tipo_inversion: "mensual",
-        monto_inversion: {
-          [Op.gt]: 0, // Asegurar que tenga un precio válido
-        },
+        tipo_inversion: tipoInversion,
+        monto_inversion: { [Op.gt]: 0 },
       },
       include: [
         {
@@ -851,7 +847,7 @@ const proyectoService = {
           required: false,
         },
       ],
-      order: [["monto_inversion", "ASC"]], // El más barato primero
+      order: [["monto_inversion", "ASC"]],
     });
   },
 };

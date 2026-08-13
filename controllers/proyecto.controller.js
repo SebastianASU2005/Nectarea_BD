@@ -448,13 +448,15 @@ const proyectoController = {
     }
   },
   /**
-   * GET /api/proyectos/search/by-budget?budget=500000
-   * Devuelve todos los proyectos mensuales activos que se ajustan al presupuesto.
+   * GET /api/proyectos/search/by-budget?budget=500000&tipo=mensual
+   * Devuelve proyectos del tipo indicado (mensual o directo) que se ajustan al presupuesto.
+   * Si no hay resultados, devuelve el más barato de ese tipo como alternativa.
    */
   async findByBudget(req, res) {
     try {
-      const { budget } = req.query;
+      const { budget, tipo = "mensual" } = req.query;
       const budgetNumber = parseFloat(budget);
+
       if (!budgetNumber || budgetNumber <= 0) {
         return res.status(400).json({
           success: false,
@@ -463,23 +465,36 @@ const proyectoController = {
         });
       }
 
-      const proyectos = await proyectoService.findByMonthlyBudget(budgetNumber);
+      if (!["mensual", "directo"].includes(tipo)) {
+        return res.status(400).json({
+          success: false,
+          error: "El parámetro 'tipo' debe ser 'mensual' o 'directo'.",
+        });
+      }
 
-      // 🆕 Manejo específico para cuando no hay resultados
+      const proyectos = await proyectoService.findByBudgetAndType(
+        budgetNumber,
+        tipo,
+      );
+
       if (proyectos.length === 0) {
+        const alternativa = await proyectoService.findCheapestByType(tipo);
+        const mensaje = alternativa
+          ? `No hay proyectos ${tipo} con monto ≤ ${budgetNumber}. Te mostramos el más barato como alternativa.`
+          : `No hay proyectos ${tipo} disponibles en este momento.`;
+
         return res.status(200).json({
           success: true,
-          mensaje: `No hay proyectos con cuota mensual ≤ ${budgetNumber}. Te recomendamos ajustar tu presupuesto o contactarnos para buscar alternativas.`,
+          mensaje,
           total: 0,
           data: [],
-          // 🔥 Opcional: Devuelve el proyecto más barato disponible como "alternativa"
-          alternativa: await proyectoService.findCheapestMonthlyProject(),
+          alternativa: alternativa || null,
         });
       }
 
       res.status(200).json({
         success: true,
-        mensaje: `Proyectos encontrados con cuota mensual ≤ ${budgetNumber}`,
+        mensaje: `✅ ${proyectos.length} proyecto(s) ${tipo} encontrado(s) con monto ≤ ${budgetNumber}`,
         total: proyectos.length,
         data: proyectos,
       });
@@ -487,7 +502,7 @@ const proyectoController = {
       console.error("❌ Error en findByBudget:", error.message);
       res.status(500).json({ success: false, error: error.message });
     }
-  },
+  },  
 };
 
 module.exports = proyectoController;
