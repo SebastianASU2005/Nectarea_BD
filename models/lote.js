@@ -95,6 +95,15 @@ const Lote = sequelize.define(
       comment: "URL embebida del mapa (Google Maps embed, OpenStreetMap, etc.)",
     },
     /**
+     * Dirección o descripción legible de la ubicación del lote.
+     * Ej: "El Challao, Las Heras, Mza"
+     */
+    ubicacion: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "Dirección o nombre de la ubicación del lote",
+    },
+    /**
      * Fuente de abastecimiento del lote.
      * - 'propia': desarrollo inmobiliario propio de Loteplan.
      * - 'corredor': acuerdo con corredor inmobiliario externo.

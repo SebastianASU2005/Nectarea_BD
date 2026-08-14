@@ -98,6 +98,15 @@ const Proyecto = sequelize.define(
       allowNull: true,
       comment: "URL embebida del mapa (Google Maps embed, OpenStreetMap, etc.)",
     },
+    /**
+     * Dirección o descripción legible de la ubicación del proyecto.
+     * Ej: "Virgen de Lourdes, El Challao, Las Heras"
+     */
+    ubicacion: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: "Dirección o nombre de la ubicación del proyecto",
+    },
   },
   {
     tableName: "proyecto",
