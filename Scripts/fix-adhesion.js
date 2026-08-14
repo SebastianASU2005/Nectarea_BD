@@ -52,9 +52,9 @@ async function fixAdhesionEnum() {
     await sequelize.query(`
       ALTER TABLE adhesion ALTER COLUMN estado TYPE "public"."enum_adhesion_estado" USING estado::"public"."enum_adhesion_estado";
     `);
+    
     await sequelize.query(`ALTER TABLE adhesion ALTER COLUMN estado SET NOT NULL;`);
     await sequelize.query(`ALTER TABLE adhesion ALTER COLUMN estado SET DEFAULT 'pendiente';`);
-
     console.log('✅ Corrección completada');
   } catch (error) {
     console.error('Error al corregir adhesión:', error);

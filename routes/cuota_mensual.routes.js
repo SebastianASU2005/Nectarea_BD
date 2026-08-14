@@ -10,7 +10,7 @@ router.post('/', authMiddleware.authenticate, authMiddleware.authorizeAdmin, cuo
 router.get('/:id_proyecto', authMiddleware.authenticate, cuotaMensualController.findByProjectId);
 
 // Ruta protegida para usuarios autenticados: Permite ver la última cuota mensual de un proyecto.
-router.get('/:id_proyecto/last', authMiddleware.authenticate, cuotaMensualController.findLastByProjectId);
+router.get('/:id_proyecto/last', cuotaMensualController.findLastByProjectId);
 
 // Rutas protegidas para administradores: Solo los administradores pueden actualizar o eliminar una cuota.
 router.put('/:id', authMiddleware.authenticate, authMiddleware.authorizeAdmin, cuotaMensualController.update);
