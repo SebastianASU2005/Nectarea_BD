@@ -464,7 +464,6 @@ const proyectoController = {
             "El parámetro 'budget' es requerido y debe ser un número positivo.",
         });
       }
-
       if (!["mensual", "directo"].includes(tipo)) {
         return res.status(400).json({
           success: false,
@@ -478,11 +477,12 @@ const proyectoController = {
       );
 
       if (proyectos.length === 0) {
-        const alternativa = await proyectoService.findCheapestByType(tipo);
+        // ✅ Usamos la nueva función para la alternativa
+        const alternativa =
+          await proyectoService.findCheapestAvailableByType(tipo);
         const mensaje = alternativa
-          ? `No hay proyectos ${tipo} con monto ≤ ${budgetNumber}. Te mostramos el más barato como alternativa.`
+          ? `No hay proyectos ${tipo} disponibles con monto ≤ ${budgetNumber}. Te mostramos el más barato disponible como alternativa.`
           : `No hay proyectos ${tipo} disponibles en este momento.`;
-
         return res.status(200).json({
           success: true,
           mensaje,
@@ -494,7 +494,7 @@ const proyectoController = {
 
       res.status(200).json({
         success: true,
-        mensaje: `✅ ${proyectos.length} proyecto(s) ${tipo} encontrado(s) con monto ≤ ${budgetNumber}`,
+        mensaje: `✅ ${proyectos.length} proyecto(s) ${tipo} disponibles con monto ≤ ${budgetNumber}`,
         total: proyectos.length,
         data: proyectos,
       });
@@ -502,7 +502,7 @@ const proyectoController = {
       console.error("❌ Error en findByBudget:", error.message);
       res.status(500).json({ success: false, error: error.message });
     }
-  },  
+  },
 };
 
 module.exports = proyectoController;

@@ -773,36 +773,47 @@ const proyectoService = {
       throw new Error("El tipo de inversión debe ser 'mensual' o 'directo'.");
     }
 
-    return await Proyecto.findAll({
-      where: {
-        activo: true,
-        tipo_inversion: tipoInversion,
-        monto_inversion: {
-          [Op.lte]: budget,
-        },
-      },
+    const where = {
+      activo: true,
+      tipo_inversion: tipoInversion,
+      monto_inversion: { [Op.lte]: budget },
+      estado_proyecto: { [Op.in]: ["En Espera", "En proceso"] }, // ✅ solo estos estados
+    };
+
+    // ✅ Cupo para mensual: suscripciones_actuales < obj_suscripciones
+    if (tipoInversion === "mensual") {
+      where[Op.and] = [
+        sequelize.literal(`suscripciones_actuales < obj_suscripciones`),
+      ];
+    }
+
+    // Inclusión de lotes (para directo, requerimos que tenga al menos un lote disponible)
+    const includeLotes = {
+      model: Lote,
+      as: "lotes",
+      where: { activo: true, id_ganador: null }, // lotes sin ganador = disponibles
+      required: tipoInversion === "directo", // obligatorio para directo
       include: [
         {
-          model: Lote,
-          as: "lotes",
+          model: Imagen,
+          as: "imagenes",
           where: { activo: true },
           required: false,
-          include: [
-            {
-              model: Imagen,
-              as: "imagenes",
-              where: { activo: true },
-              required: false,
-              order: [["createdAt", "DESC"]],
-            },
-            {
-              model: Puja,
-              as: "pujaMasAlta",
-              required: false,
-              attributes: ["id", "monto_puja", "id_usuario", "estado_puja"],
-            },
-          ],
+          order: [["createdAt", "DESC"]],
         },
+        {
+          model: Puja,
+          as: "pujaMasAlta",
+          required: false,
+          attributes: ["id", "monto_puja", "id_usuario", "estado_puja"],
+        },
+      ],
+    };
+
+    return await Proyecto.findAll({
+      where,
+      include: [
+        includeLotes,
         {
           model: Imagen,
           as: "imagenes",
@@ -818,28 +829,38 @@ const proyectoService = {
    * Encuentra el proyecto más barato de un tipo específico.
    * Útil para ofrecer alternativa cuando no hay coincidencias.
    */
-  async findCheapestByType(tipoInversion) {
-    return await Proyecto.findOne({
-      where: {
-        activo: true,
-        tipo_inversion: tipoInversion,
-        monto_inversion: { [Op.gt]: 0 },
-      },
+  async findCheapestAvailableByType(tipoInversion) {
+    const where = {
+      activo: true,
+      tipo_inversion: tipoInversion,
+      estado_proyecto: { [Op.in]: ["En Espera", "En proceso"] },
+    };
+
+    if (tipoInversion === "mensual") {
+      where[Op.and] = [
+        sequelize.literal(`suscripciones_actuales < obj_suscripciones`),
+      ];
+    }
+
+    const includeLotes = {
+      model: Lote,
+      as: "lotes",
+      where: { activo: true, id_ganador: null },
+      required: tipoInversion === "directo",
       include: [
         {
-          model: Lote,
-          as: "lotes",
+          model: Imagen,
+          as: "imagenes",
           where: { activo: true },
           required: false,
-          include: [
-            {
-              model: Imagen,
-              as: "imagenes",
-              where: { activo: true },
-              required: false,
-            },
-          ],
         },
+      ],
+    };
+
+    return await Proyecto.findOne({
+      where,
+      include: [
+        includeLotes,
         {
           model: Imagen,
           as: "imagenes",
