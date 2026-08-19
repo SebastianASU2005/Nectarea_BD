@@ -15,19 +15,15 @@ router.get(
 );
 
 // 🎯 NUEVA RUTA: Proyectos de Ahorristas (Mensual)
-router.get(
-  "/activos/ahorristas",
-
-  proyectoController.findAllActivoAhorristas,
-);
+router.get("/activos/ahorristas", proyectoController.findAllActivoAhorristas);
 
 // 🎯 NUEVA RUTA: Proyectos de Inversionistas (Directo)
 router.get(
   "/activos/inversionistas",
-
   proyectoController.findAllActivoInversionistas,
 );
-// Ruta de usuario para proyectos propios (asumo que es /me o similar, si no está definida)
+
+// Ruta de usuario para proyectos propios
 router.get(
   "/mis-proyectos",
   authMiddleware.authenticate,
@@ -50,13 +46,18 @@ router.get(
   authMiddleware.authorizeAdmin,
   proyectoController.getMonthlyProgress,
 );
+
+// ✅ RUTA ESTÁTICA DE BÚSQUEDA (se coloca ANTES de cualquier ruta con /:id)
+router.get("/search/by-budget", proyectoController.findByBudget);
+
+// CRUD Admin (estático)
 router.post(
   "/",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   proyectoController.create,
 );
-// Listar todos (Admin)
+
 router.get(
   "/",
   authMiddleware.authenticate,
@@ -76,7 +77,7 @@ router.put(
   "/:id/lotes",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
-  proyectoController.asignarLotes, // <-- Nuevo controlador
+  proyectoController.asignarLotes,
 );
 
 // Ruta para INICIAR EL PROCESO (Admin)
@@ -86,6 +87,7 @@ router.put(
   authMiddleware.authorizeAdmin,
   proyectoController.iniciarProceso,
 );
+
 // Ruta para PAUSAR EL PROCESO (Admin)
 router.put(
   "/:id/pausar-proceso",
@@ -101,18 +103,19 @@ router.get(
   authMiddleware.authorizeAdmin,
   proyectoController.findById,
 );
+
 router.put(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   proyectoController.update,
 );
+
 router.delete(
   "/:id",
   authMiddleware.authenticate,
   authMiddleware.authorizeAdmin,
   proyectoController.softDelete,
 );
-router.get("/search/by-budget", proyectoController.findByBudget);
 
 module.exports = router;
