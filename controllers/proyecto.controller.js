@@ -454,34 +454,40 @@ const proyectoController = {
    */
   async findByBudget(req, res) {
     try {
-      const { budget, tipo = "mensual" } = req.query;
-      const budgetNumber = parseFloat(budget);
+      let { budget, tipo = "mensual", min, max } = req.query;
+      const budgetNum = parseFloat(budget);
+      const minNum = parseFloat(min);
+      const maxNum = parseFloat(max);
 
-      if (!budgetNumber || budgetNumber <= 0) {
+      // Validar que al menos haya un criterio
+      if (isNaN(budgetNum) && isNaN(minNum) && isNaN(maxNum)) {
         return res.status(400).json({
           success: false,
           error:
-            "El parámetro 'budget' es requerido y debe ser un número positivo.",
-        });
-      }
-      if (!["mensual", "directo"].includes(tipo)) {
-        return res.status(400).json({
-          success: false,
-          error: "El parámetro 'tipo' debe ser 'mensual' o 'directo'.",
+            "Debe proporcionar 'budget' (máximo) o un rango con 'min' y 'max'.",
         });
       }
 
-      const proyectos = await proyectoService.findByBudgetAndType(
-        budgetNumber,
-        tipo,
-      );
+      // Construir filtro: si llega budget y no min/max, se usa como máximo; si llegan min o max, se priorizan
+      let filtro = {};
+      if (!isNaN(budgetNum) && isNaN(minNum) && isNaN(maxNum)) {
+        // Solo budget: proyectos <= budget
+        filtro.max = budgetNum;
+      } else {
+        // Usar min y/o max (pueden ser NaN pero se ignoran)
+        if (!isNaN(minNum)) filtro.min = minNum;
+        if (!isNaN(maxNum)) filtro.max = maxNum;
+      }
 
+      // Llamar al servicio con el filtro y tipo
+      const proyectos = await proyectoService.findByBudgetAndType(filtro, tipo);
+
+      // Si no hay resultados, buscar alternativa (el más barato con cupo)
       if (proyectos.length === 0) {
-        // ✅ Usamos la nueva función para la alternativa
         const alternativa =
           await proyectoService.findCheapestAvailableByType(tipo);
         const mensaje = alternativa
-          ? `No hay proyectos ${tipo} disponibles con monto ≤ ${budgetNumber}. Te mostramos el más barato disponible como alternativa.`
+          ? `No hay proyectos ${tipo} disponibles en el rango solicitado. Te mostramos el más barato disponible como alternativa.`
           : `No hay proyectos ${tipo} disponibles en este momento.`;
         return res.status(200).json({
           success: true,
@@ -494,7 +500,7 @@ const proyectoController = {
 
       res.status(200).json({
         success: true,
-        mensaje: `✅ ${proyectos.length} proyecto(s) ${tipo} disponibles con monto ≤ ${budgetNumber}`,
+        mensaje: `✅ ${proyectos.length} proyecto(s) ${tipo} disponibles en el rango solicitado.`,
         total: proyectos.length,
         data: proyectos,
       });

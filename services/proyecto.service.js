@@ -766,34 +766,47 @@ const proyectoService = {
    * cuyo monto_inversion sea <= budget.
    * Incluye lotes, imágenes y puja más alta.
    */
-  async findByBudgetAndType(budget, tipoInversion = "mensual") {
-    if (!budget || isNaN(budget) || budget <= 0) {
-      throw new Error("El presupuesto debe ser un número positivo.");
+  async findByBudgetAndType(filtro, tipoInversion = "mensual") {
+    // filtro puede tener { min, max } o solo { max } o { min }
+    const { min, max } = filtro;
+
+    // Validar que al menos uno exista
+    if (min === undefined && max === undefined) {
+      throw new Error("Debe proporcionar al menos un límite de presupuesto.");
     }
-    if (!["mensual", "directo"].includes(tipoInversion)) {
-      throw new Error("El tipo de inversión debe ser 'mensual' o 'directo'.");
+
+    // Construir condición de monto
+    const montoCondition = {};
+    if (min !== undefined) {
+      if (isNaN(min) || min < 0)
+        throw new Error("El mínimo debe ser un número positivo.");
+      montoCondition[Op.gte] = min;
+    }
+    if (max !== undefined) {
+      if (isNaN(max) || max < 0)
+        throw new Error("El máximo debe ser un número positivo.");
+      montoCondition[Op.lte] = max;
     }
 
     const where = {
       activo: true,
       tipo_inversion: tipoInversion,
-      monto_inversion: { [Op.lte]: budget },
-      estado_proyecto: { [Op.in]: ["En Espera", "En proceso"] }, // ✅ solo estos estados
+      estado_proyecto: { [Op.in]: ["En Espera", "En proceso"] },
+      monto_inversion: montoCondition,
     };
 
-    // ✅ Cupo para mensual: suscripciones_actuales < obj_suscripciones
+    // Cupo para mensual
     if (tipoInversion === "mensual") {
       where[Op.and] = [
         sequelize.literal(`suscripciones_actuales < obj_suscripciones`),
       ];
     }
 
-    // Inclusión de lotes (para directo, requerimos que tenga al menos un lote disponible)
     const includeLotes = {
       model: Lote,
       as: "lotes",
-      where: { activo: true, id_ganador: null }, // lotes sin ganador = disponibles
-      required: tipoInversion === "directo", // obligatorio para directo
+      where: { activo: true, id_ganador: null },
+      required: tipoInversion === "directo",
       include: [
         {
           model: Imagen,
