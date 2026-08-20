@@ -13,6 +13,7 @@ const config = require("../config/config");
 const suscripcionProyectoService = require("./suscripcion_proyecto.service");
 const mensajeService = require("./mensaje.service");
 const usuarioService = require("./usuario.service");
+const Puja = require("../models/puja");
 const auditService = require("./audit.service"); // 🆕 Auditoría
 
 const proyectoService = {
