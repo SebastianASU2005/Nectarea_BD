@@ -107,6 +107,17 @@ const Proyecto = sequelize.define(
       allowNull: true,
       comment: "Dirección o nombre de la ubicación del proyecto",
     },
+    fuentes_abastecimiento: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: true,
+      comment:
+        "Array de fuentes de abastecimiento (ej: ['Corredor A', 'Propia', 'Tercero'])",
+    },
+    oportunidades_identificadas: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: "Número de oportunidades identificadas para el proyecto",
+    },
   },
   {
     tableName: "proyecto",
