@@ -144,10 +144,9 @@ const Lote = sequelize.define(
         'Describe la situación jurídica del lote (ej: "Escriturable", "Por token", "En trámite")',
     },
     estado_urbanistico: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.ARRAY(DataTypes.STRING),
       allowNull: true,
-      comment:
-        'Describe el estado urbanístico (ej: "Servicios básicos verificados, apto construcción")',
+      comment: "Lista de estados urbanísticos del lote",
     },
   },
   {
