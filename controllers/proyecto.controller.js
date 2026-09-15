@@ -243,14 +243,17 @@ const proyectoController = {
         id,
         adminContext,
       );
-      if (!proyectoEliminado)
+      if (!proyectoEliminado) {
         return res.status(404).json({ error: "Proyecto no encontrado." });
-      res.status(200).json({ mensaje: "Proyecto eliminado exitosamente." });
+      }
+      res.status(200).json({ mensaje: "Proyecto desactivado exitosamente." });
     } catch (error) {
+      if (error.message.includes("No se puede desactivar")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   },
-
   // -------------------------------------------------------------------
   // 🚨 OTRAS FUNCIONES DE ADMINISTRADOR 🚨
   // -------------------------------------------------------------------

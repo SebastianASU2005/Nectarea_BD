@@ -29,7 +29,12 @@ const deactivateExpiredStandby = async () => {
       },
       transaction: t,
       include: [
-        { model: Proyecto, as: "proyectoAsociado" },
+        {
+          model: Proyecto,
+          as: "proyectoAsociado",
+          where: { activo: true }, 
+          required: true,
+        },
         { model: Usuario, as: "usuario" },
       ],
     });

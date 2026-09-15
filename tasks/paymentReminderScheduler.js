@@ -43,6 +43,7 @@ const paymentReminderScheduler = {
       // Busca proyectos donde: suscripciones_actuales >= obj_suscripciones y objetivo_notificado es falso.
       const proyectosConObjetivoCumplido = await Proyecto.findAll({
         where: {
+           activo: true,
           suscripciones_actuales: {
             [Op.gte]: Sequelize.col("obj_suscripciones"),
           },

@@ -240,15 +240,102 @@ const proyectoService = {
   },
 
   /**
-   * Soft delete (desactivar) con auditoría.
+   * @async
+   * @function softDelete
+   * @description Realiza una eliminación lógica (soft delete) marcando el proyecto como inactivo.
+   * Valida que el proyecto no esté en un estado que rompa flujos activos:
+   *   - "En proceso" (crons corriendo y pagos generándose)
+   *   - Con suscripciones activas (usuarios pagando)
+   *   - Con lotes en subasta activa (tokens retenidos)
+   *   - Con lotes ya adjudicados a un ganador
+   *   - Con inversiones pendientes
+   *
+   * @param {number} id - ID del proyecto.
+   * @param {object} [adminContext] - Contexto de auditoría ({ adminId, ip, userAgent }).
+   * @returns {Promise<Proyecto|null>}
+   * @throws {Error} Si el proyecto está en un estado que impide la desactivación.
    */
   async softDelete(id, adminContext = {}) {
     const { adminId, ip, userAgent } = adminContext;
+
     const proyecto = await Proyecto.findByPk(id);
     if (!proyecto) return null;
+
+    // ── Regla 0: idempotencia ──────────────────────────────────────────
+    if (proyecto.activo === false) {
+      return proyecto;
+    }
+
+    // ── Regla 1: proyectos "En proceso" no se pueden desactivar ────────
+    if (proyecto.estado_proyecto === "En proceso") {
+      throw new Error(
+        `No se puede desactivar el proyecto ${id}: está "En proceso". ` +
+          `Pausalo primero con la acción correspondiente.`,
+      );
+    }
+
+    // ── Regla 2: suscripciones activas colgando ────────────────────────
+    const suscripcionesActivas = await SuscripcionProyecto.count({
+      where: { id_proyecto: id, activo: true },
+    });
+    if (suscripcionesActivas > 0) {
+      throw new Error(
+        `No se puede desactivar el proyecto ${id}: tiene ` +
+          `${suscripcionesActivas} suscripción(es) activa(s). ` +
+          `Cancelalas primero.`,
+      );
+    }
+
+    // ── Regla 3: lotes en subasta activa ───────────────────────────────
+    const lotesEnSubasta = await Lote.count({
+      where: {
+        id_proyecto: id,
+        activo: true,
+        estado_subasta: "activa",
+      },
+    });
+    if (lotesEnSubasta > 0) {
+      throw new Error(
+        `No se puede desactivar el proyecto ${id}: tiene ` +
+          `${lotesEnSubasta} lote(s) en subasta ACTIVA. ` +
+          `Finalizá o cancelá la subasta primero.`,
+      );
+    }
+
+    // ── Regla 4: lotes con ganador (pendiente de pago o pagado) ────────
+    const lotesConGanador = await Lote.count({
+      where: {
+        id_proyecto: id,
+        activo: true,
+        id_ganador: { [Op.ne]: null },
+      },
+    });
+    if (lotesConGanador > 0) {
+      throw new Error(
+        `No se puede desactivar el proyecto ${id}: tiene ` +
+          `${lotesConGanador} lote(s) ya adjudicado(s) a un ganador. ` +
+          `Esos lotes son propiedad de sus compradores.`,
+      );
+    }
+
+    // ── Regla 5: inversiones pendientes (tipo "directo") ───────────────
+    const inversionesPendientes = await Inversion.count({
+      where: {
+        id_proyecto: id,
+        estado: { [Op.in]: ["pendiente", "en_proceso"] },
+      },
+    });
+    if (inversionesPendientes > 0) {
+      throw new Error(
+        `No se puede desactivar el proyecto ${id}: tiene ` +
+          `${inversionesPendientes} inversión(es) pendiente(s) de completar.`,
+      );
+    }
+
     const datosPrevios = proyecto.toJSON();
     proyecto.activo = false;
     await proyecto.save();
+
     if (adminId) {
       await auditService.registrar({
         usuarioId: adminId,
@@ -261,6 +348,7 @@ const proyectoService = {
         userAgent,
       });
     }
+
     return proyecto;
   },
 
@@ -630,6 +718,7 @@ const proyectoService = {
     const remitente_id = 1;
     const proyectosActivos = await Proyecto.findAll({
       where: {
+        activo: true,
         estado_proyecto: "En proceso",
         tipo_inversion: "mensual",
         meses_restantes: { [Op.gt]: 0 },
@@ -682,6 +771,7 @@ const proyectoService = {
   async findProjectsToRevert() {
     return await Proyecto.findAll({
       where: {
+        activo: true,
         tipo_inversion: "mensual",
         estado_proyecto: "En proceso",
         suscripciones_actuales: {

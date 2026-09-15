@@ -242,15 +242,59 @@ const loteService = {
   /**
    * @async
    * @function softDelete
-   * @description Realiza una eliminación lógica (soft delete) al marcar el lote como inactivo.
+   * @description Realiza una eliminación lógica (soft delete) marcando el lote como inactivo.
+   * Valida que el lote no esté en un estado que rompa flujos activos:
+   *   - Subasta activa en curso
+   *   - Subasta finalizada con ganador pendiente de pago
+   *   - Lote adjudicado y ya pagado
+   *
    * @param {number} id - ID del lote.
    * @returns {Promise<Lote|null>}
+   * @throws {Error} Si el lote está en un estado que impide la desactivación.
    */
   async softDelete(id) {
     const lote = await Lote.findByPk(id);
-    if (!lote) {
-      return null;
+    if (!lote) return null;
+
+    // ── Regla 0: idempotencia ──────────────────────────────────────────
+    if (lote.activo === false) {
+      return lote;
     }
+
+    // ── Regla 1: subasta en curso ──────────────────────────────────────
+    if (lote.estado_subasta === "activa") {
+      throw new Error(
+        `No se puede desactivar el lote ${id}: tiene una subasta ACTIVA en curso. ` +
+          `Finalizá o cancelá la subasta primero.`,
+      );
+    }
+
+    // ── Regla 2: subasta finalizada con ganador ────────────────────────
+    if (lote.estado_subasta === "finalizada" && lote.id_ganador) {
+      const pujaGanadora = await Puja.findOne({
+        where: {
+          id_lote: id,
+          id_usuario: lote.id_ganador,
+          estado_puja: { [Op.in]: ["ganadora_pendiente", "ganadora_pagada"] },
+        },
+        order: [["fecha_puja", "DESC"]],
+      });
+
+      if (pujaGanadora?.estado_puja === "ganadora_pagada") {
+        throw new Error(
+          `No se puede desactivar el lote ${id}: ya fue adjudicado y PAGADO ` +
+            `por el usuario ${lote.id_ganador}. Es propiedad del comprador.`,
+        );
+      }
+
+      if (pujaGanadora?.estado_puja === "ganadora_pendiente") {
+        throw new Error(
+          `No se puede desactivar el lote ${id}: tiene un ganador PENDIENTE DE PAGO ` +
+            `(usuario ${lote.id_ganador}). Esperá a que pague o procesá el impago.`,
+        );
+      }
+    }
+
     lote.activo = false;
     return await lote.save();
   },

@@ -85,13 +85,6 @@ const loteController = {
     }
   },
 
-  /**
-   * @async
-   * @function softDelete
-   * @description "Elimina" lógicamente (soft delete) un lote.
-   * @param {object} req - Objeto de solicitud de Express (con `id` en `params`).
-   * @param {object} res - Objeto de respuesta de Express.
-   */
   async softDelete(req, res) {
     try {
       const { id } = req.params;
@@ -99,12 +92,14 @@ const loteController = {
       if (!loteEliminado) {
         return res.status(404).json({ error: "Lote no encontrado." });
       }
-      res.status(200).json({ mensaje: "Lote eliminado exitosamente." });
+      res.status(200).json({ mensaje: "Lote desactivado exitosamente." });
     } catch (error) {
+      if (error.message.includes("No se puede desactivar")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   },
-
   // ===================================================================
   // FUNCIONES DE SUBASTA Y NOTIFICACIÓN
   // ===================================================================
@@ -125,7 +120,7 @@ const loteController = {
       if (!lote) {
         return res.status(404).json({ error: "Lote no encontrado." });
       }
-      const proyecto = await proyectoService.findById(lote.id_proyecto);
+      const proyecto = await proyectoService.findByIdActivo(lote.id_proyecto);
       if (!proyecto) {
         return res
           .status(404)

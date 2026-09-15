@@ -23,6 +23,7 @@ const generatePaymentsCore = async () => {
     // 1. Encontrar proyectos activos que requieren pagos mensuales
     const proyectosActivos = await Proyecto.findAll({
       where: {
+        activo: true,
         estado_proyecto: "En proceso",
         tipo_inversion: "mensual",
       },
