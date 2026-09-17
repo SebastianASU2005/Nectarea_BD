@@ -19,3 +19,4 @@ Thumbs.db
 # Directorios de compilación (si los usas)
 /dist
 /build
+.kilo/

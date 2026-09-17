@@ -526,9 +526,10 @@ const proyectoService = {
           `[iniciarConteoMensual] Enviando notificaciones post-commit para proyecto ${proyecto.id}`,
         );
         try {
-          // Obtener suscripciones activas (YA CONFIRMADAS)
+          // ── 1. Obtener suscripciones activas (YA CONFIRMADAS) ────────
           const SuscripcionProyecto = require("../models/suscripcion_proyecto");
           const Usuario = require("../models/usuario");
+
           const suscripciones = await SuscripcionProyecto.findAll({
             where: { id_proyecto: proyecto.id, activo: true },
             include: [
@@ -539,29 +540,45 @@ const proyectoService = {
               },
             ],
           });
-          const usuarios = suscripciones
-            .map((s) => s.usuario)
-            .filter((u) => u && u.email);
+
+          // ── 2. Dedupe por usuario.id (1 mail por persona) ────────────
+          const usuariosMap = new Map();
+          for (const s of suscripciones) {
+            const u = s.usuario;
+            if (u && u.email && !usuariosMap.has(u.id)) {
+              usuariosMap.set(u.id, u);
+            }
+          }
+          const usuariosUnicos = Array.from(usuariosMap.values());
+
           console.log(
-            `[iniciarConteoMensual] Usuarios a notificar: ${usuarios.length}`,
+            `[iniciarConteoMensual] Suscriptores únicos a notificar: ${usuariosUnicos.length}`,
           );
-          if (usuarios.length > 0) {
+
+          // ── 3. Notificar a suscriptores (masivo) ─────────────────────
+          if (usuariosUnicos.length > 0) {
             await emailService.notificarInicioProyectoMasivo(
               proyecto,
-              usuarios,
+              usuariosUnicos,
             );
           } else {
             console.warn(
-              `[iniciarConteoMensual] No hay usuarios con email para proyecto ${proyecto.id}`,
+              `[iniciarConteoMensual] No hay suscriptores con email para proyecto ${proyecto.id}`,
             );
           }
-          // Notificar a admins
+
+          // ── 4. Notificar a TODOS los admins ──────────────────────────
           const administradores = await usuarioService.findAllAdmins();
+          console.log(
+            `[iniciarConteoMensual] Admins a notificar: ${administradores.length}`,
+          );
+
           for (const admin of administradores) {
             if (admin.email) {
               await emailService.notificarInicioProyectoAdmin(
                 admin.email,
                 proyecto,
+                { suscriptoresCount: usuariosUnicos.length },
               );
             }
           }

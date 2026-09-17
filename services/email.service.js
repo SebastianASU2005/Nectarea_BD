@@ -459,15 +459,20 @@ const emailService = {
 
   /**
    * Notifica a MÚLTIPLES USUARIOS que el proyecto alcanzó su objetivo y ha comenzado.
+   * Deduplica por usuario.id para garantizar 1 mail por persona,
+   * incluso si el usuario tiene varias suscripciones al mismo proyecto.
+   * @param {object} proyecto - Instancia del proyecto.
+   * @param {Array<object>} usuarios - Lista de usuarios (puede tener duplicados por id).
    */
   async notificarInicioProyectoMasivo(proyecto, usuarios) {
     const subject = `🥳 ¡Objetivo Alcanzado! El proyecto ${proyecto.nombre_proyecto} ha comenzado.`;
 
+    // ✅ Dedupe por ID de usuario (más robusto que por email)
     const uniqueUsers = [];
-    const emailsSet = new Set();
+    const idsSet = new Set();
     for (const usuario of usuarios) {
-      if (usuario && usuario.email && !emailsSet.has(usuario.email)) {
-        emailsSet.add(usuario.email);
+      if (usuario && usuario.id && usuario.email && !idsSet.has(usuario.id)) {
+        idsSet.add(usuario.id);
         uniqueUsers.push(usuario);
       }
     }
@@ -482,15 +487,27 @@ const emailService = {
       try {
         const contenidoInterno = `
         <h2 style="color: #4CAF50; margin-top: 0;">¡Gran Noticia, ${usuario.nombre}!</h2>
-        <p>El proyecto **"${proyecto.nombre_proyecto}"** ha alcanzado el **objetivo de ${proyecto.obj_suscripciones} suscripciones**.</p>
-        <p style="font-weight: bold; color: #0b1b36; font-size: 1.1em;">¡El proceso de inversión ha comenzado!</p>
-        <h3 style="color: #333;">Próximos Pasos</h3>
-        <ul style="list-style: disc; padding-left: 20px; line-height: 2;">
-          <li>La generación de tu **pago mensual** comenzará el día **1** del próximo mes.</li>
-          <li>El plazo de pago vencerá el día **10** de cada mes.</li>
+        <p>El proyecto <strong>"${proyecto.nombre_proyecto}"</strong> ha alcanzado el <strong>objetivo de ${proyecto.obj_suscripciones} suscripciones</strong>.</p>
+
+        <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; font-weight: bold; color: #2e7d32; font-size: 1.1em;">
+            🚀 ¡El proceso de inversión ha comenzado!
+          </p>
+        </div>
+
+        <h3 style="color: #0b1b36;">📅 Próximos Pasos</h3>
+        <ul style="line-height: 1.8; padding-left: 20px;">
+          <li>La generación de tu <strong>pago mensual</strong> comenzará el día <strong>1</strong> del próximo mes.</li>
+          <li>El plazo de pago vencerá el día <strong>10</strong> de cada mes.</li>
+          <li>Recibirás un recordatorio de pago antes de cada vencimiento.</li>
         </ul>
-        <p>Agradecemos tu apoyo. Juntos hacemos realidad este proyecto.</p>
+
+        <p style="margin-top: 20px;">Agradecemos tu apoyo. Juntos hacemos realidad este proyecto.</p>
         <p>Si tienes dudas, contacta a soporte.</p>
+
+        <a href="${process.env.FRONTEND_URL}/client/dashboard" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          Ir a Mi Panel
+        </a>
       `;
 
         const html = obtenerPlantillaHtml(contenidoInterno);
@@ -504,6 +521,7 @@ const emailService = {
         );
       }
     }
+
     console.log(
       `[emailService] Notificaciones de inicio enviadas a ${uniqueUsers.length} usuarios (proyecto ${proyecto.id})`,
     );
@@ -685,26 +703,124 @@ const emailService = {
 
   /**
    * Notifica a un ADMINISTRADOR que un proyecto alcanzó su objetivo y ha comenzado.
+   * @param {string} adminEmail - Email del admin.
+   * @param {object} proyecto - Instancia del proyecto.
+   * @param {object} [opciones] - Opciones extra.
+   * @param {number|null} [opciones.suscriptoresCount] - Cantidad real de suscriptores notificados.
    */
-  async notificarInicioProyectoAdmin(adminEmail, proyecto) {
-    const subject = `🟢 INICIO DE PROYECTO- ${proyecto.nombre_proyecto}`;
+  async notificarInicioProyectoAdmin(adminEmail, proyecto, opciones = {}) {
+    const { suscriptoresCount = null } = opciones;
+
+    const suscriptoresReales =
+      suscriptoresCount ?? proyecto.suscripciones_actuales ?? "N/A";
+    const meta = proyecto.obj_suscripciones ?? "N/A";
+    const montoMensual = parseFloat(proyecto.monto_inversion || 0).toFixed(2);
+    const moneda = proyecto.moneda || "ARS";
+    const plazo = proyecto.plazo_inversion || "N/A";
+    const tipoInversion = proyecto.tipo_inversion || "N/A";
+
+    const fechaInicio = new Date().toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const subject = `🟢 PROYECTO INICIADO: "${proyecto.nombre_proyecto}" — ${suscriptoresReales} suscriptores`;
 
     const contenidoInterno = `
-          <h2 style="color: #0b1b36; margin-top: 0;">¡El Proyecto ha Iniciado su Proceso!</h2>
-          <p>El proyecto **"${proyecto.nombre_proyecto}"** (ID: ${proyecto.id}) suscripciones: (**${proyecto.obj_suscripciones}**).</p>
-          <p style="font-weight: bold; color: #4CAF50; font-size: 1.1em;">Estado Actual: En proceso</p>
-          <p>El sistema ha marcado la fecha de inicio del proceso y comenzará la generación de pagos mensuales.</p>
-          <p>No se requiere acción inmediata, pero por favor, confirme el estado en el <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="color: #FF5733; text-decoration: none; font-weight: bold;">panel de administración</a>.</p>
-      `;
+    <h2 style="color: #0b1b36; margin-top: 0;">🟢 El Proyecto ha Iniciado su Proceso</h2>
+
+    <p>El proyecto <strong>"${proyecto.nombre_proyecto}"</strong> (ID: ${proyecto.id}) alcanzó el objetivo de suscripciones y el sistema lo ha puesto en marcha automáticamente.</p>
+
+    <div style="border-left: 4px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0; border-radius: 4px;">
+      <p style="margin: 0; font-weight: bold; color: #2e7d32; font-size: 1.1em;">
+        ✅ Estado actual: EN PROCESO
+      </p>
+      <p style="margin: 8px 0 0 0; color: #2e7d32;">
+        Fecha de inicio del proceso: <strong>${fechaInicio}</strong>
+      </p>
+    </div>
+
+    <h3 style="color: #0b1b36;">📊 Resumen del Proyecto</h3>
+    <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Proyecto:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.nombre_proyecto}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>ID Proyecto:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${proyecto.id}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Suscriptores confirmados:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">${suscriptoresReales}</strong> (meta: ${meta})</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Monto mensual por suscriptor:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>${moneda} $${montoMensual}</strong></td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Plazo total:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${plazo} meses</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Tipo de inversión:</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;">${tipoInversion}</td>
+      </tr>
+    </table>
+
+    <h3 style="color: #0b1b36;">📅 Próximos Hitos Automáticos</h3>
+    <ul style="line-height: 1.8; padding-left: 20px;">
+      <li>El <strong>día 1 del próximo mes</strong> se generará la primera cuota mensual de cada suscriptor.</li>
+      <li>El <strong>día 10 de cada mes</strong> vence el plazo de pago (los que no paguen acumulan recargo diario).</li>
+      <li>El contador de <strong>meses restantes</strong> se decrementa automáticamente cada día 1.</li>
+      <li>Al llegar a 0 meses, se enviará alerta de finalización de plazo.</li>
+    </ul>
+
+    <div style="border-left: 4px solid #FF5733; padding: 15px; background-color: #fff3e0; margin: 20px 0; border-radius: 4px;">
+      <p style="font-weight: bold; margin: 0 0 8px 0; color: #d9534f;">⚠️ ACCIÓN SUGERIDA</p>
+      <p style="margin: 0;">No se requiere acción inmediata. Te recomendamos verificar en el panel que:</p>
+      <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+        <li>Los montos del proyecto coincidan con lo acordado con los suscriptores.</li>
+        <li>El plazo configurado sea el correcto.</li>
+        <li>No haya suscriptores pendientes de adhesión que deban excluirse.</li>
+      </ul>
+    </div>
+
+    <a href="${process.env.FRONTEND_URL}/admin/proyectos" style="display: inline-block; padding: 12px 25px; margin: 25px 0; background-color: #0b1b36; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+      Revisar Proyecto en el Panel
+    </a>
+
+    <p style="font-size: 13px; color: #6c757d; margin-top: 20px;">
+      Este aviso fue generado automáticamente por el sistema al iniciar el proceso del proyecto. Los suscriptores ya fueron notificados por separado.
+    </p>
+  `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
+    const textPlain = `
+  Proyecto Iniciado: ${proyecto.nombre_proyecto} (ID ${proyecto.id})
 
-    await this.sendEmail(
-      adminEmail,
-      subject,
-      `El proyecto ${proyecto.nombre_proyecto} ha comenzado su proceso de inversión.`,
-      html,
-    );
+  El proyecto alcanzó el objetivo de suscripciones y entró en estado "En proceso" el ${fechaInicio}.
+
+  Resumen:
+  - Suscriptores confirmados: ${suscriptoresReales} (meta: ${meta})
+  - Monto mensual por suscriptor: ${moneda} $${montoMensual}
+  - Plazo: ${plazo} meses
+  - Tipo de inversión: ${tipoInversion}
+
+  Próximos hitos:
+  - Día 1 del próximo mes: generación de primera cuota.
+  - Día 10 de cada mes: vencimiento de pago.
+  - Decremento automático de meses restantes cada día 1.
+
+  No se requiere acción inmediata. Revisá el proyecto en el panel para confirmar que la configuración es correcta.
+
+  Ver panel: ${process.env.FRONTEND_URL}/admin/proyectos
+  `.trim();
+
+    await this.sendEmail(adminEmail, subject, textPlain, html);
   },
 
   /**
