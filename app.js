@@ -44,9 +44,10 @@ if (process.env.NODE_ENV === "development") {
   app.set("trust proxy", false);
   console.log("⚠️ Trust proxy deshabilitado (desarrollo local)");
 } else {
-  // En producción o cualquier otro entorno (Railway, staging, etc.)
-  app.set("trust proxy", true); // Confiar en todos los proxies
-  console.log("✅ Trust proxy habilitado (confiar en todos los proxies)");
+  // Railway coloca exactamente 1 proxy delante de la app.
+  // El número indica CUÁNTOS saltos confiar, no "confiar en todos".
+  app.set("trust proxy", 1);
+  console.log("✅ Trust proxy habilitado (1 salto — Railway edge)");
 }
 
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
@@ -248,6 +249,18 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/payment", pagoMercadoRoutes);
 app.use(redireccionRoutes);
 
+app.use((err, req, res, next) => {
+  console.error("❌ Error no capturado:", err.message);
+  console.error(err.stack);
+
+  // Si la respuesta ya fue enviada, delegamos al handler por defecto
+  if (res.headersSent) return next(err);
+
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || "Error interno del servidor",
+  });
+});
 // ====================================================================
 // 6. SINCRONIZACIÓN DE BASE DE DATOS E INICIO DEL SERVIDOR (CRÍTICO)
 // ====================================================================

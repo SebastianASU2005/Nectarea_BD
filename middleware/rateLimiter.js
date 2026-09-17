@@ -43,9 +43,11 @@ function createDbLimiter(keyPrefix, points, duration) {
 }
 
 function getIp(req) {
-  return req.ip || req.socket?.remoteAddress || "unknown";
+  // Railway siempre setea x-real-ip de forma confiable (no falsificable)
+  return (
+    req.headers["x-real-ip"] || req.ip || req.socket?.remoteAddress || "unknown"
+  );
 }
-
 function sendTooManyRequests(res, msBeforeNext, message) {
   const retryAfter = Math.ceil(msBeforeNext / 1000);
   res.set("Retry-After", retryAfter);
