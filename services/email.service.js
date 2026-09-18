@@ -32,6 +32,9 @@ if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
     },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   console.log(`✅ Configurado email con OAuth2 (${process.env.EMAIL_USER})`);
 } else {
@@ -48,6 +51,9 @@ if (EMAIL_PROVIDER === "resend" && process.env.RESEND_API_KEY) {
       pass: process.env.EMAIL_PASS,
     },
     tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   console.log(`✅ Configurado email con SMTP (${smtpHost}:${smtpPort})`);
 }

@@ -634,7 +634,6 @@ const adhesionService = {
   // ------------------------------------------------------------------
   // FORZAR PAGO DE CUOTA (ADMIN)
   // ------------------------------------------------------------------
-
   async forzarPagoCuota(
     adhesionId,
     numeroCuota,
@@ -644,6 +643,7 @@ const adhesionService = {
     userAgent = null,
   ) {
     const t = await sequelize.transaction();
+
     try {
       const adhesionLocked = await Adhesion.findByPk(adhesionId, {
         transaction: t,
@@ -725,32 +725,36 @@ const adhesionService = {
         transaccion: t,
       });
 
-      try {
-        const usuario = await Usuario.findByPk(adhesion.id_usuario);
-        const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
-        await emailService.notificarCuotaAdhesionPagada(
-          usuario,
-          adhesion,
-          pagoAdhesion,
-          proyecto,
-        );
-        if (nuevoEstado === "completada") {
-          const suscripcion = await SuscripcionProyecto.findByPk(
-            adhesion.id_suscripcion,
-          );
-          await emailService.notificarAdhesionCompletada(
+      // ✅ Notificación del pago de la cuota — DESPUÉS del commit
+      // (el email de "adhesión completada", si aplica, lo dispara
+      //  _completarAdhesionYActivarSuscripcion en su propio afterCommit)
+      t.afterCommit(async () => {
+        try {
+          const adhesionFresca = await Adhesion.findByPk(adhesion.id);
+          const usuario = await Usuario.findByPk(adhesion.id_usuario);
+          const proyecto = await Proyecto.findByPk(adhesion.id_proyecto);
+          const pagoFresco = await PagoAdhesion.findOne({
+            where: {
+              id_adhesion: adhesion.id,
+              numero_cuota: pagoAdhesion.numero_cuota,
+            },
+          });
+
+          await emailService.notificarCuotaAdhesionPagada(
             usuario,
-            adhesion,
-            suscripcion,
+            adhesionFresca,
+            pagoFresco,
             proyecto,
           );
+        } catch (error) {
+          console.error(
+            `[forzarPagoCuota] Error al enviar notificaciones (post-commit):`,
+            error.message,
+          );
         }
-      } catch (error) {
-        console.error(
-          `[forzarPagoCuota] Error al enviar notificaciones:`,
-          error.message,
-        );
-      }
+      });
+
+      await t.commit();
 
       return {
         message: `Cuota ${numeroCuota} marcada como pagada (forzado).`,
@@ -762,7 +766,6 @@ const adhesionService = {
       throw error;
     }
   },
-
   // ------------------------------------------------------------------
   // MÉTRICAS Y REPORTES PARA ADMINISTRACIÓN
   // ------------------------------------------------------------------
