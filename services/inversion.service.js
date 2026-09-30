@@ -95,10 +95,8 @@ const inversionService = {
    * @throws {Error} Si la inversión o el proyecto no son encontrados, o si falla la actualización.
    */
   async confirmarInversion(inversionId, t) {
-    // Quitamos el lock y el include innecesario para evitar el error de FOR UPDATE
     const inversion = await Inversion.findByPk(inversionId, {
       transaction: t,
-      // Sin lock: suficiente con la transacción y la validación previa
       include: [
         {
           model: Usuario,
@@ -120,18 +118,12 @@ const inversionService = {
     if (!proyecto)
       throw new Error("Proyecto asociado a la inversión no encontrado.");
 
-    const montoInvertido = Number(inversion.monto);
-    const montoActual = Number(proyecto.suscripciones_actuales || 0);
-    const nuevoMontoTotal = montoActual + montoInvertido;
-
-    await proyecto.update(
-      { suscripciones_actuales: nuevoMontoTotal },
-      { transaction: t },
-    );
-
+    // 1. Marcar la inversión como pagada
     inversion.estado = "pagado";
     await inversion.save({ transaction: t });
 
+    // 2. Proyectos "directo": se adjudica automáticamente y se finaliza
+    //    (no se toca suscripciones_actuales porque no aplica a este tipo)
     if (proyecto.tipo_inversion === "directo") {
       proyecto.estado_proyecto = "Finalizado";
       await proyecto.save({ transaction: t });
@@ -139,9 +131,7 @@ const inversionService = {
       t.afterCommit(async () => {
         try {
           const emailService = require("./email.service");
-          // Notificar a administradores
           await emailService.notificarInversionDirectaPagada(inversion);
-          // Notificar al usuario inversor
           if (inversion.inversor && inversion.inversor.email) {
             await emailService.notificarInversionPagada(
               inversion.inversor,
