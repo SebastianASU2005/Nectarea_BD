@@ -322,7 +322,7 @@ const proyectoService = {
     const inversionesPendientes = await Inversion.count({
       where: {
         id_proyecto: id,
-        estado: { [Op.in]: ["pendiente", "en_proceso"] },
+        estado: "pendiente", 
       },
     });
     if (inversionesPendientes > 0) {
