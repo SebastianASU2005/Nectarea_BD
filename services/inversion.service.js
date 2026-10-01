@@ -150,6 +150,106 @@ const inversionService = {
 
     return inversion;
   },
+  /**
+   * Rechaza inversiones pendientes antiguas de un proyecto.
+   * Una inversión "abandonada" es aquella que el usuario creó pero nunca completó
+   * el flujo de pago (no confirmó 2FA o no volvió de MercadoPago).
+   *
+   * Solo rechaza inversiones SIN transacción aprobada (por seguridad).
+   *
+   * @param {number} proyectoId - ID del proyecto.
+   * @param {object} options
+   * @param {object} [options.transaction] - Transacción de Sequelize externa.
+   * @param {number} [options.minutosMaximos=60] - Antigüedad mínima para considerar abandonada.
+   * @returns {Promise<{rechazadas: number, omitidasPorPago: number, ids: number[]}>}
+   */
+  async rechazarInversionesPendientesAntiguas(proyectoId, options = {}) {
+    const Transaccion = require("../models/transaccion");
+    const { transaction, minutosMaximos = 60 } = options;
+    const t = transaction || (await sequelize.transaction());
+    const shouldCommit = !transaction;
+
+    try {
+      const fechaLimite = new Date(Date.now() - minutosMaximos * 60 * 1000);
+
+      // 1. Buscar inversiones pendientes antiguas de este proyecto
+      const inversionesAntiguas = await Inversion.findAll({
+        where: {
+          id_proyecto: proyectoId,
+          estado: "pendiente",
+          createdAt: { [Op.lt]: fechaLimite },
+        },
+        attributes: ["id"],
+        transaction: t,
+      });
+
+      if (inversionesAntiguas.length === 0) {
+        if (shouldCommit) await t.commit();
+        return { rechazadas: 0, omitidasPorPago: 0, ids: [] };
+      }
+
+      const idsInversiones = inversionesAntiguas.map((i) => i.id);
+
+      // 2. Verificación de seguridad: descartar las que tengan pago aprobado
+      //    (por si el webhook llegó pero el estado no se actualizó todavía)
+      const transaccionesPagadas = await Transaccion.findAll({
+        where: {
+          id_inversion: { [Op.in]: idsInversiones },
+          estado_transaccion: "pagado",
+        },
+        attributes: ["id_inversion"],
+        transaction: t,
+      });
+      const idsConPago = new Set(
+        transaccionesPagadas.map((tx) => tx.id_inversion),
+      );
+
+      const idsARechazar = idsInversiones.filter((id) => !idsConPago.has(id));
+
+      if (idsARechazar.length > 0) {
+        // 3. Marcar las inversiones como fallidas
+        await Inversion.update(
+          { estado: "fallido" },
+          {
+            where: { id: { [Op.in]: idsARechazar } },
+            transaction: t,
+          },
+        );
+
+        // 4. Expirar sus transacciones pendientes (si las tuvieran)
+        await Transaccion.update(
+          {
+            estado_transaccion: "expirado",
+            error_detalle: `Auto-expirado: inversión pendiente por más de ${minutosMaximos} min`,
+          },
+          {
+            where: {
+              id_inversion: { [Op.in]: idsARechazar },
+              estado_transaccion: {
+                [Op.in]: ["pendiente", "en_proceso", "fallido"],
+              },
+            },
+            transaction: t,
+          },
+        );
+      }
+
+      if (shouldCommit) await t.commit();
+
+      return {
+        rechazadas: idsARechazar.length,
+        omitidasPorPago: idsConPago.size,
+        ids: idsARechazar,
+      };
+    } catch (error) {
+      if (shouldCommit) await t.rollback();
+      console.error(
+        `[rechazarInversionesPendientesAntiguas] Error:`,
+        error.message,
+      );
+      throw error;
+    }
+  },
   // --- Funciones CRUD básicas ---
 
   /**

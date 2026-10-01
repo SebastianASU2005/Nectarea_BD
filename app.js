@@ -195,6 +195,9 @@ const {
 const subscriptionCheckScheduler = require("./tasks/subscriptionCheckScheduler");
 const marcarCuotasAdhesionVencidas = require("./tasks/vencerCuotasAdhesion");
 const { startStandbyDeactivator } = require("./tasks/deactivateStandbyTask");
+const {
+  startCleanupAbandonedInvestments,
+} = require("./tasks/cleanupAbandonedInvestments");
 
 // ====================================================================
 // 5. 🔥 CONFIGURACIÓN DE RUTAS EN ORDEN ESPECÍFICO
@@ -340,6 +343,7 @@ async function synchronizeDatabase() {
     startCronJobs();
     iniciarCronJobExpiracion();
     subscriptionCheckScheduler.scheduleJobs();
+    startCleanupAbandonedInvestments();
     const cron = require("node-cron");
     cron.schedule("0 0 * * *", async () => {
       console.log("🕒 Ejecutando tarea: marcarCuotasAdhesionVencidas");

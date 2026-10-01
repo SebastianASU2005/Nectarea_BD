@@ -317,18 +317,39 @@ const proyectoService = {
           `Esos lotes son propiedad de sus compradores.`,
       );
     }
+    const InversionService = require("./inversion.service");
 
     // ── Regla 5: inversiones pendientes (tipo "directo") ───────────────
+    const MINUTOS_ESPERA_INVERSION = Number(
+      process.env.MINUTOS_ESPERA_INVERSION || 60,
+    );
+
+    const limpiezaInversiones =
+      await InversionService.rechazarInversionesPendientesAntiguas(id, {
+        minutosMaximos: MINUTOS_ESPERA_INVERSION,
+      });
+
+    if (limpiezaInversiones.rechazadas > 0) {
+      console.log(
+        `[softDelete] Proyecto ${id}: se rechazaron ${limpiezaInversiones.rechazadas} ` +
+          `inversiones pendientes abandonadas (>${MINUTOS_ESPERA_INVERSION} min).`,
+      );
+    }
+
+    // Ahora contamos solo las que quedaron (deberían ser solo recientes)
     const inversionesPendientes = await Inversion.count({
       where: {
         id_proyecto: id,
-        estado: "pendiente", 
+        estado: "pendiente",
       },
     });
+
     if (inversionesPendientes > 0) {
       throw new Error(
         `No se puede desactivar el proyecto ${id}: tiene ` +
-          `${inversionesPendientes} inversión(es) pendiente(s) de completar.`,
+          `${inversionesPendientes} inversión(es) pendiente(s) reciente(s) ` +
+          `(creadas hace menos de ${MINUTOS_ESPERA_INVERSION} min). ` +
+          `Esperá a que se completen o expiren, o contactá al usuario.`,
       );
     }
 
