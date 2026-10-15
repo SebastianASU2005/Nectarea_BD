@@ -14,6 +14,7 @@ require("dotenv").config();
 
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
+const { formatearMonto } = require("../utils/moneda");
 
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN;
@@ -77,6 +78,7 @@ const paymentService = {
     const {
       titulo,
       monto,
+      moneda = CURRENCY_ID, // ← NUEVO: la moneda que llega desde el registry
       id_usuario,
       nombre_usuario,
       apellido_usuario,
@@ -93,6 +95,14 @@ const paymentService = {
       );
       if (!monto || isNaN(monto) || monto <= 0) {
         throw new Error(`Monto inválido recibido: ${monto}`);
+      }
+
+      // ← NUEVO: Mercado Pago solo cobra en la moneda de la cuenta (MP_CURRENCY_ID).
+      // Enviar un monto en otra moneda cobraría ese número en ARS (bug original).
+      if (moneda !== CURRENCY_ID) {
+        throw new Error(
+          `Mercado Pago solo procesa ${CURRENCY_ID}; se recibió ${moneda}.`,
+        );
       }
 
       const webhookUrl = `${HOST_URL}/api/payment/webhook/mercadopago`;
@@ -452,7 +462,9 @@ const paymentService = {
       };
       descripcion += `Tipo: ${tipoLegible[datos.tipo_transaccion] || datos.tipo_transaccion}\n`;
     }
-    descripcion += `Monto: $${datos.monto} ${CURRENCY_ID}`;
+    // ← NUEVO: usar formatearMonto para respetar la moneda real
+    const moneda = datos.moneda || CURRENCY_ID;
+    descripcion += `Monto: ${formatearMonto(datos.monto, moneda)} ${moneda}`;
     return descripcion;
   },
 
@@ -550,6 +562,7 @@ const paymentService = {
         pagoMercado = await PagoMercado.create({
           id_transaccion: transaccionId,
           monto_pagado: montoPagado,
+          moneda: transaccion.moneda || CURRENCY_ID, // ← NUEVO
           metodo_pasarela: "mercadopago",
           id_transaccion_pasarela: paymentIdToUse,
           ...pagoData,

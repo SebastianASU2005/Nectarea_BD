@@ -23,12 +23,18 @@ const PagoMercado = sequelize.define(
       unique: true,
     },
     monto_pagado: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 2),
       allowNull: false,
     },
     metodo_pasarela: {
       type: DataTypes.STRING, // 'mercadopago', 'stripe'
       allowNull: false,
+    },
+    moneda: {
+      type: DataTypes.STRING(3),
+      allowNull: false,
+      defaultValue: "ARS",
+      validate: { isIn: [["ARS", "USD"]] },
     },
     tipo_medio_pago: {
       type: DataTypes.STRING, // Ej: 'credit_card', 'bank_transfer', 'cash'
@@ -40,7 +46,7 @@ const PagoMercado = sequelize.define(
         "aprobado",
         "rechazado",
         "devuelto",
-        "en_proceso"
+        "en_proceso",
       ),
       allowNull: false,
       defaultValue: "pendiente",
@@ -57,7 +63,7 @@ const PagoMercado = sequelize.define(
   {
     tableName: "pagos_mercado",
     timestamps: true,
-  }
+  },
 );
 
 module.exports = PagoMercado;

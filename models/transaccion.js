@@ -15,6 +15,12 @@ const Transaccion = sequelize.define(
       type: DataTypes.DECIMAL(15, 2),
       allowNull: false,
     },
+    moneda: {
+      type: DataTypes.STRING(3),
+      allowNull: false,
+      defaultValue: "ARS",
+      validate: { isIn: [["ARS", "USD"]] },
+    },
     fecha_transaccion: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
@@ -68,13 +74,12 @@ const Transaccion = sequelize.define(
       allowNull: false,
       defaultValue: "pendiente",
     },
-    
+
     id_suscripcion: {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
 
-   
     id_pago_adhesion: {
       type: DataTypes.INTEGER,
       allowNull: true,

@@ -71,6 +71,8 @@ const inversionService = {
           id_usuario: id_usuario,
           id_proyecto: id_proyecto,
           monto: montoInversion,
+          // ← NUEVO: la inversión hereda la moneda del proyecto (directo → USD)
+          moneda: proyecto.moneda === "USD" ? "USD" : "ARS",
           estado: "pendiente",
         },
         { transaction: t },
@@ -137,6 +139,7 @@ const inversionService = {
               inversion.inversor,
               proyecto,
               inversion.monto,
+              inversion.moneda, // ← NUEVO
             );
           }
         } catch (err) {
@@ -413,47 +416,62 @@ const inversionService = {
   // -------------------------------------------------------------------
 
   /**
-   * Calcula la Tasa de Liquidez de Inversiones (KPI 6) filtrando por rango de fechas (createdAt)
+   * Calcula la Tasa de Liquidez de Inversiones (KPI 6) filtrando por rango de fechas (createdAt).
+   *
+   * ⚠️ CAMBIO DE CONTRATO: antes devolvía un objeto plano con los totales de
+   * TODAS las monedas sumadas (lo cual era incorrecto: sumaba USD + ARS).
+   * Ahora devuelve un array con una fila por moneda.
+   *
    * @param {Date|null} fechaInicio
    * @param {Date|null} fechaFin
-   * @returns {Promise<object>}
+   * @returns {Promise<Array<{moneda: string, total_invertido_registrado: string, total_pagado: string, tasa_liquidez: string}>>}
    */
   async getInvestmentLiquidityRate(fechaInicio = null, fechaFin = null) {
     const where = { activo: true };
     if (fechaInicio) where.createdAt = { [Op.gte]: fechaInicio };
     if (fechaFin) where.createdAt = { ...where.createdAt, [Op.lte]: fechaFin };
 
-    const totalInvertidoResult = await Inversion.sum("monto", { where });
-    const totalInvertido = Number(totalInvertidoResult) || 0;
-
-    if (totalInvertido === 0) {
-      return {
-        total_invertido_registrado: 0.0,
-        total_pagado: 0.0,
-        tasa_liquidez: 0.0,
-      };
-    }
-
-    const wherePagado = { ...where, estado: "pagado" };
-    const totalPagadoResult = await Inversion.sum("monto", {
-      where: wherePagado,
+    // ← NUEVO: agrupar por moneda. Los montos de monedas distintas NO se suman.
+    const filas = await Inversion.findAll({
+      attributes: [
+        "moneda",
+        [sequelize.fn("SUM", sequelize.col("monto")), "total_registrado"],
+        [
+          sequelize.literal(
+            "COALESCE(SUM(CASE WHEN estado = 'pagado' THEN monto ELSE 0 END), 0)",
+          ),
+          "total_pagado",
+        ],
+      ],
+      where,
+      group: ["moneda"],
+      order: [["moneda", "ASC"]],
+      raw: true,
     });
-    const totalPagado = Number(totalPagadoResult) || 0;
 
-    const tasaLiquidez = (totalPagado / totalInvertido) * 100;
-
-    return {
-      total_invertido_registrado: totalInvertido.toFixed(2),
-      total_pagado: totalPagado.toFixed(2),
-      tasa_liquidez: tasaLiquidez.toFixed(2),
-    };
+    return filas.map((fila) => {
+      const totalInvertido = Number(fila.total_registrado) || 0;
+      const totalPagado = Number(fila.total_pagado) || 0;
+      const tasa =
+        totalInvertido > 0 ? (totalPagado / totalInvertido) * 100 : 0;
+      return {
+        moneda: fila.moneda,
+        total_invertido_registrado: totalInvertido.toFixed(2),
+        total_pagado: totalPagado.toFixed(2),
+        tasa_liquidez: tasa.toFixed(2),
+      };
+    });
   },
 
   /**
-   * Agrega monto total invertido (estado pagado) por usuario, opcionalmente filtrando por rango de fechas
+   * Agrega monto total invertido (estado pagado) por usuario y moneda, opcionalmente filtrando por rango de fechas.
+   *
+   * ⚠️ CAMBIO DE CONTRATO: ahora agrupa por id_usuario + moneda, así que un usuario
+   * puede tener varias filas si invirtió en proyectos USD y ARS.
+   *
    * @param {Date|null} fechaInicio
    * @param {Date|null} fechaFin
-   * @returns {Promise<object[]>}
+   * @returns {Promise<Array<{id_usuario: number, moneda: string, monto_total_invertido: string}>>}
    */
   async getAggregatedInvestmentByUser(fechaInicio = null, fechaFin = null) {
     const where = { estado: "pagado", activo: true };
@@ -463,16 +481,21 @@ const inversionService = {
     const aggregated = await Inversion.findAll({
       attributes: [
         "id_usuario",
+        "moneda", // ← NUEVO
         [sequelize.fn("SUM", sequelize.col("monto")), "monto_total_invertido"],
       ],
       where,
-      group: ["id_usuario"],
-      order: [[sequelize.literal("monto_total_invertido"), "DESC"]],
+      group: ["id_usuario", "moneda"], // ← NUEVO
+      order: [
+        ["moneda", "ASC"], // ← NUEVO
+        [sequelize.literal("monto_total_invertido"), "DESC"],
+      ],
       raw: true,
     });
 
     return aggregated.map((item) => ({
       id_usuario: item.id_usuario,
+      moneda: item.moneda, // ← NUEVO
       monto_total_invertido: parseFloat(item.monto_total_invertido).toFixed(2),
     }));
   },

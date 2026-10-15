@@ -6,6 +6,7 @@ const dotenv = require("dotenv");
 const usuarioService = require("./usuario.service");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
+const { formatearMonto } = require("../utils/moneda"); // ← NUEVO
 dotenv.config();
 
 // ✅ CONTROL EXPLÍCITO: Cambia EMAIL_PROVIDER en .env para alternar entre proveedores
@@ -257,7 +258,7 @@ const emailService = {
 
     <h3>📋 Detalles de la inversión</h3>
     <ul>
-      <li><strong>Monto invertido:</strong> $${Number(inversion.monto).toFixed(2)}</li>
+      <li><strong>Monto invertido:</strong> ${formatearMonto(inversion.monto, inversion.moneda)} ${inversion.moneda || "ARS"}</li>
       <li><strong>Fecha de pago:</strong> ${new Date().toLocaleDateString("es-ES")}</li>
       <li><strong>ID Inversión:</strong> ${inversion.id}</li>
       <li><strong>ID Proyecto:</strong> ${proyecto.id}</li>
@@ -291,16 +292,17 @@ const emailService = {
    * @function notificarInversionPagada
    * @description Notifica al usuario que su inversión directa ha sido pagada exitosamente.
    */
-  async notificarInversionPagada(usuario, proyecto, monto) {
+  async notificarInversionPagada(usuario, proyecto, monto, moneda = "ARS") {
+    // ← NUEVO parámetro `moneda`
     if (!usuario || !usuario.email) return;
 
     const subject = `✅ Inversión Directa Pagada - Proyecto "${proyecto.nombre_proyecto}"`;
-    const montoTexto = parseFloat(monto).toFixed(2);
+    const montoTexto = `${formatearMonto(monto, moneda)} ${moneda}`; // ← CAMBIO
 
     const contenidoInterno = `
     <h2 style="color: #4CAF50; margin-top: 0;">¡Inversión Directa Confirmada!</h2>
     <p>Hola <strong>${usuario.nombre}</strong>,</p>
-    <p>Te confirmamos que hemos recibido tu inversión directa de <strong style="color: #4CAF50;">$${montoTexto}</strong> en el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
+    <p>Te confirmamos que hemos recibido tu inversión directa de <strong style="color: #4CAF50;">${montoTexto}</strong> en el proyecto <strong>"${proyecto.nombre_proyecto}"</strong>.</p>
     
     <div style="border: 1px solid #4CAF50; padding: 15px; background-color: #e6ffe6; margin: 20px 0;">
       <p style="margin: 0; font-weight: bold; color: #4CAF50;">✅ Tu inversión ha sido registrada exitosamente</p>
@@ -314,7 +316,7 @@ const emailService = {
       </tr>
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6;"><strong>Monto Invertido:</strong></td>
-        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">$${montoTexto}</strong></td>
+        <td style="padding: 10px; border: 1px solid #dee2e6;"><strong style="color: #4CAF50;">${montoTexto}</strong></td>
       </tr>
       <tr>
         <td style="padding: 10px; border: 1px solid #dee2e6; background-color: #f8f9fa;"><strong>Fecha:</strong></td>
@@ -330,7 +332,7 @@ const emailService = {
   `;
 
     const html = obtenerPlantillaHtml(contenidoInterno);
-    const textPlain = `Hemos recibido tu inversión directa de $${montoTexto} en el proyecto ${proyecto.nombre_proyecto}. Gracias.`;
+    const textPlain = `Hemos recibido tu inversión directa de ${montoTexto} en el proyecto ${proyecto.nombre_proyecto}. Gracias.`;
 
     await this.sendEmail(usuario.email, subject, textPlain, html);
   },

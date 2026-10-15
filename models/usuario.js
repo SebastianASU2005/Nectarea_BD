@@ -2,6 +2,8 @@
 const { sequelize, DataTypes } = require("../config/database");
 const baseAttributes = require("./base");
 
+
+// T&C versión aceptada al momento del registro: v1.0 (2026-10-08)
 const Usuario = sequelize.define(
   "Usuario",
   {

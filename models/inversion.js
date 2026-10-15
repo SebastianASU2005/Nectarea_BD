@@ -10,6 +10,12 @@ const Inversion = sequelize.define('Inversion', {
     type: DataTypes.DECIMAL(15, 2),
     allowNull: false,
   },
+  moneda: {
+  type: DataTypes.STRING(3),
+  allowNull: false,
+  defaultValue: "ARS",
+  validate: { isIn: [["ARS", "USD"]] },
+},
   fecha_inversion: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,

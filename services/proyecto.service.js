@@ -41,7 +41,14 @@ const proyectoService = {
     switch (tipo_inversion) {
       case "directo":
         dataFinal.obj_suscripciones = 0;
-        dataFinal.moneda = "USD";
+        // ← NUEVO: permitir elegir moneda (USD por defecto)
+        const monedaDirecto = String(projectData.moneda || "USD").toUpperCase();
+        if (!["USD", "ARS"].includes(monedaDirecto)) {
+          throw new Error(
+            "Moneda inválida para proyecto directo. Use 'USD' o 'ARS'.",
+          );
+        }
+        dataFinal.moneda = monedaDirecto;
         dataFinal.pack_de_lotes = true;
         if (!monto_inversion || Number(monto_inversion) <= 0) {
           throw new Error(
@@ -220,6 +227,17 @@ const proyectoService = {
     const { adminId, ip, userAgent } = adminContext;
     const proyecto = await Proyecto.findByPk(id, { transaction });
     if (!proyecto) return null;
+
+    // ← NUEVO: la moneda define la pasarela de cobro; no se puede cambiar.
+    if (
+      data.moneda !== undefined &&
+      String(data.moneda).toUpperCase() !== proyecto.moneda
+    ) {
+      throw new Error(
+        "La moneda de un proyecto no puede modificarse una vez creado.",
+      );
+    }
+
     const datosPrevios = proyecto.toJSON();
     const proyectoActualizado = await proyecto.update(data, { transaction });
     if (adminId) {

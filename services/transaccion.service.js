@@ -13,7 +13,11 @@ const Puja = require("../models/puja");
 const PagoAdhesion = require("../models/PagoAdhesion");
 const Adhesion = require("../models/adhesion");
 
-const paymentService = require("./pagoMercado.service");
+const {
+  resolverMoneda,
+  resolverPasarela,
+  getGateway,
+} = require("./pasarela.registry");
 const inversionService = require("./inversion.service");
 const pagoService = require("./pago.service");
 const suscripcionService = require("./suscripcion_proyecto.service");
@@ -27,9 +31,40 @@ const transaccionService = {
   // NUEVO FLUJO: Generar Checkout para una Transacción YA CREADA
   // =========================================================================
 
+  /**
+   * Resuelve la moneda que corresponde a una transacción a partir de su tipo y
+   * del proyecto asociado (ver pasarela.registry.resolverMoneda).
+   */
+  async _resolverMonedaTransaccion(tipoTransaccion, idProyecto, t) {
+    if (tipoTransaccion !== "directo" || !idProyecto) {
+      return resolverMoneda(tipoTransaccion, null);
+    }
+    const proyecto = await Proyecto.findByPk(idProyecto, {
+      attributes: ["id", "moneda"],
+      transaction: t,
+    });
+    return resolverMoneda(tipoTransaccion, proyecto);
+  },
+
+  /**
+   * Alinea la moneda de una transacción pendiente/fallida con la vigente del
+   * proyecto (cubre transacciones creadas antes de existir la columna `moneda`).
+   */
+  async _sincronizarMoneda(transaccion, t) {
+    const moneda = await this._resolverMonedaTransaccion(
+      transaccion.tipo_transaccion,
+      transaccion.id_proyecto,
+      t,
+    );
+    if (transaccion.moneda !== moneda) {
+      await transaccion.update({ moneda }, { transaction: t });
+    }
+    return moneda;
+  },
+
   async generarCheckoutParaTransaccionExistente(
     transaccion,
-    metodo = "mercadopago",
+    metodo = null,
     options = {},
   ) {
     const t = options.transaction;
@@ -48,16 +83,22 @@ const transaccionService = {
       );
     }
 
+    await this._sincronizarMoneda(transaccion, t);
+    const metodoFinal =
+      metodo ||
+      resolverPasarela(transaccion.tipo_transaccion, transaccion.moneda);
+
     const { preferenceId, redirectUrl } = await this._generarPreferenciaPago(
       transaccion,
-      metodo,
+      metodoFinal,
     );
 
     const [pagoMercado, created] = await PagoMercado.findOrCreate({
-      where: { id_transaccion: transaccion.id, metodo_pasarela: metodo },
+      where: { id_transaccion: transaccion.id, metodo_pasarela: metodoFinal },
       defaults: {
         monto_pagado: transaccion.monto,
-        metodo_pasarela: metodo,
+        moneda: transaccion.moneda,
+        metodo_pasarela: metodoFinal,
         id_transaccion_pasarela: preferenceId,
         estado: "pendiente",
       },
@@ -68,6 +109,7 @@ const transaccionService = {
       await pagoMercado.update(
         {
           monto_pagado: transaccion.monto,
+          moneda: transaccion.moneda,
           id_transaccion_pasarela: preferenceId,
           estado: "pendiente",
         },
@@ -139,11 +181,7 @@ const transaccionService = {
     });
     return !!otraTransaccion;
   },
-  async crearTransaccionConCheckout(
-    data,
-    metodo = "mercadopago",
-    options = {},
-  ) {
+  async crearTransaccionConCheckout(data, metodo = null, options = {}) {
     const t = options.transaction;
     if (!t) {
       throw new Error(
@@ -153,10 +191,19 @@ const transaccionService = {
 
     this._validarDatosTransaccion(data);
 
+    const moneda =
+      data.moneda ||
+      (await this._resolverMonedaTransaccion(
+        data.tipo_transaccion,
+        data.id_proyecto,
+        t,
+      ));
+
     const transaccion = await Transaccion.create(
       {
         tipo_transaccion: data.tipo_transaccion,
         monto: data.monto,
+        moneda,
         id_usuario: data.id_usuario,
         id_proyecto: data.id_proyecto || null,
         id_inversion: data.id_inversion || null,
@@ -480,6 +527,17 @@ const transaccionService = {
           throw new Error(`Modelo de pago no soportado: ${modelo}`);
       }
 
+      // Moneda y pasarela se deciden en el servidor (nunca por el cliente)
+      datosTransaccion.moneda = await this._resolverMonedaTransaccion(
+        datosTransaccion.tipo_transaccion,
+        datosTransaccion.id_proyecto,
+        t,
+      );
+      const metodoPasarela = resolverPasarela(
+        datosTransaccion.tipo_transaccion,
+        datosTransaccion.moneda,
+      );
+
       let resultadoCheckout;
 
       if (modelo.toLowerCase() === "puja") {
@@ -499,7 +557,7 @@ const transaccionService = {
 
         resultadoCheckout = await this.crearTransaccionConCheckout(
           datosTransaccion,
-          "mercadopago",
+          metodoPasarela,
           { transaction: t },
         );
       } else {
@@ -530,11 +588,13 @@ const transaccionService = {
 
           if (
             toFloat(existingTransaccion.monto) !==
-            toFloat(datosTransaccion.monto)
+              toFloat(datosTransaccion.monto) ||
+            existingTransaccion.moneda !== datosTransaccion.moneda
           ) {
             await existingTransaccion.update(
               {
                 monto: datosTransaccion.monto,
+                moneda: datosTransaccion.moneda,
                 estado_transaccion: "pendiente",
               },
               { transaction: t },
@@ -544,13 +604,13 @@ const transaccionService = {
           resultadoCheckout =
             await this.generarCheckoutParaTransaccionExistente(
               existingTransaccion,
-              "mercadopago",
+              metodoPasarela,
               { transaction: t },
             );
         } else {
           resultadoCheckout = await this.crearTransaccionConCheckout(
             datosTransaccion,
-            "mercadopago",
+            metodoPasarela,
             { transaction: t },
           );
         }
@@ -957,22 +1017,30 @@ const transaccionService = {
   // =========================================================================
 
   async _generarPreferenciaPago(transaccion, metodo) {
-    if (metodo !== "mercadopago") {
-      throw new Error("Solo mercadopago está soportado actualmente");
+    // Invariante de negocio: la pasarela la dicta (tipo, moneda), no el llamador.
+    // Evita, p. ej., cobrar un monto USD por Mercado Pago (que cobraría ARS).
+    const esperado = resolverPasarela(
+      transaccion.tipo_transaccion,
+      transaccion.moneda,
+    );
+    if (metodo !== esperado) {
+      throw new Error(
+        `La pasarela '${metodo}' no corresponde a una transacción '${transaccion.tipo_transaccion}' en ${transaccion.moneda} (se esperaba '${esperado}').`,
+      );
     }
 
+    const gateway = getGateway(metodo);
     const datosPreferencia = await this._construirDatosPreferencia(transaccion);
 
     console.log("📋 Datos de preferencia construidos:", {
+      pasarela: metodo,
       monto: datosPreferencia.monto,
+      moneda: datosPreferencia.moneda,
       titulo: datosPreferencia.titulo,
       id_usuario: datosPreferencia.id_usuario,
     });
 
-    return await paymentService.createPaymentSession(
-      datosPreferencia,
-      transaccion.id,
-    );
+    return await gateway.createPaymentSession(datosPreferencia, transaccion.id);
   },
 
   async _construirDatosPreferencia(transaccion) {
@@ -1023,6 +1091,7 @@ const transaccionService = {
       id: id,
       id_usuario: transaccion.id_usuario,
       monto: montoNumerico,
+      moneda: transaccion.moneda || "ARS",
       id_proyecto: transaccion.id_proyecto,
       titulo: titulo,
       tipo_transaccion: tipo_transaccion,
@@ -1103,6 +1172,7 @@ const transaccionService = {
           "id",
           "tipo_transaccion",
           "monto",
+          "moneda",
           "fecha_transaccion",
           "id_usuario",
           "id_proyecto",
@@ -1136,7 +1206,7 @@ const transaccionService = {
           {
             model: Inversion,
             as: "inversion",
-            attributes: ["id", "monto", "estado"],
+            attributes: ["id", "monto", "moneda", "estado"],
             required: false,
           },
           {
@@ -1185,6 +1255,7 @@ const transaccionService = {
             attributes: [
               "id",
               "monto_pagado",
+              "moneda",
               "metodo_pasarela",
               "estado",
               "id_transaccion_pasarela",
@@ -1218,6 +1289,7 @@ const transaccionService = {
           "id",
           "tipo_transaccion",
           "monto",
+          "moneda",
           "fecha_transaccion",
           "id_usuario",
           "id_proyecto",
@@ -1251,7 +1323,7 @@ const transaccionService = {
           {
             model: Inversion,
             as: "inversion",
-            attributes: ["id", "monto", "estado"],
+            attributes: ["id", "monto", "moneda", "estado"],
             required: false,
           },
           {
@@ -1301,6 +1373,7 @@ const transaccionService = {
             attributes: [
               "id",
               "monto_pagado",
+              "moneda",
               "metodo_pasarela",
               "estado",
               "id_transaccion_pasarela",
@@ -1332,6 +1405,7 @@ const transaccionService = {
           "id",
           "tipo_transaccion",
           "monto",
+          "moneda",
           "fecha_transaccion",
           "id_usuario",
           "id_proyecto",
@@ -1374,7 +1448,7 @@ const transaccionService = {
           {
             model: Inversion,
             as: "inversion",
-            attributes: ["id", "monto", "estado", "fecha_inversion"],
+            attributes: ["id", "monto", "moneda", "estado", "fecha_inversion"],
             required: false,
           },
           {
@@ -1425,6 +1499,7 @@ const transaccionService = {
             attributes: [
               "id",
               "monto_pagado",
+              "moneda",
               "metodo_pasarela",
               "estado",
               "id_transaccion_pasarela",

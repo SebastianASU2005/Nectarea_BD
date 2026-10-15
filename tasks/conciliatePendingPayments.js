@@ -1,23 +1,22 @@
 // jobs/conciliatePendingPayments.js (VERSIÓN MEJORADA - SIN BUCLE INFINITO)
+// ← NUEVO: usa el registry para elegir la pasarela por transacción
 
 const { sequelize, Op } = require("../config/database");
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
-const pagoMercadoService = require("../services/pagoMercado.service");
+// ← NUEVO: reemplaza pagoMercadoService por el registry
+const { getGateway } = require("../services/pasarela.registry");
 
-const CONCILIATION_TIMEOUT_MINUTES = 30; // Transacciones con más de 30 minutos se consideran antiguas
-const MAX_RETRIES = 5; // Máximo de reintentos antes de abandonar
-const RETRY_DELAY_MS = 1000; // Espera 1 segundo entre refrescos (para no saturar)
+const CONCILIATION_TIMEOUT_MINUTES = 30;
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 1000;
 
-// Mapa para llevar cuenta de reintentos por transacción
 const retryCount = new Map();
 
-// Limpieza periódica del mapa de reintentos (cada hora)
 setInterval(() => {
   const now = Date.now();
   for (const [txId, data] of retryCount.entries()) {
     if (now - data.lastAttempt > 3600000) {
-      // más de 1 hora sin intentos
       retryCount.delete(txId);
     }
   }
@@ -33,7 +32,6 @@ async function conciliatePendingPayments() {
   );
 
   try {
-    // Excluir transacciones que ya están en 'expirado' o estados terminales
     const transaccionesPendientes = await Transaccion.findAll({
       where: {
         estado_transaccion: { [Op.in]: ["pendiente", "en_proceso"] },
@@ -59,11 +57,9 @@ async function conciliatePendingPayments() {
       `📊 [Conciliación] Se encontraron ${transaccionesPendientes.length} transacciones pendientes antiguas.`,
     );
 
-    // ========== ORDENAR POR antigüedad (las más viejas primero) ==========
     transaccionesPendientes.sort((a, b) => a.createdAt - b.createdAt);
 
     for (const transaccion of transaccionesPendientes) {
-      // ========== 1. Verificar si ya superó el límite de reintentos ==========
       const retryInfo = retryCount.get(transaccion.id) || {
         count: 0,
         lastAttempt: 0,
@@ -81,7 +77,6 @@ async function conciliatePendingPayments() {
         continue;
       }
 
-      // ========== 2. Verificar si la transacción es demasiado vieja (más de 60 minutos) ==========
       const edadMinutos =
         (Date.now() - new Date(transaccion.createdAt)) / 60000;
       if (edadMinutos > 60) {
@@ -96,7 +91,7 @@ async function conciliatePendingPayments() {
         continue;
       }
 
-      // ========== 3. Obtener el paymentId de MP ==========
+      // ========== 3. Obtener el paymentId de la pasarela ==========
       let mpTransactionId = null;
       if (
         transaccion.pagoPasarela &&
@@ -109,7 +104,8 @@ async function conciliatePendingPayments() {
         );
         await transaccion.update({
           estado_transaccion: "fallido",
-          error_detalle: "No se pudo recuperar ID de pago en MercadoPago",
+          // ← NUEVO: mensaje genérico (ya no siempre es Mercado Pago)
+          error_detalle: "No se pudo recuperar el ID de pago en la pasarela",
         });
         continue;
       }
@@ -118,7 +114,6 @@ async function conciliatePendingPayments() {
         `🔄 [Conciliación] Consultando estado para transacción ${transaccion.id} (Intento #${retryInfo.count + 1})...`,
       );
 
-      // Actualizar contador de reintentos
       retryCount.set(transaccion.id, {
         count: retryInfo.count + 1,
         lastAttempt: Date.now(),
@@ -126,12 +121,13 @@ async function conciliatePendingPayments() {
 
       try {
         // ========== 4. Llamar a refresh con un timeout controlado ==========
-        const refreshPromise = pagoMercadoService.refreshPaymentStatus(
+        // ← NUEVO: la pasarela depende de cómo se generó el pago (mercadopago | dlocal)
+        const gateway = getGateway(transaccion.pagoPasarela.metodo_pasarela);
+        const refreshPromise = gateway.refreshPaymentStatus(
           transaccion.id,
           mpTransactionId,
         );
 
-        // Timeout de 10 segundos para la llamada a MP
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Timeout en refreshPaymentStatus")),
@@ -152,7 +148,6 @@ async function conciliatePendingPayments() {
           console.log(
             `✅ [Conciliación] Transacción ${transaccion.id} actualizada de ${transaccion.estado_transaccion} a ${updatedData.transaccion.estado_transaccion}`,
           );
-          // Si llegó a pagado, eliminamos del mapa de reintentos
           if (updatedData.transaccion.estado_transaccion === "pagado") {
             retryCount.delete(transaccion.id);
           }
@@ -167,16 +162,14 @@ async function conciliatePendingPayments() {
           error.message,
         );
 
-        // Si el error es por timeout o MP no responde, aumentamos el contador pero no marcamos como fallida aún
         if (
           error.message.includes("Timeout") ||
           error.message.includes("ECONNREFUSED")
         ) {
           console.warn(
-            `⚠️ [Conciliación] Problema de red con MP para transacción ${transaccion.id}. Se reintentará en la próxima ejecución.`,
+            `⚠️ [Conciliación] Problema de red con la pasarela para transacción ${transaccion.id}. Se reintentará en la próxima ejecución.`,
           );
         } else if (retryInfo.count + 1 >= MAX_RETRIES) {
-          // Si ya es el último reintento y sigue fallando, marcamos como expirado
           console.warn(
             `⏰ [Conciliación] Transacción ${transaccion.id} agotó reintentos. Marcando como expirada.`,
           );
@@ -188,7 +181,6 @@ async function conciliatePendingPayments() {
         }
       }
 
-      // Pequeña pausa para no saturar la API de MercadoPago
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
 
