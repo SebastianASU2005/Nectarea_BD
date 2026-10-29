@@ -19,7 +19,7 @@ const { sequelize } = require("../config/database");
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 require("dotenv").config();
-const { buildReturnUrls } = require("../config/paymentUrls");
+const { buildServerReturnUrls } = require("../config/paymentUrls");
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
@@ -188,7 +188,7 @@ const paypalService = {
       throw new Error(`Monto inválido recibido: ${monto}`);
     }
 
-    const returnUrls = buildReturnUrls(transaccionId);
+    const returnUrls = buildServerReturnUrls(transaccionId);
 
     const payload = {
       intent: "CAPTURE",
@@ -209,8 +209,8 @@ const paypalService = {
             user_action: "PAY_NOW",
             shipping_preference: "NO_SHIPPING",
             payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
-            // Mismo destino que Mercado Pago (config/paymentUrls.js): el usuario vuelve
-            // al frontend y PagoResult llama a getPaymentStatus(refresh) que captura el pago.
+            // Vuelve al BACKEND (config/paymentUrls.js): esa ruta captura el pago y
+            // luego redirige al frontend. Funciona aunque el front no esté desplegado.
             return_url: returnUrls.success,
             cancel_url: returnUrls.failure,
           },
