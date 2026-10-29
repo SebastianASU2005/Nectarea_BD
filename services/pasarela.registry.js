@@ -9,7 +9,7 @@
 //   verifyAndFetchPayment(req, metodo)         -> { transaccionId, status, transactionId, paymentDetails, rawDetails } | null
 //   realizarReembolso(paymentId, monto)        -> { success, alreadyRefunded?, pending?, manual?, message? }
 //   refreshPaymentStatus(transaccionId, paymentId) -> { transaccion, pagoMercado } | null
-// Miembros adicionales para pasarelas distintas de Mercado Pago:
+// Miembros adicionales para pasarelas distintas de Mercado Pago: 
 //   mapearEstado(statusRaw)                    -> enum de PagoMercado.estado
 //   esWebhookAutorizado(req)                   -> Promise<boolean> (validación de origen del webhook)
 //   requiereCapturaAlRetorno                   -> true si el cobro se confirma capturando al volver el usuario
