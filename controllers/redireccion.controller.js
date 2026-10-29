@@ -23,6 +23,10 @@ const redireccionController = {
   async handleSuccess(req, res) {
     const transaccionId = req.params.id;
     try {
+      // Pasarelas que requieren captura (PayPal) confirman el cobro aquí, al volver
+      // el usuario; para Mercado Pago no hace nada. Luego se lee el estado real.
+      await transaccionService.sincronizarPagoAlRetorno(transaccionId);
+
       // Obtener la transacción para saber su estado actual
       const transaccion = await Transaccion.findByPk(transaccionId);
       if (!transaccion) {

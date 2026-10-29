@@ -9,10 +9,14 @@
 //   verifyAndFetchPayment(req, metodo)         -> { transaccionId, status, transactionId, paymentDetails, rawDetails } | null
 //   realizarReembolso(paymentId, monto)        -> { success, alreadyRefunded?, pending?, manual?, message? }
 //   refreshPaymentStatus(transaccionId, paymentId) -> { transaccion, pagoMercado } | null
+// Miembros adicionales para pasarelas distintas de Mercado Pago:
+//   mapearEstado(statusRaw)                    -> enum de PagoMercado.estado
+//   esWebhookAutorizado(req)                   -> Promise<boolean> (validación de origen del webhook)
+//   requiereCapturaAlRetorno                   -> true si el cobro se confirma capturando al volver el usuario
 
 const PASARELAS = Object.freeze({
   MERCADOPAGO: "mercadopago",
-  DLOCAL: "dlocal",
+  PAYPAL: "paypal",
 });
 
 const MONEDAS = Object.freeze({ ARS: "ARS", USD: "USD" });
@@ -32,11 +36,11 @@ function resolverMoneda(tipoTransaccion, proyecto) {
 }
 
 /**
- * Pasarela que corresponde a (tipo, moneda). USD directo → dLocal; resto → Mercado Pago.
+ * Pasarela que corresponde a (tipo, moneda). USD directo → PayPal; resto → Mercado Pago.
  */
 function resolverPasarela(tipoTransaccion, moneda) {
   if (tipoTransaccion === "directo" && moneda === MONEDAS.USD) {
-    return PASARELAS.DLOCAL;
+    return PASARELAS.PAYPAL;
   }
   return PASARELAS.MERCADOPAGO;
 }
@@ -49,8 +53,8 @@ function getGateway(metodo) {
   switch (metodo) {
     case PASARELAS.MERCADOPAGO:
       return require("./pagoMercado.service");
-    case PASARELAS.DLOCAL:
-      return require("./dlocal.service");
+    case PASARELAS.PAYPAL:
+      return require("./paypal.service");
     default:
       throw new Error(`Pasarela de pago no soportada: ${metodo}`);
   }

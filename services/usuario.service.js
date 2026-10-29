@@ -7,6 +7,7 @@ const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Puja = require("../models/puja");
 const ContratoFirmado = require("../models/ContratoFirmado");
 const auditService = require("./audit.service"); // 🆕 Auditoría
+const emailService = require("./email.service");
 
 const generateToken = () => {
   return crypto.randomBytes(20).toString("hex");

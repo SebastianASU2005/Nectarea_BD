@@ -3,10 +3,9 @@
 // 🔥 MEJORA: Verificación de estado final ANTES de cualquier reembolso
 // 🔥 MEJORA: Creación de registro faltante en PagoMercado para pagos ya finalizados
 // 🔥 MEJORA: Protección contra reembolsos de pagos antiguos legítimos
-// 🔥 MEJORA: Soporte multi-pasarela (mercadopago + dlocal)
+// 🔥 MEJORA: Soporte multi-pasarela (mercadopago + paypal)
 
 const transaccionService = require("../services/transaccion.service");
-const dlocalService = require("../services/dlocal.service"); // ← NUEVO
 const {
   PASARELAS,
   getGateway,
@@ -52,7 +51,9 @@ const refundNotified = new Set();
 
 // ========== HELPERS MULTI-PASARELA ========== // ← NUEVO (bloque completo)
 function mapearEstadoPasarela(metodo, statusRaw) {
-  if (metodo === PASARELAS.DLOCAL) return dlocalService.mapearEstado(statusRaw);
+  if (metodo !== PASARELAS.MERCADOPAGO) {
+    return getGateway(metodo).mapearEstado(statusRaw);
+  }
   return MP_STATUS_MAP[statusRaw] || "en_proceso";
 }
 
@@ -61,8 +62,8 @@ function mapearEstadoPasarela(metodo, statusRaw) {
  * - Mercado Pago: el registro del checkout guarda el preferenceId, así que si existe
  *   un registro con el paymentId es porque un webhook anterior ya lo procesó (se
  *   mantiene el comportamiento histórico).
- * - dLocal: el registro del checkout YA guarda el payment id definitivo (estado
- *   "pendiente"), por lo que solo es duplicado si el estado no cambió.
+ * - Resto de pasarelas (PayPal): el registro del checkout YA guarda el id definitivo
+ *   (estado "pendiente"), por lo que solo es duplicado si el estado no cambió.
  */
 function webhookYaProcesado(pagoExistente, internalStatus, metodo) {
   if (!pagoExistente) return false;
@@ -461,14 +462,12 @@ const paymentControllerObj = {
     }
 
     // ========== VALIDACIÓN DE ORIGEN (propia de cada pasarela) ==========
-    if (metodo === PASARELAS.DLOCAL) {
-      if (!dlocalService.esWebhookAutorizado(req)) {
-        console.error("🚫 Webhook dLocal con token inválido. Rechazado.");
-        return res.status(401).send("Token inválido");
-      }
-    } else {
+    if (metodo === PASARELAS.MERCADOPAGO) {
       const corte = prevalidarWebhookMercadoPago(req);
       if (corte) return res.status(corte.status).send(corte.body);
+    } else if (!(await getGateway(metodo).esWebhookAutorizado(req))) {
+      console.error(`🚫 Webhook ${metodo} no autorizado. Rechazado.`);
+      return res.status(401).send("Webhook no autorizado");
     }
 
     const paymentResult = await getGateway(metodo).verifyAndFetchPayment(
@@ -573,7 +572,7 @@ const paymentControllerObj = {
               },
             };
             if (pagoYaRegistrado) {
-              // ← NUEVO: dLocal ya tiene un registro del checkout con este mismo id
+              // PayPal ya tiene un registro del checkout con este mismo id
               await pagoYaRegistrado.update(registroFinal);
             } else {
               await PagoMercado.create({

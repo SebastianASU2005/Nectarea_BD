@@ -62,6 +62,47 @@ const transaccionService = {
     return moneda;
   },
 
+  /**
+   * Al volver el usuario del checkout, las pasarelas que solo "aprueban" (PayPal)
+   * necesitan que el servidor capture el pago. Devuelve la transacción actualizada.
+   * Es seguro llamarlo siempre: no hace nada para transacciones finalizadas o para
+   * pasarelas que confirman por webhook (Mercado Pago).
+   */
+  async sincronizarPagoAlRetorno(transaccionId) {
+    const transaccion = await Transaccion.findByPk(transaccionId);
+    if (!transaccion) return null;
+    if (
+      ["pagado", "fallido", "reembolsado", "expirado"].includes(
+        transaccion.estado_transaccion,
+      )
+    ) {
+      return transaccion;
+    }
+
+    const pago = await PagoMercado.findOne({
+      where: { id_transaccion: transaccion.id },
+      order: [["createdAt", "DESC"]],
+    });
+    if (!pago?.id_transaccion_pasarela) return transaccion;
+
+    const gateway = getGateway(pago.metodo_pasarela);
+    if (!gateway.requiereCapturaAlRetorno) return transaccion;
+
+    try {
+      const actualizado = await gateway.refreshPaymentStatus(
+        transaccion.id,
+        pago.id_transaccion_pasarela,
+      );
+      return actualizado?.transaccion || transaccion;
+    } catch (error) {
+      // El webhook (CHECKOUT.ORDER.APPROVED) o la conciliación reintentarán
+      console.error(
+        `⚠️ No se pudo sincronizar el pago de la transacción ${transaccion.id} al retorno: ${error.message}`,
+      );
+      return transaccion;
+    }
+  },
+
   async generarCheckoutParaTransaccionExistente(
     transaccion,
     metodo = null,
