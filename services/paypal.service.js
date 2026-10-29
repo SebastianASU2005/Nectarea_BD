@@ -19,11 +19,17 @@ const { sequelize } = require("../config/database");
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 require("dotenv").config();
+const { buildReturnUrls } = require("../config/paymentUrls");
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
-const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
 const PAYPAL_ENV = (process.env.PAYPAL_ENV || "sandbox").toLowerCase(); // sandbox | live
+// Acepta PAYPAL_WEBHOOK_ID o la variante por entorno (_SANDBOX / _LIVE)
+const PAYPAL_WEBHOOK_ID =
+  process.env.PAYPAL_WEBHOOK_ID ||
+  (PAYPAL_ENV === "live"
+    ? process.env.PAYPAL_WEBHOOK_ID_LIVE
+    : process.env.PAYPAL_WEBHOOK_ID_SANDBOX);
 const PAYPAL_BRAND_NAME = process.env.PAYPAL_BRAND_NAME || "Loteplan";
 const HOST_URL = (process.env.HOST_URL || "http://localhost:3000").trim();
 
@@ -69,18 +75,26 @@ let tokenCache = { value: null, expiresAt: 0 };
 
 async function getAccessToken(forzar = false) {
   if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
-    throw new Error("PayPal no configurado: faltan PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET.");
+    throw new Error(
+      "PayPal no configurado: faltan PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET.",
+    );
   }
   if (!forzar && tokenCache.value && Date.now() < tokenCache.expiresAt) {
     return tokenCache.value;
   }
-  const basic = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString("base64");
-  const { data } = await http.post("/v1/oauth2/token", "grant_type=client_credentials", {
-    headers: {
-      Authorization: `Basic ${basic}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+  const basic = Buffer.from(
+    `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`,
+  ).toString("base64");
+  const { data } = await http.post(
+    "/v1/oauth2/token",
+    "grant_type=client_credentials",
+    {
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     },
-  });
+  );
   tokenCache = {
     value: data.access_token,
     expiresAt: Date.now() + (Number(data.expires_in) - 60) * 1000,
@@ -96,7 +110,11 @@ async function paypalRequest(method, path, { data, headers = {} } = {}) {
       method,
       url: path,
       data,
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...headers },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...headers,
+      },
     });
   };
   try {
@@ -109,14 +127,18 @@ async function paypalRequest(method, path, { data, headers = {} } = {}) {
 
 /** Código de negocio de un error 4xx de PayPal (p. ej. ORDER_ALREADY_CAPTURED). */
 function issueDe(err) {
-  return err.response?.data?.details?.[0]?.issue || err.response?.data?.name || null;
+  return (
+    err.response?.data?.details?.[0]?.issue || err.response?.data?.name || null
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Helpers de dominio
 // ---------------------------------------------------------------------------
 function mapearEstado(statusRaw) {
-  return PAYPAL_STATUS_MAP[String(statusRaw || "").toUpperCase()] || "en_proceso";
+  return (
+    PAYPAL_STATUS_MAP[String(statusRaw || "").toUpperCase()] || "en_proceso"
+  );
 }
 
 function extraerCaptura(order) {
@@ -158,18 +180,25 @@ const paypalService = {
     const { monto, moneda, titulo } = datos;
 
     if (!MONEDAS_SOPORTADAS.includes(moneda)) {
-      throw new Error(`Moneda no soportada por PayPal en este sistema: ${moneda}`);
+      throw new Error(
+        `Moneda no soportada por PayPal en este sistema: ${moneda}`,
+      );
     }
     if (!monto || isNaN(monto) || monto <= 0) {
       throw new Error(`Monto inválido recibido: ${monto}`);
     }
+
+    const returnUrls = buildReturnUrls(transaccionId);
 
     const payload = {
       intent: "CAPTURE",
       purchase_units: [
         {
           custom_id: String(transaccionId), // vuelve en orden, captura y webhooks
-          description: String(titulo || `Transacción ${transaccionId}`).slice(0, 127),
+          description: String(titulo || `Transacción ${transaccionId}`).slice(
+            0,
+            127,
+          ),
           amount: { currency_code: moneda, value: Number(monto).toFixed(2) },
         },
       ],
@@ -180,9 +209,10 @@ const paypalService = {
             user_action: "PAY_NOW",
             shipping_preference: "NO_SHIPPING",
             payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
-            // Reutiliza las rutas de redirección existentes (routes/redireccion.routes.js)
-            return_url: `${HOST_URL}/pago/exito/${transaccionId}`,
-            cancel_url: `${HOST_URL}/pago/fallo/${transaccionId}`,
+            // Mismo destino que Mercado Pago (config/paymentUrls.js): el usuario vuelve
+            // al frontend y PagoResult llama a getPaymentStatus(refresh) que captura el pago.
+            return_url: returnUrls.success,
+            cancel_url: returnUrls.failure,
           },
         },
       },
@@ -194,21 +224,32 @@ const paypalService = {
         // Cada checkout generado es una orden nueva
         headers: { "PayPal-Request-Id": crypto.randomUUID() },
       });
-      const link = (data.links || []).find((l) => l.rel === "payer-action" || l.rel === "approve");
+      const link = (data.links || []).find(
+        (l) => l.rel === "payer-action" || l.rel === "approve",
+      );
       if (!data.id || !link?.href) {
         throw new Error("Respuesta de PayPal sin id o link de aprobación.");
       }
       console.log(`✅ [PayPal] Orden creada. ID: ${data.id}`);
       return { preferenceId: data.id, redirectUrl: link.href };
     } catch (err) {
-      const detalle = err.response?.data?.details?.[0]?.description || err.response?.data?.message || err.message;
-      console.error("❌ [PayPal] Error creando orden:", err.response?.data || err.message);
+      const detalle =
+        err.response?.data?.details?.[0]?.description ||
+        err.response?.data?.message ||
+        err.message;
+      console.error(
+        "❌ [PayPal] Error creando orden:",
+        err.response?.data || err.message,
+      );
       throw new Error(`Fallo al crear orden en PayPal: ${detalle}`);
     }
   },
 
   async fetchOrder(orderId) {
-    const { data } = await paypalRequest("GET", `/v2/checkout/orders/${encodeURIComponent(orderId)}`);
+    const { data } = await paypalRequest(
+      "GET",
+      `/v2/checkout/orders/${encodeURIComponent(orderId)}`,
+    );
     return data;
   },
 
@@ -271,7 +312,10 @@ const paypalService = {
     const status = estadoDeOrden(order);
     const captura = extraerCaptura(order);
 
-    if (status === "COMPLETED" && !coincideConTransaccion(captura.amount, transaccion)) {
+    if (
+      status === "COMPLETED" &&
+      !coincideConTransaccion(captura.amount, transaccion)
+    ) {
       logMismatch(orderId, captura.amount, transaccion);
       return null;
     }
@@ -282,7 +326,8 @@ const paypalService = {
       transactionId: order.id,
       paymentDetails: {
         transaction_amount: captura?.amount?.value ?? unidad?.amount?.value,
-        currency: captura?.amount?.currency_code ?? unidad?.amount?.currency_code,
+        currency:
+          captura?.amount?.currency_code ?? unidad?.amount?.currency_code,
         payment_method_type: "paypal",
         date_approved: captura?.create_time || null,
       },
@@ -297,28 +342,39 @@ const paypalService = {
   async esWebhookAutorizado(req) {
     if (!PAYPAL_WEBHOOK_ID) {
       if (PAYPAL_ENV !== "live") {
-        console.warn("⚠️ [PayPal] PAYPAL_WEBHOOK_ID no configurado: firma NO verificada (solo sandbox).");
+        console.warn(
+          "⚠️ [PayPal] PAYPAL_WEBHOOK_ID no configurado: firma NO verificada (solo sandbox).",
+        );
         return true;
       }
-      console.error("🚫 [PayPal] PAYPAL_WEBHOOK_ID no configurado en live. Webhook rechazado.");
+      console.error(
+        "🚫 [PayPal] PAYPAL_WEBHOOK_ID no configurado en live. Webhook rechazado.",
+      );
       return false;
     }
     try {
       const h = req.headers;
-      const { data } = await paypalRequest("POST", "/v1/notifications/verify-webhook-signature", {
-        data: {
-          auth_algo: h["paypal-auth-algo"],
-          cert_url: h["paypal-cert-url"],
-          transmission_id: h["paypal-transmission-id"],
-          transmission_sig: h["paypal-transmission-sig"],
-          transmission_time: h["paypal-transmission-time"],
-          webhook_id: PAYPAL_WEBHOOK_ID,
-          webhook_event: req.body,
+      const { data } = await paypalRequest(
+        "POST",
+        "/v1/notifications/verify-webhook-signature",
+        {
+          data: {
+            auth_algo: h["paypal-auth-algo"],
+            cert_url: h["paypal-cert-url"],
+            transmission_id: h["paypal-transmission-id"],
+            transmission_sig: h["paypal-transmission-sig"],
+            transmission_time: h["paypal-transmission-time"],
+            webhook_id: PAYPAL_WEBHOOK_ID,
+            webhook_event: req.body,
+          },
         },
-      });
+      );
       return data.verification_status === "SUCCESS";
     } catch (err) {
-      console.error("❌ [PayPal] Error verificando firma de webhook:", err.response?.data || err.message);
+      console.error(
+        "❌ [PayPal] Error verificando firma de webhook:",
+        err.response?.data || err.message,
+      );
       return false;
     }
   },
@@ -344,7 +400,10 @@ const paypalService = {
     try {
       return await this.resolverOrden(orderId, { capturar });
     } catch (err) {
-      console.error(`❌ [PayPal] Error resolviendo orden ${orderId}:`, err.response?.data || err.message);
+      console.error(
+        `❌ [PayPal] Error resolviendo orden ${orderId}:`,
+        err.response?.data || err.message,
+      );
       return null;
     }
   },
@@ -358,26 +417,38 @@ const paypalService = {
       const order = await this.fetchOrder(orderId);
       const captura = extraerCaptura(order);
       if (!captura) {
-        return { success: false, message: `La orden ${orderId} no tiene una captura para reembolsar.` };
+        return {
+          success: false,
+          message: `La orden ${orderId} no tiene una captura para reembolsar.`,
+        };
       }
-      const { data } = await paypalRequest("POST", `/v2/payments/captures/${captura.id}/refund`, {
-        data: {
-          amount: {
-            value: Number(monto ?? captura.amount.value).toFixed(2),
-            currency_code: captura.amount.currency_code,
+      const { data } = await paypalRequest(
+        "POST",
+        `/v2/payments/captures/${captura.id}/refund`,
+        {
+          data: {
+            amount: {
+              value: Number(monto ?? captura.amount.value).toFixed(2),
+              currency_code: captura.amount.currency_code,
+            },
+            note_to_payer: "Reembolso por pago duplicado o fuera de término.",
           },
-          note_to_payer: "Reembolso por pago duplicado o fuera de término.",
+          headers: { "PayPal-Request-Id": `refund-${captura.id}` },
         },
-        headers: { "PayPal-Request-Id": `refund-${captura.id}` },
-      });
+      );
       const estado = String(data.status || "").toUpperCase();
       if (estado === "COMPLETED") return { success: true };
       if (estado === "PENDING") return { success: true, pending: true };
       return { success: false, message: `Reembolso en estado ${estado}` };
     } catch (err) {
-      if (issueDe(err) === "CAPTURE_FULLY_REFUNDED") return { success: false, alreadyRefunded: true };
-      const detalle = err.response?.data?.details?.[0]?.description || err.message;
-      console.error("❌ [PayPal] Error en reembolso:", err.response?.data || err.message);
+      if (issueDe(err) === "CAPTURE_FULLY_REFUNDED")
+        return { success: false, alreadyRefunded: true };
+      const detalle =
+        err.response?.data?.details?.[0]?.description || err.message;
+      console.error(
+        "❌ [PayPal] Error en reembolso:",
+        err.response?.data || err.message,
+      );
       return { success: false, message: detalle };
     }
   },
@@ -389,10 +460,14 @@ const paypalService = {
     try {
       resolved = await this.resolverOrden(orderId, { capturar: true });
     } catch (err) {
-      console.error(`❌ [PayPal] Error obteniendo orden ${orderId}:`, err.response?.data || err.message);
+      console.error(
+        `❌ [PayPal] Error obteniendo orden ${orderId}:`,
+        err.response?.data || err.message,
+      );
       return null;
     }
-    if (!resolved || resolved.transaccionId !== Number(transaccionId)) return null;
+    if (!resolved || resolved.transaccionId !== Number(transaccionId))
+      return null;
 
     const transaccion = await Transaccion.findByPk(transaccionId);
     if (!transaccion) return null;
@@ -415,7 +490,9 @@ const paypalService = {
       } else {
         pagoMercado = await PagoMercado.create({
           id_transaccion: transaccionId,
-          monto_pagado: Number(resolved.paymentDetails.transaction_amount || transaccion.monto).toFixed(2),
+          monto_pagado: Number(
+            resolved.paymentDetails.transaction_amount || transaccion.monto,
+          ).toFixed(2),
           moneda: resolved.paymentDetails.currency || transaccion.moneda,
           metodo_pasarela: "paypal",
           id_transaccion_pasarela: String(orderId),
@@ -424,19 +501,30 @@ const paypalService = {
         await transaccion.update({ id_pago_pasarela: pagoMercado.id });
       }
     } catch (err) {
-      console.error(`❌ [PayPal] Error guardando pago de transacción ${transaccionId}:`, err.message);
+      console.error(
+        `❌ [PayPal] Error guardando pago de transacción ${transaccionId}:`,
+        err.message,
+      );
       return null;
     }
 
-    if (internalStatus === "aprobado" && transaccion.estado_transaccion !== "pagado") {
+    if (
+      internalStatus === "aprobado" &&
+      transaccion.estado_transaccion !== "pagado"
+    ) {
       const t = await sequelize.transaction();
       try {
-        await transaccionService.confirmarTransaccion(transaccionId, { transaction: t });
+        await transaccionService.confirmarTransaccion(transaccionId, {
+          transaction: t,
+        });
         await t.commit();
         await transaccion.reload();
       } catch (err) {
         await t.rollback();
-        console.error(`❌ [PayPal] Error confirmando transacción ${transaccionId}:`, err.message);
+        console.error(
+          `❌ [PayPal] Error confirmando transacción ${transaccionId}:`,
+          err.message,
+        );
         return null;
       }
     }

@@ -15,6 +15,7 @@ require("dotenv").config();
 const Transaccion = require("../models/transaccion");
 const PagoMercado = require("../models/pagoMercado");
 const { formatearMonto } = require("../utils/moneda");
+const { buildReturnUrls } = require("../config/paymentUrls");
 
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN;
@@ -123,11 +124,7 @@ const paymentService = {
           },
         ],
         external_reference: String(transaccionId),
-        back_urls: {
-          success: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/exito/${transaccionId}`,
-          failure: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/fallo/${transaccionId}`,
-          pending: `https://nonpresumptively-blamable-jarvis.ngrok-free.dev/pago/pendiente/${transaccionId}`,
-        },
+        back_urls: buildReturnUrls(transaccionId),
         notification_url: webhookUrl,
         auto_return: "approved",
         statement_descriptor: `LOTEPLAN-${String(transaccionId).slice(-6)}`,

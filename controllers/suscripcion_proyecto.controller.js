@@ -118,6 +118,15 @@ const suscripcionProyectoController = {
 
       const monto = parseFloat(proyecto.monto_inversion);
 
+      // Fallar ACÁ (antes de crear Pago/Transacción pendientes) si el proyecto no
+      // tiene un monto cobrable: evita transacciones huérfanas con monto 0.
+      if (isNaN(monto) || monto <= 0) {
+        await t.rollback();
+        return res.status(400).json({
+          error: `❌ El proyecto "${proyecto.nombre_proyecto}" no tiene un monto de inversión válido (${proyecto.monto_inversion}). Contacta a un administrador.`,
+        });
+      }
+
       // 🛑 PUNTO DE CONTROL DE SEGURIDAD 2FA 🛑
       if (user && user.is_2fa_enabled) {
         // Creamos los registros de pago y transacción en PENDIENTE
