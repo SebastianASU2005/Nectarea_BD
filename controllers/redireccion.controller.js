@@ -1,23 +1,39 @@
 // Archivo: controllers/redireccion.controller.js
+//
+// Rutas de retorno del BACKEND (routes/redireccion.routes.js). Las usa PayPal:
+// el usuario vuelve acá, se captura/sincroniza el pago en el servidor y recién
+// después se lo redirige a las pantallas /pago/* del FRONTEND, las mismas a las que
+// vuelve Mercado Pago. La URL base del front se define en config/paymentUrls.js
+// (variable de entorno PAYMENT_RETURN_BASE_URL).
 
 const transaccionService = require("../services/transaccion.service");
-const Transaccion = require("../models/transaccion"); // 👈 Importar modelo
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:8080";
+const Transaccion = require("../models/transaccion");
+const { buildReturnUrls } = require("../config/paymentUrls");
+
+const ESTADOS_FALLIDOS = ["fallido", "reembolsado", "expirado"];
+
+/**
+ * Pantalla del frontend que corresponde al estado real de la transacción.
+ * @param {number|string} transaccionId
+ * @param {string} estado estado_transaccion
+ * @returns {string}
+ */
+function urlSegunEstado(transaccionId, estado) {
+  const urls = buildReturnUrls(transaccionId);
+  if (estado === "pagado") return urls.success;
+  if (ESTADOS_FALLIDOS.includes(estado)) return urls.failure;
+  return urls.pending; // pendiente / en_proceso: PagoResult sigue consultando
+}
 
 const redireccionController = {
   async handleFailure(req, res) {
     const transaccionId = req.params.id;
     try {
       await transaccionService.cancelarTransaccionPorUsuario(transaccionId);
-      res.redirect(
-        `${FRONTEND_URL}/payment-result/${transaccionId}?status=failure&message=Operación%20cancelada`,
-      );
     } catch (error) {
       console.error(`Error en handleFailure: ${error.message}`);
-      res.redirect(
-        `${FRONTEND_URL}/payment-result/${transaccionId}?status=error&message=Error%20interno`,
-      );
     }
+    res.redirect(buildReturnUrls(transaccionId).failure);
   },
 
   async handleSuccess(req, res) {
@@ -27,44 +43,24 @@ const redireccionController = {
       // el usuario; para Mercado Pago no hace nada. Luego se lee el estado real.
       await transaccionService.sincronizarPagoAlRetorno(transaccionId);
 
-      // Obtener la transacción para saber su estado actual
       const transaccion = await Transaccion.findByPk(transaccionId);
       if (!transaccion) {
-        return res.redirect(
-          `${FRONTEND_URL}/payment-result/${transaccionId}?status=error&message=Transacción%20no%20encontrada`,
-        );
+        return res.redirect(buildReturnUrls(transaccionId).failure);
       }
 
-      let status = "pending";
-      if (transaccion.estado_transaccion === "pagado") {
-        status = "success";
-      } else if (
-        transaccion.estado_transaccion === "fallido" ||
-        transaccion.estado_transaccion === "reembolsado"
-      ) {
-        status = "failure";
-      } else {
-        // pendiente, en_proceso, etc.
-        status = "pending";
-      }
-
-      // Redirigir con el estado real (puede ser pending si el webhook aún no actualizó)
+      // Redirige con el estado real (puede ser pendiente si el webhook aún no llegó)
       res.redirect(
-        `${FRONTEND_URL}/payment-result/${transaccionId}?status=${status}`,
+        urlSegunEstado(transaccionId, transaccion.estado_transaccion),
       );
     } catch (error) {
       console.error(`Error en handleSuccess: ${error.message}`);
-      res.redirect(
-        `${FRONTEND_URL}/payment-result/${transaccionId}?status=error&message=Error%20al%20verificar%20pago`,
-      );
+      // La pantalla "pendiente" vuelve a consultar y reintenta la sincronización
+      res.redirect(buildReturnUrls(transaccionId).pending);
     }
   },
 
   async handlePending(req, res) {
-    const transaccionId = req.params.id;
-    res.redirect(
-      `${FRONTEND_URL}/payment-result/${transaccionId}?status=pending`,
-    );
+    res.redirect(buildReturnUrls(req.params.id).pending);
   },
 };
 
