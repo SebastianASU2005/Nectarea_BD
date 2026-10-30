@@ -71,6 +71,20 @@ const adhesionService = {
       }
       const montoPorCuota = montoTotal / cuotasTotales;
 
+      // Validar ANTES de crear suscripción/adhesión/pagos y de reservar cupo:
+      // con un valor móvil en 0 las cuotas quedarían en $0.00 y el pago fallaría
+      // recién en la pasarela ("Monto inválido en transacción ...: 0.00").
+      if (isNaN(valorMovil) || valorMovil <= 0) {
+        throw new Error(
+          `La cuota mensual del proyecto "${proyecto.nombre_proyecto}" no tiene un valor móvil válido (${cuotaMensual.valor_movil}). Contacta a un administrador.`,
+        );
+      }
+      if (isNaN(montoPorCuota) || montoPorCuota < 0.01) {
+        throw new Error(
+          `La cuota de adhesión calculada (${montoPorCuota}) es inferior al mínimo cobrable ($0.01). Revisa el valor móvil de la cuota del proyecto "${proyecto.nombre_proyecto}".`,
+        );
+      }
+
       // 4. Crear la SUSCRIPCIÓN
       const nuevaSuscripcion = await SuscripcionProyecto.create(
         {
