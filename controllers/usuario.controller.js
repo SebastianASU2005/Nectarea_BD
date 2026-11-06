@@ -1,5 +1,6 @@
 const usuarioService = require("../services/usuario.service");
 const auth2faService = require("../services/auth2fa.service");
+const authService = require("../services/auth.service");
 /**
  * Controlador de Express para manejar las peticiones HTTP relacionadas con el modelo Usuario.
  * Actúa como la capa entre la solicitud y la lógica de negocio (service).
@@ -15,7 +16,35 @@ const usuarioController = {
    */
   async create(req, res) {
     try {
-      const nuevoUsuario = await usuarioService.create(req.body); // 🛑 Ocultar datos sensibles antes de enviarlos al cliente.
+      // 🔒 HARDENING: esta ruta es PÚBLICA. Antes se pasaba req.body completo al servicio
+      // (asignación masiva): cualquiera podía enviar { "rol": "admin" } y crear un administrador.
+      // Ahora solo se aceptan campos de perfil y los campos de privilegio se fuerzan en el servidor
+      // (igual que en POST /api/auth/register).
+      const body = req.body || {};
+      const userData = {};
+      for (const campo of [
+        "nombre",
+        "apellido",
+        "email",
+        "dni",
+        "nombre_usuario",
+        "numero_telefono",
+      ]) {
+        if (body[campo] !== undefined) userData[campo] = body[campo];
+      }
+      if (typeof body.contraseña === "string" && body.contraseña.length > 0) {
+        userData.contraseña_hash = await authService.hashPassword(
+          body.contraseña,
+        );
+      } else if (typeof body.contraseña_hash === "string") {
+        userData.contraseña_hash = body.contraseña_hash; // compatibilidad con clientes existentes
+      }
+      userData.rol = "cliente";
+      userData.activo = false; // se activa al confirmar el email
+      userData.confirmado_email = false;
+      userData.is_2fa_enabled = false;
+
+      const nuevoUsuario = await usuarioService.create(userData); // 🛑 Ocultar datos sensibles antes de enviarlos al cliente.
 
       const usuarioPublico = {
         id: nuevoUsuario.id,

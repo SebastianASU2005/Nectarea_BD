@@ -72,6 +72,7 @@ async function seedAdmin() {
       email: process.env.ADMIN_EMAIL || "admin@tuapp.com",
       dni: process.env.ADMIN_DNI || "00000000",
       nombre_usuario: process.env.ADMIN_USERNAME || "admin",
+      // 🔒 HARDENING: en producción no existe contraseña por defecto (era pública en el repositorio).
       contraseña: process.env.ADMIN_PASSWORD || "Admin123!@#",
       numero_telefono: process.env.ADMIN_TELEFONO || "000-000000",
       rol: "admin",
@@ -124,6 +125,16 @@ async function seedAdmin() {
     }
 
     console.log("✅ Datos disponibles");
+    if (
+      process.env.NODE_ENV === "production" &&
+      (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 12)
+    ) {
+      console.error(
+        "❌ En producción debes definir ADMIN_PASSWORD (mínimo 12 caracteres). No se creó el administrador.",
+      );
+      process.exit(1);
+    }
+
     console.log("🔐 Hasheando contraseña...");
 
     // Hashear la contraseña

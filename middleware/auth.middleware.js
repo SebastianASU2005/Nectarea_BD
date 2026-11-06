@@ -20,6 +20,11 @@ const authMiddleware = {
       const decodedToken = jwtService.verifyToken(token);
       if (!decodedToken) {
         return res.status(401).json({ error: "Token inválido o expirado." });
+      } // 🔒 HARDENING: un token temporal de 2FA nunca es un token de sesión
+      if (decodedToken.purpose === "2fa") {
+        return res.status(403).json({
+          error: "Acceso denegado. Se requiere completar la verificación 2FA.",
+        });
       } // 2. Obtener el usuario de la BD
 
       const usuario = await usuarioService.findById(decodedToken.id);

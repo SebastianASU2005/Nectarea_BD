@@ -163,18 +163,25 @@ function verifySignatureForId(req, dataId) {
   const computeHash = (manifest) =>
     crypto.createHmac("sha256", secret).update(manifest).digest("hex");
 
+  // 🔒 HARDENING: comparación en tiempo constante (evita ataques de temporización sobre la firma)
+  const firmaCoincide = (hash) => {
+    const a = Buffer.from(hash, "utf8");
+    const b = Buffer.from(String(v1), "utf8");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
+
   if (requestId) {
     const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
     const hash = computeHash(manifest);
-    if (hash === v1) return true;
-    console.debug(`Firma con request-id falló: hash=${hash}, v1=${v1}`);
+    if (firmaCoincide(hash)) return true;
+    console.debug("Firma con request-id no coincide");
   }
 
   const manifestNoReq = `id:${dataId};ts:${ts};`;
   const hashNoReq = computeHash(manifestNoReq);
-  if (hashNoReq === v1) return true;
+  if (firmaCoincide(hashNoReq)) return true;
 
-  console.debug(`Firma sin request-id falló: hash=${hashNoReq}, v1=${v1}`);
+  console.debug("Firma sin request-id no coincide");
   return false;
 }
 

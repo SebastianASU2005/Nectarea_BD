@@ -13,6 +13,8 @@
 //    backend captura el pago y recién después redirige al frontend. Así el cobro
 //    funciona aunque el frontend todavía no esté desplegado.
 
+const { signPaymentReturn } = require("../utils/signedUrl");
+
 const DEFAULT_RETURN_BASE_URL =
   "https://nonpresumptively-blamable-jarvis.ngrok-free.dev";
 
@@ -44,9 +46,15 @@ function buildReturnUrls(transaccionId) {
  * @returns {{success: string, failure: string}}
  */
 function buildServerReturnUrls(transaccionId) {
+  // 🔒 HARDENING: la URL de cancelación lleva una firma HMAC. Sin ella, /pago/fallo/:id (ruta pública,
+  // sin JWT porque la visita el navegador al volver de la pasarela) permitiría cancelar la
+  // transacción de cualquier usuario simplemente probando ids.
+  const sigFallo = signPaymentReturn(transaccionId, "fallo");
   return {
     success: `${HOST_URL}/pago/exito/${transaccionId}`,
-    failure: `${HOST_URL}/pago/fallo/${transaccionId}`,
+    failure: sigFallo
+      ? `${HOST_URL}/pago/fallo/${transaccionId}/${sigFallo}`
+      : `${HOST_URL}/pago/fallo/${transaccionId}`,
   };
 }
 

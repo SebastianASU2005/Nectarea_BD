@@ -3,13 +3,15 @@ const express = require("express");
 const router = express.Router();
 const usuarioController = require("../controllers/usuario.controller");
 const authMiddleware = require("../middleware/auth.middleware");
+const { loginLimiter } = require("../middleware/rateLimiter");
 
 // ===========================================
 // Rutas de administración (Estáticas y Base)
 // ===========================================
 
 // Crear usuario (público)
-router.post("/", usuarioController.create);
+// 🔒 HARDENING: limitado (igual que /auth/register) para evitar creación masiva de cuentas
+router.post("/", loginLimiter, usuarioController.create);
 
 // Listar todos los usuarios (admin)
 router.get(

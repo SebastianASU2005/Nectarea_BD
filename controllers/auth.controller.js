@@ -4,6 +4,14 @@ const authService = require("../services/auth.service");
 const emailService = require("../services/email.service");
 const jwtService = require("../services/jwt.service");
 const auth2faService = require("../services/auth2fa.service");
+const bcryptjs = require("bcryptjs");
+
+// 🔒 HARDENING: hash señuelo (mismo costo que authService.hashPassword) para que el login de un
+// usuario inexistente tarde lo mismo que el de uno existente y no permita enumerar cuentas por tiempo.
+const DUMMY_PASSWORD_HASH = bcryptjs.hashSync(
+  crypto.randomBytes(16).toString("hex"),
+  10,
+);
 
 /**
  * Controlador principal para todas las operaciones de Autenticación de Usuario:
@@ -147,6 +155,10 @@ const authController = {
     try {
       const { email } = req.body;
 
+      if (typeof email !== "string") {
+        return res.status(400).json({ error: "Debe proporcionar un email." });
+      }
+
       await usuarioService.resendConfirmationEmail(email);
 
       res.status(200).json({
@@ -154,6 +166,18 @@ const authController = {
           "Si su cuenta necesita ser activada, hemos enviado un nuevo enlace a su correo electrónico.",
       });
     } catch (error) {
+      // 🔒 HARDENING: antes se distinguía "no existe la cuenta" / "ya confirmada" (enumeración de cuentas).
+      // Ahora ambos casos devuelven la misma respuesta genérica que el caso exitoso.
+      const msg = String(error.message || "");
+      if (
+        msg.includes("No existe una cuenta") ||
+        msg.includes("ya ha sido confirmada")
+      ) {
+        return res.status(200).json({
+          message:
+            "Si su cuenta necesita ser activada, hemos enviado un nuevo enlace a su correo electrónico.",
+        });
+      }
       res.status(400).json({ error: error.message });
     }
   },
@@ -174,10 +198,19 @@ const authController = {
    */
   async login(req, res) {
     try {
-      const { identificador, contraseña } = req.body;
+      const { identificador, contraseña } = req.body || {};
+
+      // 🔒 HARDENING: solo strings (un array/objeto en el JSON alteraría la consulta a la BD)
+      if (typeof identificador !== "string" || typeof contraseña !== "string") {
+        return res
+          .status(400)
+          .json({ error: "Debe proporcionar identificador y contraseña." });
+      }
+
       const user = await usuarioService.findByUsernameOrEmail(identificador);
 
       if (!user) {
+        await authService.comparePassword(contraseña, DUMMY_PASSWORD_HASH);
         return res.status(401).json({ error: "Credenciales incorrectas." });
       }
 
@@ -380,7 +413,14 @@ const authController = {
   async resetPassword(req, res) {
     try {
       const { token } = req.params;
-      const { nueva_contraseña } = req.body;
+      const { nueva_contraseña } = req.body || {};
+
+      // 🔒 HARDENING: misma regla mínima que changePassword (>= 8 caracteres)
+      if (typeof nueva_contraseña !== "string" || nueva_contraseña.length < 8) {
+        return res
+          .status(400)
+          .json({ error: "La contraseña debe tener al menos 8 caracteres." });
+      }
       const user = await usuarioService.findByResetToken(token);
       if (!user) {
         return res
@@ -399,6 +439,8 @@ const authController = {
         contraseña_hash: hashedPassword,
         reset_password_token: null,
         reset_password_expires: null,
+        // 🔒 HARDENING: al cambiar la contraseña se invalidan las sesiones abiertas
+        token_version: (user.token_version || 0) + 1,
       });
       res.status(200).json({
         message:

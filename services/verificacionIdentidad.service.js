@@ -114,11 +114,29 @@ const verificacionIdentidadService = {
     }
 
     // 3. Subir archivos al almacenamiento (usando storageService)
-    const timestamp = Date.now();
+    // 🔒 HARDENING: nombres no adivinables (timestamp + sufijo aleatorio) y extensión
+    // tomada de una lista fija (no del mimetype declarado por el cliente).
+    const crypto = require("crypto");
+    const timestamp = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}`;
+    const EXT_POR_MIME = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "image/heic": "heic",
+      "image/heif": "heif",
+      "image/avif": "avif",
+      "application/pdf": "pdf",
+      "video/mp4": "mp4",
+      "video/quicktime": "mov",
+      "video/webm": "webm",
+      "video/3gpp": "3gp",
+    };
+    const extDe = (mimetype) =>
+      EXT_POR_MIME[String(mimetype).toLowerCase()] || "bin";
     const basePath = `kyc/${id_usuario}`;
 
     const documentoFrenteBuffer = files.documento_frente[0].buffer;
-    const documentoFrenteExt = files.documento_frente[0].mimetype.split("/")[1];
+    const documentoFrenteExt = extDe(files.documento_frente[0].mimetype);
     const documentoFrentePath = `${basePath}/documento-frente-${timestamp}.${documentoFrenteExt}`;
 
     console.log(`📤 Subiendo documento frente: ${documentoFrentePath}`);
@@ -130,7 +148,7 @@ const verificacionIdentidadService = {
     let url_foto_documento_dorso = null;
     if (files.documento_dorso && files.documento_dorso[0]) {
       const documentoDorsoBuffer = files.documento_dorso[0].buffer;
-      const documentoDorsoExt = files.documento_dorso[0].mimetype.split("/")[1];
+      const documentoDorsoExt = extDe(files.documento_dorso[0].mimetype);
       const documentoDorsoPath = `${basePath}/documento-dorso-${timestamp}.${documentoDorsoExt}`;
 
       console.log(`📤 Subiendo documento dorso: ${documentoDorsoPath}`);
@@ -141,7 +159,7 @@ const verificacionIdentidadService = {
     }
 
     const selfieBuffer = files.selfie_con_documento[0].buffer;
-    const selfieExt = files.selfie_con_documento[0].mimetype.split("/")[1];
+    const selfieExt = extDe(files.selfie_con_documento[0].mimetype);
     const selfiePath = `${basePath}/selfie-${timestamp}.${selfieExt}`;
 
     console.log(`📤 Subiendo selfie: ${selfiePath}`);
@@ -153,7 +171,7 @@ const verificacionIdentidadService = {
     let url_video_verificacion = null;
     if (files.video_verificacion && files.video_verificacion[0]) {
       const videoBuffer = files.video_verificacion[0].buffer;
-      const videoExt = files.video_verificacion[0].mimetype.split("/")[1];
+      const videoExt = extDe(files.video_verificacion[0].mimetype);
       const videoPath = `${basePath}/video-${timestamp}.${videoExt}`;
 
       console.log(`📤 Subiendo video: ${videoPath}`);

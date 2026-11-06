@@ -10,7 +10,8 @@ const redireccionController = require("../controllers/redireccion.controller");
 
 // ¡ATENCIÓN! Estas rutas deben ser accesibles directamente desde el HOST_URL
 router.get("/pago/exito/:id", redireccionController.handleSuccess);
-router.get("/pago/fallo/:id", redireccionController.handleFailure); // 👈 ¡LISTO!
+router.get("/pago/fallo/:id", redireccionController.handleFailure); // 👈 ¡LISTO! (sin firma: solo redirige)
+router.get("/pago/fallo/:id/:sig", redireccionController.handleFailure); // 🔒 con firma: cancela la transacción
 router.get("/pago/pendiente/:id", redireccionController.handlePending);
 
 module.exports = router;

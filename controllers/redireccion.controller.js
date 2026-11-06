@@ -9,6 +9,10 @@
 const transaccionService = require("../services/transaccion.service");
 const Transaccion = require("../models/transaccion");
 const { buildReturnUrls } = require("../config/paymentUrls");
+const { verifyPaymentReturn } = require("../utils/signedUrl");
+
+// 🔒 HARDENING: el id de transacción debe ser un entero (evita rutas raras en la redirección)
+const idValido = (id) => /^\d{1,12}$/.test(String(id));
 
 const ESTADOS_FALLIDOS = ["fallido", "reembolsado", "expirado"];
 
@@ -28,16 +32,30 @@ function urlSegunEstado(transaccionId, estado) {
 const redireccionController = {
   async handleFailure(req, res) {
     const transaccionId = req.params.id;
-    try {
-      await transaccionService.cancelarTransaccionPorUsuario(transaccionId);
-    } catch (error) {
-      console.error(`Error en handleFailure: ${error.message}`);
+    if (!idValido(transaccionId)) {
+      return res.status(400).send("Solicitud inválida.");
+    }
+    // 🔒 HARDENING: solo se cancela si la URL trae la firma emitida al crear el pago.
+    // Sin firma válida (p. ej. alguien probando ids) únicamente se redirige a la pantalla de fallo.
+    if (verifyPaymentReturn(transaccionId, "fallo", req.params.sig)) {
+      try {
+        await transaccionService.cancelarTransaccionPorUsuario(transaccionId);
+      } catch (error) {
+        console.error(`Error en handleFailure: ${error.message}`);
+      }
+    } else {
+      console.warn(
+        `⚠️ /pago/fallo/${transaccionId} sin firma válida: no se cancela la transacción.`,
+      );
     }
     res.redirect(buildReturnUrls(transaccionId).failure);
   },
 
   async handleSuccess(req, res) {
     const transaccionId = req.params.id;
+    if (!idValido(transaccionId)) {
+      return res.status(400).send("Solicitud inválida.");
+    }
     try {
       // Pasarelas que requieren captura (PayPal) confirman el cobro aquí, al volver
       // el usuario; para Mercado Pago no hace nada. Luego se lee el estado real.
@@ -60,6 +78,9 @@ const redireccionController = {
   },
 
   async handlePending(req, res) {
+    if (!idValido(req.params.id)) {
+      return res.status(400).send("Solicitud inválida.");
+    }
     res.redirect(buildReturnUrls(req.params.id).pending);
   },
 };

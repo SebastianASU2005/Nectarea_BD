@@ -12,13 +12,35 @@ const memoryStorage = multer.memoryStorage(); // 🔥 Ahora todas las subidas us
 // 2. 📝 Filtros de Archivo
 // ===================================================================
 
+// 🔒 HARDENING: errores de validación de subida seguros de mostrar al cliente
+const uploadError = (msg) => {
+  const e = new Error(msg);
+  e.expose = true;
+  return e;
+};
+
+/** Tipos MIME permitidos en KYC (subidos por usuarios finales). */
+const KYC_ALLOWED_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+  "application/pdf",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/3gpp",
+]);
+
 /** Filtro para archivos de Contrato (Solo PDF). */
 const pdfFilter = (req, file, cb) => {
   if (file.mimetype === "application/pdf") {
     cb(null, true);
   } else {
     cb(
-      new Error("Solo se permiten archivos PDF para contratos y plantillas."),
+      uploadError("Solo se permiten archivos PDF para contratos y plantillas."),
       false,
     );
   }
@@ -26,15 +48,11 @@ const pdfFilter = (req, file, cb) => {
 
 /** Filtro para archivos KYC (Imágenes y PDF). */
 const kycFilter = (req, file, cb) => {
-  if (
-    file.mimetype.startsWith("image/") ||
-    file.mimetype === "application/pdf" ||
-    file.mimetype.startsWith("video/")
-  ) {
+  if (KYC_ALLOWED_MIMES.has(String(file.mimetype).toLowerCase())) {
     cb(null, true);
   } else {
     cb(
-      new Error(
+      uploadError(
         "Tipo de archivo no permitido para Verificación de Identidad (KYC).",
       ),
       false,
@@ -47,9 +65,59 @@ const imageFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
-    cb(new Error("Solo se permiten archivos de imagen."), false);
+    cb(uploadError("Solo se permiten archivos de imagen."), false);
   }
 };
+
+// ===================================================================
+// 2.b 🔒 Verificación del CONTENIDO real del archivo (magic bytes)
+// El mimetype lo declara el cliente y es falsificable; se comprueba la firma del archivo.
+// ===================================================================
+const startsWith = (buf, bytes, offset = 0) =>
+  buf.length >= offset + bytes.length &&
+  bytes.every((b, i) => buf[offset + i] === b);
+const ascii = (buf, str, offset = 0) =>
+  startsWith(buf, [...str].map((c) => c.charCodeAt(0)), offset);
+
+/** Devuelve true/false si la firma coincide, o null si no hay regla para ese tipo. */
+function contentMatchesMime(buf, mime) {
+  const m = String(mime).toLowerCase();
+  if (m === "application/pdf") return ascii(buf, "%PDF-");
+  if (m === "image/jpeg") return startsWith(buf, [0xff, 0xd8, 0xff]);
+  if (m === "image/png")
+    return startsWith(buf, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (m === "image/gif") return ascii(buf, "GIF87a") || ascii(buf, "GIF89a");
+  if (m === "image/webp") return ascii(buf, "RIFF") && ascii(buf, "WEBP", 8);
+  if (
+    ["image/heic", "image/heif", "image/avif", "video/mp4", "video/quicktime", "video/3gpp"].includes(m)
+  )
+    return ascii(buf, "ftyp", 4);
+  if (m === "video/webm") return startsWith(buf, [0x1a, 0x45, 0xdf, 0xa3]);
+  return null;
+}
+
+function verifyUploadedContent(req, res, next) {
+  const files = [];
+  if (req.file) files.push(req.file);
+  if (req.files) {
+    if (Array.isArray(req.files)) files.push(...req.files);
+    else Object.values(req.files).forEach((arr) => files.push(...arr));
+  }
+  for (const f of files) {
+    if (!f.buffer || f.buffer.length === 0) {
+      return res.status(400).json({ error: "El archivo subido está vacío." });
+    }
+    if (contentMatchesMime(f.buffer, f.mimetype) === false) {
+      return res.status(400).json({
+        error: `El contenido del archivo "${f.fieldname}" no coincide con su tipo declarado.`,
+      });
+    }
+  }
+  next();
+}
+
+// Multer + verificación de contenido, encadenados (Express acepta arrays de middlewares)
+const withContentCheck = (multerHandler) => [multerHandler, verifyUploadedContent];
 
 // ===================================================================
 // 3. 📦 Configuraciones de Subida Base (todo con memoryStorage)
@@ -80,13 +148,15 @@ const imageUploadBase = multer({
 // ===================================================================
 
 module.exports = {
-  uploadSignedContract: pdfUploadBase.single("pdfFile"),
-  uploadPlantilla: pdfUploadBase.single("plantillaFile"),
-  uploadKYCData: kycUploadBase.fields([
-    { name: "documento_frente", maxCount: 1 },
-    { name: "documento_dorso", maxCount: 1 },
-    { name: "selfie_con_documento", maxCount: 1 },
-    { name: "video_verificacion", maxCount: 1 },
-  ]),
-  uploadImage: imageUploadBase.single("image"), // ✅ Ahora también en memoria
+  uploadSignedContract: withContentCheck(pdfUploadBase.single("pdfFile")),
+  uploadPlantilla: withContentCheck(pdfUploadBase.single("plantillaFile")),
+  uploadKYCData: withContentCheck(
+    kycUploadBase.fields([
+      { name: "documento_frente", maxCount: 1 },
+      { name: "documento_dorso", maxCount: 1 },
+      { name: "selfie_con_documento", maxCount: 1 },
+      { name: "video_verificacion", maxCount: 1 },
+    ]),
+  ),
+  uploadImage: withContentCheck(imageUploadBase.single("image")), // ✅ Ahora también en memoria
 };

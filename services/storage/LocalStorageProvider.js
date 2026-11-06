@@ -10,6 +10,11 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+// 🔒 HARDENING: comparar contra "uploads" + separador. Con solo startsWith(UPLOADS_DIR), una ruta
+// como "../uploads_x/archivo" (carpeta hermana con el mismo prefijo) pasaría la validación.
+const isInsideUploads = (absolutePath) =>
+  absolutePath === UPLOADS_DIR || absolutePath.startsWith(UPLOADS_DIR + path.sep);
+
 class LocalStorageProvider {
   calculateHashFromBuffer(buffer) {
     if (!buffer || !(buffer instanceof Buffer)) {
@@ -21,7 +26,7 @@ class LocalStorageProvider {
   async saveFile(buffer, relativeFilePath) {
     const safePath = path.normalize(relativeFilePath);
     const absoluteFilePath = path.join(UPLOADS_DIR, safePath);
-    if (!absoluteFilePath.startsWith(UPLOADS_DIR)) {
+    if (!isInsideUploads(absoluteFilePath)) {
       throw new Error("Ruta fuera del directorio de subidas.");
     }
     const dir = path.dirname(absoluteFilePath);
@@ -32,7 +37,7 @@ class LocalStorageProvider {
 
   async getFileStream(relativeFilePath) {
     const absolutePath = path.join(UPLOADS_DIR, relativeFilePath);
-    if (!absolutePath.startsWith(UPLOADS_DIR)) return null;
+    if (!isInsideUploads(absolutePath)) return null;
     if (!fs.existsSync(absolutePath)) return null;
     return fs.createReadStream(absolutePath);
   }
@@ -46,7 +51,7 @@ class LocalStorageProvider {
 
   async deleteFile(relativeFilePath) {
     const absolutePath = path.join(UPLOADS_DIR, relativeFilePath);
-    if (!absolutePath.startsWith(UPLOADS_DIR)) return false;
+    if (!isInsideUploads(absolutePath)) return false;
     try {
       await fsp.unlink(absolutePath);
       return true;
@@ -58,13 +63,13 @@ class LocalStorageProvider {
 
   async fileExists(relativeFilePath) {
     const absolutePath = path.join(UPLOADS_DIR, relativeFilePath);
-    if (!absolutePath.startsWith(UPLOADS_DIR)) return false;
+    if (!isInsideUploads(absolutePath)) return false;
     return fs.existsSync(absolutePath);
   }
 
   async calculateHashFromFile(relativeFilePath) {
     const absolutePath = path.join(UPLOADS_DIR, relativeFilePath);
-    if (!absolutePath.startsWith(UPLOADS_DIR)) {
+    if (!isInsideUploads(absolutePath)) {
       throw new Error("Acceso denegado");
     }
     const buffer = await fsp.readFile(absolutePath);

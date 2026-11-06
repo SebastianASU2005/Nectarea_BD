@@ -50,6 +50,24 @@ if (process.env.NODE_ENV === "development") {
   console.log("✅ Trust proxy habilitado (1 salto — Railway edge)");
 }
 
+// ===============================================
+// 🔒 HARDENING: opciones globales de seguridad
+// ===============================================
+const securityHeaders = require("./middleware/securityHeaders");
+const privateUploadsGuard = require("./middleware/privateUploads");
+const authMiddlewareGlobal = require("./middleware/auth.middleware");
+const { jsonReplacer } = require("./utils/jsonSanitizer");
+
+// No revelar el framework (cabecera X-Powered-By: Express)
+app.disable("x-powered-by");
+
+// Nunca serializar secretos (hash de contraseña, secreto 2FA, tokens) en respuestas JSON
+// y firmar con vencimiento las URLs de archivos privados (KYC/contratos).
+app.set("json replacer", jsonReplacer);
+
+// Cabeceras de seguridad HTTP
+app.use(securityHeaders);
+
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
 function captureRawBody(req, res, buf, encoding) {
   if (buf && buf.length) {
@@ -60,19 +78,59 @@ function captureRawBody(req, res, buf, encoding) {
 // ====================================================================
 // 2. MIDDLEWARES GLOBALES BÁSICOS (SIN BODY PARSING AÚN)
 // ====================================================================
+// 🔒 HARDENING: lista blanca de orígenes.
+//  - FRONTEND_URL: origen del front (también se usa para armar links en los emails).
+//  - CORS_ALLOWED_ORIGINS (opcional): orígenes extra separados por coma
+//    (p. ej. dominio definitivo + preview). Sin "/" final y sin rutas.
+const normalizeOrigin = (o) => String(o || "").trim().replace(/\/+$/, "");
+const allowedOrigins = new Set(
+  [
+    ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173"]),
+    process.env.FRONTEND_URL,
+    ...(process.env.CORS_ALLOWED_ORIGINS || "").split(","),
+  ]
+    .map(normalizeOrigin)
+    .filter(Boolean),
+);
+console.log("🔐 Orígenes CORS permitidos:", [...allowedOrigins].join(", ") || "(ninguno)");
+
 const corsOptions = {
-  origin:
-    process.env.NODE_ENV === "production"
-      ? process.env.FRONTEND_URL
-      : "http://localhost:5173",
+  origin: (origin, callback) => {
+    // Sin cabecera Origin (Postman, webhooks, server-to-server): CORS no aplica.
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
+    return callback(null, false);
+  },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
   optionsSuccessStatus: 204,
+  maxAge: 600,
 };
 app.use(cors(corsOptions));
 
 // --- CRUCIAL: SERVIR ARCHIVOS ESTÁTICOS ---
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// 🔒 HARDENING: /uploads/kyc y /uploads/contratos requieren URL firmada o JWT de admin
+// (ver middleware/privateUploads.js). /uploads/imagenes sigue siendo público.
+app.use(
+  "/uploads",
+  privateUploadsGuard,
+  (req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // Neutraliza contenido activo (p. ej. SVG con scripts); los PDF se excluyen para que el visor funcione.
+    if (!/\.pdf$/i.test(req.path)) {
+      res.setHeader(
+        "Content-Security-Policy",
+        "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
+      );
+    }
+    next();
+  },
+  express.static(path.join(__dirname, "uploads"), {
+    dotfiles: "deny",
+    index: false,
+    redirect: false,
+  }),
+);
 
 // Importa la conexión a la base de datos
 const { sequelize } = require("./config/database");
@@ -107,7 +165,12 @@ const upload = multer({ storage: storage });
 // ================================================================
 // 🧪 RUTA DE PRUEBA DE EMAIL (con OAuth2)
 // ================================================================
-app.get("/test-email", async (req, res) => {
+// 🔒 HARDENING: antes era público (cualquiera podía disparar correos). Ahora solo admin.
+app.get(
+  "/test-email",
+  authMiddlewareGlobal.authenticate,
+  authMiddlewareGlobal.authorizeAdmin,
+  async (req, res) => {
   try {
     await emailService.sendEmail(
       "administracion@loteplan.com", // Cambia por tu correo si quieres probar
@@ -118,9 +181,10 @@ app.get("/test-email", async (req, res) => {
     res.send("✅ Correo de prueba enviado correctamente (OAuth2)");
   } catch (error) {
     console.error("❌ Error en /test-email:", error.message);
-    res.status(500).send(`❌ Error: ${error.message}`);
+    res.status(500).send("❌ Error al enviar el correo de prueba.");
   }
-});
+  },
+);
 
 // ====================================================================
 // 3. IMPORTACIÓN DE MODELOS (CRÍTICO)
@@ -259,9 +323,18 @@ app.use((err, req, res, next) => {
   // Si la respuesta ya fue enviada, delegamos al handler por defecto
   if (res.headersSent) return next(err);
 
-  res.status(err.status || 500).json({
+  const status = err.status || err.statusCode || 500;
+  // 🔒 HARDENING: en producción no se exponen mensajes internos en errores 5xx.
+  const exponerMensaje =
+    status < 500 ||
+    process.env.NODE_ENV !== "production" ||
+    err.expose === true ||
+    err.name === "MulterError"; // errores de validación de subidas: seguros de mostrar
+  res.status(status).json({
     success: false,
-    error: err.message || "Error interno del servidor",
+    error: exponerMensaje
+      ? err.message || "Error interno del servidor"
+      : "Error interno del servidor",
   });
 });
 // ====================================================================
@@ -378,7 +451,15 @@ async function synchronizeDatabase() {
 
       // ======================================================
       // 🧪 PRUEBA DE CORREO CON OAUTH2 AL ARRANCAR EL SERVIDOR
+      // 🔒 HARDENING: en producción solo si SEND_STARTUP_TEST_EMAIL=true
+      // (evita un correo en cada reinicio/deploy y un destinatario fijo en el código).
       // ======================================================
+      if (
+        process.env.NODE_ENV === "production" &&
+        process.env.SEND_STARTUP_TEST_EMAIL !== "true"
+      ) {
+        return;
+      }
       try {
         await emailService.sendEmail(
           "astudillo5677@gmail.com", // Cambia por tu email si quieres verlo
