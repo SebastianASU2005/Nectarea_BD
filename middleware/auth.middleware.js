@@ -1,6 +1,8 @@
 // Añadir la importación del servicio de usuario
 const jwtService = require("../services/jwt.service");
 const usuarioService = require("../services/usuario.service");
+// ⚡ PERFORMANCE: caché corta (TTL 5 s, invalidada por hooks) para no consultar la BD en cada request
+const userCache = require("../utils/userCache");
 
 const authMiddleware = {
   // Middleware para verificar que el usuario está autenticado
@@ -27,7 +29,7 @@ const authMiddleware = {
         });
       } // 2. Obtener el usuario de la BD
 
-      const usuario = await usuarioService.findById(decodedToken.id);
+      const usuario = await userCache.getById(decodedToken.id);
 
       if (!usuario) {
         return res
@@ -91,7 +93,8 @@ const authMiddleware = {
 
     try {
       // 2. 🚨 CONSULTAR DIRECTAMENTE A LA BD para obtener solo el rol actual
-      const usuarioActualizado = await usuarioService.findById(userId);
+      // ⚡ Misma lectura (rol vigente) pero servida por la caché: ya no repite el SELECT de authenticate
+      const usuarioActualizado = await userCache.getById(userId);
 
       // 3. Verificar la existencia y el rol
       if (usuarioActualizado && usuarioActualizado.rol === "admin") {

@@ -1,4 +1,5 @@
-const loteService = require("../services/lote.service");
+const loteService = require("../services/lote.service");
+const { getPagination } = require("../utils/pagination");
 const proyectoService = require("../services/proyecto.service");
 const pujaService = require("../services/puja.service"); // Importado, pero no usado directamente en el controlador
 const mensajeService = require("../services/mensaje.service");
@@ -22,7 +23,7 @@ const loteController = {
    */
   async findAll(req, res) {
     try {
-      const lotes = await loteService.findAll();
+      const lotes = await loteService.findAll(getPagination(req));
       res.status(200).json(lotes);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -198,7 +199,7 @@ const loteController = {
    */
   async findAllActivo(req, res) {
     try {
-      const lotes = await loteService.findAllActivo();
+      const lotes = await loteService.findAllActivo(getPagination(req));
       res.status(200).json(lotes);
     } catch (error) {
       res.status(500).json({ error: error.message });

@@ -1,4 +1,5 @@
-const Imagen = require("../models/imagen");
+const Imagen = require("../models/imagen");
+const { paginationOptions } = require("../utils/pagination");
 const { Op } = require("sequelize"); // Se mantiene para el uso potencial de operadores avanzados de Sequelize.
 
 /**
@@ -40,8 +41,8 @@ const imagenService = {
    * @returns {Promise<Imagen[]>} Lista completa de todas las imágenes.
    */,
 
-  async findAll() {
-    return await Imagen.findAll();
+  async findAll(opts = {}) {
+    return await Imagen.findAll(paginationOptions(opts));
   }
   /**
    * @async
@@ -50,8 +51,9 @@ const imagenService = {
    * @returns {Promise<Imagen[]>} Lista de imágenes activas disponibles para mostrar.
    */,
 
-  async findAllActivo() {
-    return await Imagen.findAll({ where: { activo: true } });
+  async findAllActivo(opts = {}) {
+    return await Imagen.findAll({
+      ...paginationOptions(opts), where: { activo: true } });
   }
   /**
    * @async

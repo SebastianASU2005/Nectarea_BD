@@ -1,6 +1,7 @@
 // Archivo: controllers/pago.controller.js
 
-const pagoService = require("../services/pago.service");
+const pagoService = require("../services/pago.service");
+const { getPagination } = require("../utils/pagination");
 const transaccionService = require("../services/transaccion.service");
 const auth2faService = require("../services/auth2fa.service");
 const usuarioService = require("../services/usuario.service");
@@ -132,7 +133,7 @@ const pagoController = {
 
   async findAll(req, res) {
     try {
-      const pagos = await pagoService.findAll();
+      const pagos = await pagoService.findAll(getPagination(req));
       res.status(200).json(pagos);
     } catch (error) {
       res.status(500).json({ error: error.message });

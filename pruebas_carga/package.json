@@ -1,0 +1,15 @@
+{
+  "name": "crowdfunding-pruebas-carga",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pruebas de carga/estres para el backend. Usar SOLO contra una BD local o de staging.",
+  "scripts": {
+    "carga": "node run.js",
+    "carrera-pujas": "node race_bids.js"
+  },
+  "dependencies": {
+    "autocannon": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.0"
+  }
+}

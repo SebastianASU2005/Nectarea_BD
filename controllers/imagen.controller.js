@@ -1,4 +1,5 @@
-const imagenService = require("../services/imagen.service");
+const imagenService = require("../services/imagen.service");
+const { getPagination } = require("../utils/pagination");
 const storageService = require("../services/storage");
 const path = require("path"); // ✅ importación añadida
 
@@ -97,7 +98,7 @@ const imagenController = {
 
   async findAll(req, res) {
     try {
-      const imagenes = await imagenService.findAll();
+      const imagenes = await imagenService.findAll(getPagination(req));
       res.json(imagenes);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -106,7 +107,7 @@ const imagenController = {
 
   async findAllActivo(req, res) {
     try {
-      const imagenes = await imagenService.findAllActivo();
+      const imagenes = await imagenService.findAllActivo(getPagination(req));
       res.json(imagenes);
     } catch (error) {
       res.status(500).json({ error: error.message });

@@ -1,9 +1,13 @@
 # Dependencias
 /node_modules
 
-# Archivos de entorno
+# Archivos de entorno / secretos
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
 
 # Archivos de log
 npm-debug.log*
@@ -11,6 +15,7 @@ yarn-debug.log*
 yarn-error.log*
 /logs
 /uploads
+/uploads/**
 
 # Archivos de sistema
 .DS_Store

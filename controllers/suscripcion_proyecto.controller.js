@@ -1,7 +1,8 @@
 // Archivo: controllers/suscripcion_proyecto.controller.js
 
 // Importaciones de servicios
-const suscripcionProyectoService = require("../services/suscripcion_proyecto.service");
+const suscripcionProyectoService = require("../services/suscripcion_proyecto.service");
+const { getPagination } = require("../utils/pagination");
 const resumenCuentaService = require("../services/resumen_cuenta.service");
 const PagoService = require("../services/pago.service");
 const TransaccionService = require("../services/transaccion.service");
@@ -403,7 +404,7 @@ const suscripcionProyectoController = {
    */
   async findAll(req, res) {
     try {
-      const suscripciones = await suscripcionProyectoService.findAll();
+      const suscripciones = await suscripcionProyectoService.findAll(getPagination(req));
       res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -417,7 +418,7 @@ const suscripcionProyectoController = {
    */
   async findAllActivo(req, res) {
     try {
-      const suscripciones = await suscripcionProyectoService.findAllActivo();
+      const suscripciones = await suscripcionProyectoService.findAllActivo(getPagination(req));
       res.status(200).json(suscripciones);
     } catch (error) {
       res.status(500).json({ error: error.message });

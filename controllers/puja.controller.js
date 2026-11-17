@@ -1,4 +1,5 @@
-const pujaService = require("../services/puja.service");
+const pujaService = require("../services/puja.service");
+const { getPagination } = require("../utils/pagination");
 const TransaccionService = require("../services/transaccion.service");
 // 🛑 NUEVAS IMPORTACIONES REQUERIDAS PARA 2FA 🛑
 const UsuarioService = require("../services/usuario.service");
@@ -194,7 +195,7 @@ const pujaController = {
    */
   async findAll(req, res) {
     try {
-      const pujas = await pujaService.findAll();
+      const pujas = await pujaService.findAll(getPagination(req));
       res.status(200).json(pujas);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -226,7 +227,7 @@ const pujaController = {
    */
   async findAllActivo(req, res) {
     try {
-      const pujasActivas = await pujaService.findAllActivo();
+      const pujasActivas = await pujaService.findAllActivo(getPagination(req));
       res.status(200).json(pujasActivas);
     } catch (error) {
       res.status(500).json({ error: error.message });

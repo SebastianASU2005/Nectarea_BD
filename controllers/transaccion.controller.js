@@ -1,4 +1,5 @@
-const transaccionService = require("../services/transaccion.service");
+const transaccionService = require("../services/transaccion.service");
+const { getPagination } = require("../utils/pagination");
 // ⚠️ Importar sequelize para el manejo de transacciones de base de datos
 const { sequelize } = require("../config/database");
 
@@ -36,7 +37,7 @@ const transaccionController = {
    */
   async findAll(req, res) {
     try {
-      const transacciones = await transaccionService.findAll();
+      const transacciones = await transaccionService.findAll(getPagination(req));
       res.status(200).json(transacciones);
     } catch (error) {
       res.status(500).json({ error: error.message });

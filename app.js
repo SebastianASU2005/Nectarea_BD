@@ -13,6 +13,36 @@ const paymentController = require("./controllers/pagoMercado.controller");
 // Carga las variables de entorno
 require("dotenv").config();
 
+// ===============================================
+// ⚡ ROBUSTEZ DE PROCESO
+// ===============================================
+// Flags de despliegue (todos opcionales; los valores por defecto mantienen el comportamiento actual):
+//   ENABLE_CRON=false            -> no arranca los cron jobs (útil para correrlos en un servicio "worker" aparte)
+//   ENABLE_HTTP=false            -> no abre el puerto HTTP (servicio "worker" que solo corre cron jobs)
+//   DB_SYNC_ALTER=false          -> en arranque hace sync() sin `alter` (más rápido; úsalo cuando el esquema ya está migrado)
+//   SHUTDOWN_TIMEOUT_MS=10000    -> espera máxima para terminar requests en curso al recibir SIGTERM
+//   EXIT_ON_UNHANDLED_REJECTION=true -> volver al comportamiento de Node (caer ante una promesa rechazada sin capturar)
+const ENABLE_CRON = process.env.ENABLE_CRON !== "false";
+const ENABLE_HTTP = process.env.ENABLE_HTTP !== "false";
+const SYNC_OPTIONS = process.env.DB_SYNC_ALTER === "false" ? {} : { alter: true };
+const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 10000;
+let shuttingDown = false;
+let httpServer = null;
+
+// Node 15+ termina el proceso ante una promesa rechazada sin capturar: un solo `await` sin try/catch
+// tiraba abajo la API completa y cortaba todos los requests en curso. Se registra y se sigue.
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️ unhandledRejection:", reason);
+  if (process.env.EXIT_ON_UNHANDLED_REJECTION === "true") process.exit(1);
+});
+// Una excepción síncrona sin capturar deja el proceso en estado desconocido: cierre ordenado y salida con error.
+process.on("uncaughtException", (err) => {
+  console.error("💥 uncaughtException:", err);
+  gracefulShutdown("uncaughtException", 1);
+});
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM", 0));
+process.on("SIGINT", () => gracefulShutdown("SIGINT", 0));
+
 // ✅ IMPORTAMOS EL SERVICIO DE EMAIL PARA LAS PRUEBAS
 const emailService = require("./services/email.service");
 
@@ -67,6 +97,25 @@ app.set("json replacer", jsonReplacer);
 
 // Cabeceras de seguridad HTTP
 app.use(securityHeaders);
+
+// ⚡ Durante el apagado, avisar a los clientes que no reutilicen la conexión (keep-alive).
+app.use((req, res, next) => {
+  if (shuttingDown) res.setHeader("Connection", "close");
+  next();
+});
+
+// ⚡ Compresión gzip de las respuestas JSON/texto (los listados pesan MBs). Imágenes/PDF no se
+// comprimen (el filtro por defecto solo comprime tipos comprimibles). Si el módulo no está
+// instalado (aún no corriste `npm install`), la app arranca igual sin compresión.
+let compression = null;
+try {
+  compression = require("compression");
+} catch (e) {
+  console.warn("[perf] Módulo 'compression' no instalado: respuestas sin gzip. Ejecuta `npm install`.");
+}
+if (compression) {
+  app.use(compression({ threshold: 1024, level: 4 }));
+}
 
 // 🚨 FUNCIÓN CRÍTICA PARA CAPTURAR EL CUERPO RAW (SIN PARSEAR)
 function captureRawBody(req, res, buf, encoding) {
@@ -129,11 +178,109 @@ app.use(
     dotfiles: "deny",
     index: false,
     redirect: false,
+    // ⚡ Las imágenes públicas llevan nombre único (timestamp+random): se pueden cachear en el
+    // navegador/CDN. Los archivos privados (KYC/contratos) ya traen "private, no-store" y no se tocan.
+    setHeaders: (res, filePath) => {
+      if (!res.getHeader("Cache-Control") && /[\\/]uploads[\\/]imagenes[\\/]/.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=604800");
+      }
+    },
   }),
 );
 
 // Importa la conexión a la base de datos
 const { sequelize } = require("./config/database");
+
+// ===============================================
+// ⚡ HEALTH CHECKS (antes del rate limiter: no consumen cupo ni tocan la BD salvo /ready)
+// ===============================================
+const crypto = require("crypto");
+const { monitorEventLoopDelay } = require("perf_hooks");
+const loopDelay = monitorEventLoopDelay({ resolution: 20 });
+loopDelay.enable();
+const publicCache = require("./middleware/publicCache");
+
+// Liveness: el proceso responde. Úsalo como healthcheck de Railway.
+app.get("/health", (req, res) => {
+  res.status(shuttingDown ? 503 : 200).json({
+    status: shuttingDown ? "shutting_down" : "ok",
+    uptime: Math.round(process.uptime()),
+  });
+});
+
+// Readiness: además la BD responde (máx. 2 s).
+app.get("/health/ready", async (req, res) => {
+  if (shuttingDown) return res.status(503).json({ status: "shutting_down" });
+  let timer;
+  try {
+    await Promise.race([
+      sequelize.query("SELECT 1"),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("db timeout")), 2000);
+      }),
+    ]);
+    return res.status(200).json({ status: "ready" });
+  } catch (e) {
+    return res.status(503).json({ status: "db_unavailable" });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+// Métricas de diagnóstico: DESACTIVADO salvo que definas HEALTH_METRICS_TOKEN (y se envíe en x-health-token).
+app.get("/health/metrics", (req, res) => {
+  const token = process.env.HEALTH_METRICS_TOKEN;
+  const sent = String(req.headers["x-health-token"] || "");
+  const ok =
+    token &&
+    sent.length === token.length &&
+    crypto.timingSafeEqual(Buffer.from(sent), Buffer.from(token));
+  if (!ok) return res.status(404).end();
+  const pool = sequelize.connectionManager.pool;
+  const mem = process.memoryUsage();
+  const body = {
+    pool: { size: pool.size, available: pool.available, using: pool.using, waiting: pool.waiting, max: pool.maxSize },
+    eventLoopMs: {
+      p50: +(loopDelay.percentile(50) / 1e6).toFixed(1),
+      p99: +(loopDelay.percentile(99) / 1e6).toFixed(1),
+      max: +(loopDelay.max / 1e6).toFixed(1),
+    },
+    memoryMB: { rss: +(mem.rss / 1048576).toFixed(0), heapUsed: +(mem.heapUsed / 1048576).toFixed(0) },
+    publicCache: publicCache.stats(),
+  };
+  loopDelay.reset();
+  res.json(body);
+});
+
+// Cierre ordenado: deja de aceptar conexiones nuevas, espera los requests en curso y cierra el pool.
+async function gracefulShutdown(signal, exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`🛑 ${signal} recibido: cerrando de forma ordenada...`);
+  const force = setTimeout(() => {
+    console.error("⏱️ Tiempo de cierre agotado: salida forzada.");
+    process.exit(exitCode || 1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  force.unref();
+  try {
+    if (httpServer) {
+      const closed = new Promise((resolve) => httpServer.close(resolve));
+      // Las conexiones keep-alive que terminan su request DESPUÉS del SIGTERM quedan ociosas y
+      // mantendrían el servidor abierto: se barren periódicamente hasta que cierre.
+      const sweep = setInterval(() => {
+        if (typeof httpServer.closeIdleConnections === "function") httpServer.closeIdleConnections();
+      }, 200);
+      await closed;
+      clearInterval(sweep);
+    }
+    await sequelize.close();
+    console.log("✅ Cierre ordenado completado.");
+    process.exit(exitCode);
+  } catch (e) {
+    console.error("❌ Error durante el cierre:", e);
+    process.exit(exitCode || 1);
+  }
+}
 
 // ✅ NUEVO: Importar rate limiters
 const {
@@ -289,6 +436,9 @@ console.log("✅ Body parsing global activado");
 app.use(globalRateLimiter);
 console.log("✅ Rate limiter global activado");
 
+// ⚡ Micro-caché de GET públicos (proyectos/lotes). Se invalida con cualquier escritura exitosa.
+app.use("/api", publicCache);
+
 // --------------------------------------------------------------------
 // 5.3. 🔥 RUTAS DE LA API
 // --------------------------------------------------------------------
@@ -345,27 +495,33 @@ async function synchronizeDatabase() {
   try {
     // ==========================================================
     // FASE 1: Creación inicial de las tablas (solo columnas)
+    // ⚠️ IMPORTANTE (pérdida de datos): en esta fase las asociaciones AÚN no están definidas, por lo que
+    // columnas que existen solo vía asociación (inversion.id_suscripcion, puja.id_proyecto,
+    // proyecto.id_creador_proyecto) NO son atributos del modelo. Con `alter: true`, Sequelize las
+    // consideraba "sobrantes" y ejecutaba DROP COLUMN en CADA arranque (la Fase 2 las recreaba vacías):
+    // se perdían sus datos con cada reinicio/deploy. Aquí solo se crean las tablas que falten
+    // (sync() sin alter); el `alter` se aplica en la Fase 2, con las asociaciones ya cargadas.
     // ==========================================================
-    await Usuario.sync({ alter: true });
-    await Proyecto.sync({ alter: true });
+    await Usuario.sync();
+    await Proyecto.sync();
     //await Lote.sync({ alter: true });
-    await SuscripcionProyecto.sync({ alter: true });
-    await SuscripcionCancelada.sync({ alter: true });
-    await CuotaMensual.sync({ alter: true });
-    await ResumenCuenta.sync({ alter: true });
-    await Mensaje.sync({ alter: true });
-    await Puja.sync({ alter: true });
-    await Inversion.sync({ alter: true });
-    await Pago.sync({ alter: true });
-    await PagoMercado.sync({ alter: true });
-    await Transaccion.sync({ alter: true });
-    await Imagen.sync({ alter: true });
-    await Contrato.sync({ alter: true });
-    await ContratoPlantilla.sync({ alter: true });
-    await ContratoFirmado.sync({ alter: true });
-    await Favorito.sync({ alter: true });
-    await VerificacionIdentidad.sync({ alter: true });
-    await AuditLog.sync({ alter: true });
+    await SuscripcionProyecto.sync();
+    await SuscripcionCancelada.sync();
+    await CuotaMensual.sync();
+    await ResumenCuenta.sync();
+    await Mensaje.sync();
+    await Puja.sync();
+    await Inversion.sync();
+    await Pago.sync();
+    await PagoMercado.sync();
+    await Transaccion.sync();
+    await Imagen.sync();
+    await Contrato.sync();
+    await ContratoPlantilla.sync();
+    await ContratoFirmado.sync();
+    await Favorito.sync();
+    await VerificacionIdentidad.sync();
+    await AuditLog.sync();
 
     // ==========================================================
     // ASOCIACIONES
@@ -375,30 +531,46 @@ async function synchronizeDatabase() {
     // ==========================================================
     // FASE 2: Sincronización para añadir las Claves Foráneas (FKs)
     // ==========================================================
-    await Usuario.sync({ alter: true });
-    await Proyecto.sync({ alter: true });
+    await Usuario.sync(SYNC_OPTIONS);
+    await Proyecto.sync(SYNC_OPTIONS);
     //await Lote.sync({ alter: true });
-    await SuscripcionProyecto.sync({ alter: true });
-    await SuscripcionCancelada.sync({ alter: true });
-    await CuotaMensual.sync({ alter: true });
-    await ResumenCuenta.sync({ alter: true });
-    await Mensaje.sync({ alter: true });
-    await Puja.sync({ alter: true });
-    await Inversion.sync({ alter: true });
-    await Pago.sync({ alter: true });
-    await PagoMercado.sync({ alter: true });
-    await Adhesion.sync({ alter: true });
-    await PagoAdhesion.sync({ alter: true });
-    await Transaccion.sync({ alter: true });
-    await Imagen.sync({ alter: true });
-    await Contrato.sync({ alter: true });
-    await ContratoPlantilla.sync({ alter: true });
-    await ContratoFirmado.sync({ alter: true });
-    await Favorito.sync({ alter: true });
-    await VerificacionIdentidad.sync({ alter: true });
-    await AuditLog.sync({ alter: true });
+    await SuscripcionProyecto.sync(SYNC_OPTIONS);
+    await SuscripcionCancelada.sync(SYNC_OPTIONS);
+    await CuotaMensual.sync(SYNC_OPTIONS);
+    await ResumenCuenta.sync(SYNC_OPTIONS);
+    await Mensaje.sync(SYNC_OPTIONS);
+    await Puja.sync(SYNC_OPTIONS);
+    await Inversion.sync(SYNC_OPTIONS);
+    await Pago.sync(SYNC_OPTIONS);
+    await PagoMercado.sync(SYNC_OPTIONS);
+    await Adhesion.sync(SYNC_OPTIONS);
+    await PagoAdhesion.sync(SYNC_OPTIONS);
+    await Transaccion.sync(SYNC_OPTIONS);
+    await Imagen.sync(SYNC_OPTIONS);
+    await Contrato.sync(SYNC_OPTIONS);
+    await ContratoPlantilla.sync(SYNC_OPTIONS);
+    await ContratoFirmado.sync(SYNC_OPTIONS);
+    await Favorito.sync(SYNC_OPTIONS);
+    await VerificacionIdentidad.sync(SYNC_OPTIONS);
+    await AuditLog.sync(SYNC_OPTIONS);
 
     console.log("¡Base de datos y relaciones sincronizadas correctamente!");
+
+    // ⚡ sync({ alter: true }) ejecuta ALTER COLUMN ... TYPE sobre cada columna en CADA arranque y
+    // Postgres descarta las estadísticas del planificador de las columnas alteradas (medido: 120 -> 12
+    // columnas con estadísticas tras un reinicio). Sin estadísticas el planificador elige planes
+    // pésimos (seq scans + hash joins de tablas enteras) hasta que el autovacuum vuelva a analizar,
+    // lo que en tablas poco modificadas puede tardar días. Se recalculan en segundo plano.
+    // ANALYZE no bloquea lecturas ni escrituras. Desactivar: DB_ANALYZE_AFTER_SYNC=false.
+    if (SYNC_OPTIONS.alter && process.env.DB_ANALYZE_AFTER_SYNC !== "false") {
+      sequelize
+        .transaction(async (t) => {
+          await sequelize.query("SET LOCAL statement_timeout = 0", { transaction: t });
+          await sequelize.query("ANALYZE", { transaction: t });
+        })
+        .then(() => console.log("📊 Estadísticas del planificador recalculadas (ANALYZE)."))
+        .catch((e) => console.error("⚠️ No se pudo ejecutar ANALYZE post-sync:", e.message));
+    }
 
     // ✅ NUEVO: Inicializar rate limiters DESPUÉS de que la DB esté lista.
     await initRateLimiters();
@@ -406,6 +578,9 @@ async function synchronizeDatabase() {
     // ==========================================================
     // INICIO DE TAREAS PROGRAMADAS (CRON JOBS)
     // ==========================================================
+    if (!ENABLE_CRON) {
+      console.log("⏸️ Cron jobs DESHABILITADOS (ENABLE_CRON=false).");
+    } else {
     paymentReminderScheduler.scheduleJobs();
     startStandbyDeactivator();
     monthlyPaymentGenerationTask.start();
@@ -433,9 +608,15 @@ async function synchronizeDatabase() {
       console.log("🕒 Limpiando logs de auditoría antiguos...");
       await cleanOldAuditLogs();
     });
+    } // fin if (ENABLE_CRON)
+
+    if (!ENABLE_HTTP) {
+      console.log("⏸️ Servidor HTTP DESHABILITADO (ENABLE_HTTP=false): este proceso solo corre tareas programadas.");
+      return;
+    }
 
     // Inicia el servidor de Express
-    app.listen(PORT, "0.0.0.0", async () => {
+    httpServer = app.listen(PORT, "0.0.0.0", async () => {
       // <-- async añadido
       console.log(`Servidor escuchando en puerto ${PORT}`);
       console.log("=".repeat(70));
@@ -478,6 +659,11 @@ async function synchronizeDatabase() {
         // No detenemos el servidor, solo mostramos el error.
       }
     });
+
+    // ⚡ El proxy de Railway mantiene conexiones keep-alive ociosas ~60 s. Con el default de Node (5 s)
+    // el servidor cerraba la conexión justo cuando el proxy la reutilizaba -> errores 502 esporádicos.
+    httpServer.keepAliveTimeout = 65000;
+    httpServer.headersTimeout = 66000;
   } catch (error) {
     console.error("Error al sincronizar la base de datos:", error);
     process.exit(1);

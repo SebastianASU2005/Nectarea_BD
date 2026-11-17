@@ -4,7 +4,7 @@ const authService = require("../services/auth.service");
 const emailService = require("../services/email.service");
 const jwtService = require("../services/jwt.service");
 const auth2faService = require("../services/auth2fa.service");
-const bcryptjs = require("bcryptjs");
+const bcryptjs = require("../utils/bcrypt"); // ⚡ nativo con fallback a bcryptjs
 
 // 🔒 HARDENING: hash señuelo (mismo costo que authService.hashPassword) para que el login de un
 // usuario inexistente tarde lo mismo que el de uno existente y no permita enumerar cuentas por tiempo.

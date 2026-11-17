@@ -1,6 +1,7 @@
 // Archivo: services/proyecto.service.js (CON AUDITORÍA PARA ADMINS)
 
-const Proyecto = require("../models/proyecto");
+const Proyecto = require("../models/proyecto");
+const { paginationOptions } = require("../utils/pagination");
 const Lote = require("../models/lote");
 const Imagen = require("../models/imagen");
 const Inversion = require("../models/inversion");
@@ -115,8 +116,9 @@ const proyectoService = {
     }
   },
 
-  async findAll() {
+  async findAll(opts = {}) {
     return await Proyecto.findAll({
+      ...paginationOptions(opts),
       include: [
         {
           model: Lote,
@@ -128,8 +130,9 @@ const proyectoService = {
     });
   },
 
-  async findAllActivo() {
+  async findAllActivo(opts = {}) {
     return await Proyecto.findAll({
+      ...paginationOptions(opts),
       where: { activo: true },
       include: [
         {
@@ -741,8 +744,9 @@ const proyectoService = {
     return proyectoActualizado;
   },
 
-  async findAllActivoMensual() {
+  async findAllActivoMensual(opts = {}) {
     return await Proyecto.findAll({
+      ...paginationOptions(opts),
       where: { activo: true, tipo_inversion: "mensual" },
       include: [
         {
@@ -755,8 +759,9 @@ const proyectoService = {
     });
   },
 
-  async findAllActivoDirecto() {
+  async findAllActivoDirecto(opts = {}) {
     return await Proyecto.findAll({
+      ...paginationOptions(opts),
       where: { activo: true, tipo_inversion: "directo" },
       include: [
         {

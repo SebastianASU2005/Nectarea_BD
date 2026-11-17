@@ -1,6 +1,7 @@
 // Archivo: services/usuario.service.js (CON AUDITORÍA PARA ADMINS)
 
-const Usuario = require("../models/usuario");
+const Usuario = require("../models/usuario");
+const { paginationOptions } = require("../utils/pagination");
 const { Op } = require("sequelize");
 const crypto = require("crypto");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
@@ -27,14 +28,16 @@ const usuarioService = {
     };
 
     const nuevoUsuario = await Usuario.create(dataConToken);
-    try {
-      await emailService.sendConfirmationEmail(nuevoUsuario, token);
-    } catch (e) {
-      console.error(
-        `ERROR: Fallo al enviar el email de confirmación a ${nuevoUsuario.email}.`,
-        e,
-      );
-    }
+    // ⚡ Fire-and-forget: el fallo ya se capturaba y NO afectaba la respuesta; ahora tampoco se
+    // espera al SMTP (hasta 10 s de conexión) para responder el registro.
+    Promise.resolve()
+      .then(() => emailService.sendConfirmationEmail(nuevoUsuario, token))
+      .catch((e) => {
+        console.error(
+          `ERROR: Fallo al enviar el email de confirmación a ${nuevoUsuario.email}.`,
+          e,
+        );
+      });
     return nuevoUsuario;
   },
 
@@ -149,8 +152,8 @@ const usuarioService = {
     });
   },
 
-  async findAll() {
-    return Usuario.findAll();
+  async findAll(opts = {}) {
+    return Usuario.findAll(paginationOptions(opts));
   },
 
   async findById(id) {
@@ -215,8 +218,9 @@ const usuarioService = {
     return usuarioActualizado;
   },
 
-  async findAllActivos() {
-    return Usuario.findAll({ where: { activo: true } });
+  async findAllActivos(opts = {}) {
+    return Usuario.findAll({
+      ...paginationOptions(opts), where: { activo: true } });
   },
 
   async findAllAdmins() {

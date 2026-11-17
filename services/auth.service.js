@@ -1,4 +1,4 @@
-const bcrypt = require("bcryptjs");
+const bcrypt = require("../utils/bcrypt"); // ⚡ nativo con fallback a bcryptjs
 
 /**
  * Servicio de autenticación básico centrado en el manejo seguro de contraseñas

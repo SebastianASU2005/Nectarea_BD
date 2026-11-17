@@ -1,7 +1,8 @@
 // Archivo: services/transaccion.service.js
 // VERSIÓN SIN FLUJO ANTIGUO DE PRIMER PAGO (pago_suscripcion_inicial)
 
-const { sequelize } = require("../config/database");
+const { sequelize } = require("../config/database");
+const { paginationOptions } = require("../utils/pagination");
 const { Op } = require("sequelize");
 const Transaccion = require("../models/transaccion");
 const Pago = require("../models/pago");
@@ -1198,7 +1199,7 @@ const transaccionService = {
     });
   },
 
-  async findAll() {
+  async findAll(opts = {}) {
     try {
       const Usuario = require("../models/usuario");
       const Proyecto = require("../models/proyecto");
@@ -1209,6 +1210,7 @@ const transaccionService = {
       const PagoMercado = require("../models/pagoMercado");
 
       return await Transaccion.findAll({
+      ...paginationOptions(opts),
         attributes: [
           "id",
           "tipo_transaccion",

@@ -20,7 +20,8 @@ const PagoMercado = sequelize.define(
     id_transaccion_pasarela: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: true,
+      // ⚡ El UNIQUE se declara abajo en `indexes` con nombre fijo. Con `unique: true` aquí,
+      // sync({ alter: true }) agregaba un constraint idéntico NUEVO en cada arranque.
     },
     monto_pagado: {
       type: DataTypes.DECIMAL(15, 2),
@@ -63,6 +64,14 @@ const PagoMercado = sequelize.define(
   {
     tableName: "pagos_mercado",
     timestamps: true,
+    indexes: [
+      {
+        unique: true,
+        // Mismo nombre que el constraint que Postgres ya creó → alter lo reconoce y no lo duplica.
+        name: "pagos_mercado_id_transaccion_pasarela_key",
+        fields: ["id_transaccion_pasarela"],
+      },
+    ],
   },
 );
 

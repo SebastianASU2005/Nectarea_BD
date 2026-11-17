@@ -1,4 +1,5 @@
 const usuarioService = require("../services/usuario.service");
+const { getPagination } = require("../utils/pagination");
 const auth2faService = require("../services/auth2fa.service");
 const authService = require("../services/auth.service");
 /**
@@ -86,7 +87,7 @@ const usuarioController = {
    * @description Obtiene todos los usuarios (incluidos inactivos). Generalmente para administradores.
    */ async findAll(req, res) {
     try {
-      const usuarios = await usuarioService.findAll();
+      const usuarios = await usuarioService.findAll(getPagination(req));
       res.status(200).json(usuarios);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -98,7 +99,7 @@ const usuarioController = {
    * @description Obtiene solo los usuarios activos.
    */ async findAllActivo(req, res) {
     try {
-      const usuariosActivos = await usuarioService.findAllActivos();
+      const usuariosActivos = await usuarioService.findAllActivos(getPagination(req));
       res.status(200).json(usuariosActivos);
     } catch (error) {
       res.status(500).json({ error: error.message });

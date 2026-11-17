@@ -1,4 +1,5 @@
-const proyectoService = require("../services/proyecto.service");
+const proyectoService = require("../services/proyecto.service");
+const { getPagination } = require("../utils/pagination");
 const loteService = require("../services/lote.service");
 const usuarioService = require("../services/usuario.service");
 const mensajeService = require("../services/mensaje.service");
@@ -23,7 +24,7 @@ const proyectoController = {
    */
   async findAll(req, res) {
     try {
-      const proyectos = await proyectoService.findAll();
+      const proyectos = await proyectoService.findAll(getPagination(req));
       res.status(200).json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -299,7 +300,7 @@ const proyectoController = {
    */
   async findAllActivo(req, res) {
     try {
-      const proyectos = await proyectoService.findAllActivo();
+      const proyectos = await proyectoService.findAllActivo(getPagination(req));
       res.status(200).json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -315,7 +316,7 @@ const proyectoController = {
   async findAllActivoAhorristas(req, res) {
     try {
       // Llama a la nueva función del servicio que filtra por 'mensual'
-      const proyectos = await proyectoService.findAllActivoMensual();
+      const proyectos = await proyectoService.findAllActivoMensual(getPagination(req));
       res.status(200).json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -331,7 +332,7 @@ const proyectoController = {
   async findAllActivoInversionistas(req, res) {
     try {
       // Llama a la nueva función del servicio que filtra por 'directo'
-      const proyectos = await proyectoService.findAllActivoDirecto();
+      const proyectos = await proyectoService.findAllActivoDirecto(getPagination(req));
       res.status(200).json(proyectos);
     } catch (error) {
       res.status(500).json({ error: error.message });

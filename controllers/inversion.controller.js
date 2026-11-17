@@ -1,6 +1,7 @@
 // Archivo: controllers/inversion.controller.js
 
-const inversionService = require("../services/inversion.service");
+const inversionService = require("../services/inversion.service");
+const { getPagination } = require("../utils/pagination");
 const TransaccionService = require("../services/transaccion.service");
 const UsuarioService = require("../services/usuario.service");
 const auth2faService = require("../services/auth2fa.service");
@@ -167,7 +168,7 @@ const inversionController = {
    */
   async findAll(req, res) {
     try {
-      const inversiones = await inversionService.findAll();
+      const inversiones = await inversionService.findAll(getPagination(req));
       res.status(200).json(inversiones);
     } catch (error) {
       res.status(500).json({ error: error.message });

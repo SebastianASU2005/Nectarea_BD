@@ -56,6 +56,23 @@ function sendTooManyRequests(res, msBeforeNext, message) {
 }
 
 // ============================================================
+// ⚡ PERFORMANCE — Store del rate limiter
+//   memory   (por defecto): contadores en RAM. Cero consultas a la BD por request.
+//   postgres (RATE_LIMIT_STORE=postgres): comportamiento anterior. Útil SOLO si corrés varias
+//            instancias y necesitás contadores compartidos (cuesta 1 UPSERT por request y
+//            compite con la lógica de negocio por el pool de conexiones).
+// Los límites (100/min por IP y 300/min por usuario) son idénticos en ambos modos.
+// ============================================================
+const RATE_LIMIT_STORE = (process.env.RATE_LIMIT_STORE || "memory").toLowerCase();
+
+function createLimiter(keyPrefix, points, duration) {
+  if (RATE_LIMIT_STORE === "postgres") {
+    return createDbLimiter(keyPrefix, points, duration);
+  }
+  return Promise.resolve(new RateLimiterMemory({ keyPrefix, points, duration }));
+}
+
+// ============================================================
 // STORES — se inicializan al arrancar la app
 // ============================================================
 let globalLimiterStore = null;
@@ -64,16 +81,16 @@ let clienteLimiterStore = null;
 
 /**
  * Llamar en synchronizeDatabase() DESPUÉS de los .sync() de Sequelize.
- * Crea las tablas rate_limit_global_ip y rate_limit_cliente en PostgreSQL.
+ * Con RATE_LIMIT_STORE=postgres crea las tablas rate_limit_global_ip y rate_limit_cliente.
  */
 async function initRateLimiters() {
   // Global: 100 req/min por IP (aplica a TODOS, autenticados o no)
-  globalLimiterStore = await createDbLimiter("global_ip", 100, 60);
+  globalLimiterStore = await createLimiter("global_ip", 100, 60);
 
   // Por usuario cliente autenticado: 300 req/min por userId
-  clienteLimiterStore = await createDbLimiter("cliente", 300, 60);
+  clienteLimiterStore = await createLimiter("cliente", 300, 60);
 
-  console.log("[RateLimiter] 🚀 Rate limiters iniciados.");
+  console.log(`[RateLimiter] 🚀 Rate limiters iniciados (store: ${RATE_LIMIT_STORE}).`);
 }
 
 // ============================================================

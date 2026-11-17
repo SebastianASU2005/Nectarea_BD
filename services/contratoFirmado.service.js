@@ -264,7 +264,11 @@ const contratoFirmadoService = {
    * @param {number} projectId - ID del proyecto.
    * @returns {Promise<{allSigned: boolean, missingContracts: Array}>}
    */
-  async checkAllSubscriptionsHaveContract(userId, projectId) {
+  async checkAllSubscriptionsHaveContract(userId, projectId, options = {}) {
+    // ⚡ options.transaction: si se invoca DENTRO de una transacción hay que pasarla; de lo contrario
+    // la consulta pide una 2ª conexión al pool mientras la transacción retiene la 1ª, y bajo
+    // concurrencia (>= tamaño del pool) todas las requests se bloquean entre sí (deadlock del pool).
+    const { transaction } = options;
     // Obtener todas las suscripciones activas del usuario en este proyecto
     const SuscripcionProyecto = require("../models/suscripcion_proyecto");
     const suscripciones = await SuscripcionProyecto.findAll({
@@ -274,6 +278,7 @@ const contratoFirmadoService = {
         activo: true,
       },
       attributes: ["id"],
+      transaction,
     });
 
     if (suscripciones.length === 0) {
@@ -281,18 +286,18 @@ const contratoFirmadoService = {
       return { allSigned: false, missingContracts: [] };
     }
 
-    const missing = [];
-    for (const sus of suscripciones) {
-      const contrato = await ContratoFirmado.findOne({
-        where: {
-          id_suscripcion_asociada: sus.id,
-          estado_firma: "FIRMADO",
-        },
-      });
-      if (!contrato) {
-        missing.push(sus.id);
-      }
-    }
+    // ⚡ Antes: 1 consulta por suscripción (N+1). Ahora: 1 sola consulta para todas.
+    const ids = suscripciones.map((s) => s.id);
+    const firmados = await ContratoFirmado.findAll({
+      where: {
+        id_suscripcion_asociada: ids,
+        estado_firma: "FIRMADO",
+      },
+      attributes: ["id_suscripcion_asociada"],
+      transaction,
+    });
+    const firmadas = new Set(firmados.map((c) => c.id_suscripcion_asociada));
+    const missing = ids.filter((id) => !firmadas.has(id));
 
     return {
       allSigned: missing.length === 0,

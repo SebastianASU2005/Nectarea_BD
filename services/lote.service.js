@@ -1,4 +1,5 @@
-const Lote = require("../models/lote");
+const Lote = require("../models/lote");
+const { paginationOptions } = require("../utils/pagination");
 const Imagen = require("../models/imagen");
 const Puja = require("../models/puja");
 const { Op } = require("sequelize");
@@ -105,8 +106,9 @@ const loteService = {
    * @description Busca todos los lotes, incluyendo imágenes, ganador y puja más alta actual.
    * @returns {Promise<Lote[]>}
    */
-  async findAll() {
+  async findAll(opts = {}) {
     return await Lote.findAll({
+      ...paginationOptions(opts),
       include: [IMAGENES_INCLUDE, GANADOR_INCLUDE, PUJA_MAS_ALTA_INCLUDE],
     });
   },
@@ -117,8 +119,9 @@ const loteService = {
    * @description Busca todos los lotes activos, incluyendo imágenes, ganador y puja más alta actual.
    * @returns {Promise<Lote[]>}
    */
-  async findAllActivo() {
+  async findAllActivo(opts = {}) {
     return await Lote.findAll({
+      ...paginationOptions(opts),
       where: { activo: true },
       include: [IMAGENES_INCLUDE, GANADOR_INCLUDE, PUJA_MAS_ALTA_INCLUDE],
     });
@@ -323,7 +326,11 @@ const loteService = {
         throw new Error("La subasta no está activa.");
 
       // ✅ findHighestBidForLote ya filtra estado_puja: "activa"
-      pujaGanadora = await PujaService.findHighestBidForLote(id);
+      // ⚡ Misma transacción (y por lo tanto mismo lock del lote): sin 2ª conexión del pool y
+      // sin que una puja nueva pueda colarse entre la lectura de la ganadora y el cierre.
+      pujaGanadora = await PujaService.findHighestBidForLote(id, {
+        transaction: t,
+      });
 
       await lote.update(
         { estado_subasta: "finalizada", fecha_fin: new Date() },

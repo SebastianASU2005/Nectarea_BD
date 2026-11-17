@@ -18,6 +18,8 @@ const generatePaymentsCore = async () => {
     "Iniciando el proceso de generación de pagos mensuales con descuento...",
   );
   const t = await sequelize.transaction();
+  // ⚡ Notificaciones pendientes: se envían DESPUÉS del COMMIT (ver más abajo).
+  const notificaciones = [];
 
   try {
     // 1. Encontrar proyectos activos que requieren pagos mensuales
@@ -54,22 +56,18 @@ const generatePaymentsCore = async () => {
               `Pago ${resultadoPago.mes} creado/descontado para suscripción ${suscripcion.id}. Estado: ${resultadoPago.estado_pago}. Monto Pendiente: ${resultadoPago.monto}.`,
             );
 
-            const usuario = await Usuario.findByPk(suscripcion.id_usuario);
-            if (usuario && usuario.email) {
-              const fechaVencimientoDate = new Date(
-                resultadoPago.fecha_vencimiento,
-              );
-              const fechaVencimientoString = fechaVencimientoDate
-                .toISOString()
-                .split("T")[0];
-              await emailService.notificarPagoGenerado(
-                usuario,
-                proyecto,
-                resultadoPago.mes,
-                parseFloat(resultadoPago.monto),
-                fechaVencimientoString,
-              );
-            }
+            // ⚡ Antes: por cada suscripción se hacía un SELECT de usuario (fuera de la transacción =
+            // 2ª conexión del pool) y se ESPERABA al SMTP dentro de la transacción, que quedaba abierta
+            // (con locks) tanto como tardaran N correos (horas con miles de suscripciones). Además, si algo
+            // fallaba al final, el rollback deshacía los pagos pero los correos ya habían salido.
+            // Ahora solo se encola; el envío ocurre tras el COMMIT.
+            notificaciones.push({
+              id_usuario: suscripcion.id_usuario,
+              proyecto,
+              mes: resultadoPago.mes,
+              monto: parseFloat(resultadoPago.monto),
+              fecha_vencimiento: resultadoPago.fecha_vencimiento,
+            });
           } else if (resultadoPago && resultadoPago.message) {
             console.log(
               `Suscripción ${suscripcion.id}: ${resultadoPago.message}`,
@@ -84,8 +82,47 @@ const generatePaymentsCore = async () => {
   } catch (error) {
     await t.rollback();
     console.error("Error en el cron job de pagos:", error);
+    return;
   }
+
+  // ⚡ Envío de correos FUERA de la transacción: no retiene conexión ni locks, y un fallo de SMTP
+  // ya no puede deshacer los pagos generados.
+  await enviarNotificaciones(notificaciones);
 };
+
+async function enviarNotificaciones(notificaciones) {
+  if (!notificaciones.length) return;
+  try {
+    // 1 sola consulta para todos los usuarios (antes: 1 por suscripción)
+    const ids = [...new Set(notificaciones.map((n) => n.id_usuario))];
+    const usuarios = await Usuario.findAll({ where: { id: ids } });
+    const porId = new Map(usuarios.map((u) => [u.id, u]));
+
+    for (const n of notificaciones) {
+      const usuario = porId.get(n.id_usuario);
+      if (!usuario || !usuario.email) continue;
+      try {
+        const fechaVencimientoString = new Date(n.fecha_vencimiento)
+          .toISOString()
+          .split("T")[0];
+        await emailService.notificarPagoGenerado(
+          usuario,
+          n.proyecto,
+          n.mes,
+          n.monto,
+          fechaVencimientoString,
+        );
+      } catch (err) {
+        console.error(
+          `Error enviando notificación de pago a usuario ${n.id_usuario}:`,
+          err.message,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Error preparando notificaciones de pagos:", err);
+  }
+}
 
 // Objeto que contiene el job y los métodos para iniciar/ejecutar
 const monthlyPaymentGenerationTask = {

@@ -9,7 +9,7 @@ const VerificacionIdentidad = sequelize.define(
     id_usuario: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      unique: true,
+      // ⚡ UNIQUE declarado abajo en `indexes` con nombre fijo (evita duplicados en cada arranque).
     },
     // Datos del documento de identidad
     tipo_documento: {
@@ -64,6 +64,13 @@ const VerificacionIdentidad = sequelize.define(
   },
   {
     tableName: "verificacion_identidad",
+    indexes: [
+      {
+        unique: true,
+        name: "verificacion_identidad_id_usuario_key",
+        fields: ["id_usuario"],
+      },
+    ],
   }
 );
 

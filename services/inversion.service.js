@@ -1,6 +1,7 @@
 // Archivo: services/inversion.service.js
 
-const Inversion = require("../models/inversion");
+const Inversion = require("../models/inversion");
+const { paginationOptions } = require("../utils/pagination");
 const Proyecto = require("../models/proyecto");
 const Usuario = require("../models/usuario");
 const { sequelize } = require("../config/database");
@@ -291,8 +292,9 @@ const inversionService = {
    * @description Obtiene todos los registros de inversiones (incluye inactivas).
    * @returns {Promise<Inversion[]>} Lista de todas las inversiones.
    */
-  async findAll() {
+  async findAll(opts = {}) {
     return await Inversion.findAll({
+      ...paginationOptions(opts),
       include: [
         {
           model: Usuario,

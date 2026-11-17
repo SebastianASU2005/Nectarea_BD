@@ -1,7 +1,8 @@
 // Archivo: services/suscripcion_proyecto.service.js
 // VERSIÓN SIN FLUJO ANTIGUO DE PRIMER PAGO (pago_suscripcion_inicial)
 
-const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+const { paginationOptions } = require("../utils/pagination");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
 const CuotaMensual = require("../models/CuotaMensual");
@@ -122,8 +123,9 @@ const suscripcionProyectoService = {
     });
   },
 
-  async findAll() {
+  async findAll(opts = {}) {
     return SuscripcionProyecto.findAll({
+      ...paginationOptions(opts),
       include: [
         {
           model: Usuario,
@@ -148,8 +150,9 @@ const suscripcionProyectoService = {
     });
   },
 
-  async findAllActivo() {
+  async findAllActivo(opts = {}) {
     return SuscripcionProyecto.findAll({
+      ...paginationOptions(opts),
       where: { activo: true },
       include: [
         {

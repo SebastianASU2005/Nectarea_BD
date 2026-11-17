@@ -1,4 +1,5 @@
-const Puja = require("../models/puja");
+const Puja = require("../models/puja");
+const { paginationOptions } = require("../utils/pagination");
 const Lote = require("../models/lote");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Pago = require("../models/pago");
@@ -31,7 +32,13 @@ const pujaService = {
     const t = await sequelize.transaction();
 
     try {
-      const lote = await Lote.findByPk(id_lote, { transaction: t });
+      // 🔒 FOR UPDATE: serializa las pujas concurrentes sobre el MISMO lote. Sin este bloqueo, dos pujas
+      // simultáneas leían la misma "puja más alta" y la última en commitear pisaba a la otra aunque
+      // su monto fuera menor. Pujas en lotes distintos siguen siendo 100 % paralelas.
+      const lote = await Lote.findByPk(id_lote, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
       if (!lote) throw new Error("Lote no encontrado.");
       if (lote.estado_subasta !== "activa")
         throw new Error("La subasta no está activa.");
@@ -45,6 +52,7 @@ const pujaService = {
           await contratoFirmadoService.checkAllSubscriptionsHaveContract(
             id_usuario,
             id_proyecto,
+            { transaction: t }, // ⚡ misma conexión que la transacción (evita deadlock del pool)
           );
         if (!allSigned) {
           throw new Error(
@@ -168,8 +176,11 @@ const pujaService = {
    * @param {number} loteId - ID del lote.
    * @returns {Promise<Puja|null>} La puja más alta.
    */
-  async findHighestBidForLote(loteId) {
+  async findHighestBidForLote(loteId, options = {}) {
+    // ⚡ options.transaction: obligatorio al llamarse DENTRO de una transacción (evita pedir una 2ª
+    // conexión del pool mientras la transacción retiene la 1ª).
     return Puja.findOne({
+      transaction: options.transaction,
       where: {
         id_lote: loteId,
         estado_puja: "activa",
@@ -1193,8 +1204,9 @@ const pujaService = {
     return puja.update({ activo: false });
   },
 
-  async findAll() {
+  async findAll(opts = {}) {
     return Puja.findAll({
+      ...paginationOptions(opts),
       include: [
         {
           model: Usuario,
@@ -1251,8 +1263,9 @@ const pujaService = {
     });
   },
 
-  async findAllActivo() {
+  async findAllActivo(opts = {}) {
     return Puja.findAll({
+      ...paginationOptions(opts),
       where: { activo: true },
       include: [
         {

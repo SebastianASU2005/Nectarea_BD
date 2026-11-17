@@ -1,6 +1,7 @@
 // Archivo: services/pago.service.js
 
-const { Op } = require("sequelize");
+const { Op } = require("sequelize");
+const { paginationOptions } = require("../utils/pagination");
 const Pago = require("../models/pago");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const Usuario = require("../models/usuario");
@@ -42,8 +43,8 @@ const pagoService = {
    * @function findAll
    * @description Obtiene todos los registros de Pagos.
    * @returns {Promise<Pago[]>} Lista de todos los pagos.
-   */ async findAll() {
-    return Pago.findAll();
+   */ async findAll(opts = {}) {
+    return Pago.findAll(paginationOptions(opts));
   },
   /**
    * @async
