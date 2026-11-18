@@ -186,20 +186,46 @@ const contratoFirmadoService = {
           order: [["id", "DESC"]],
         });
       } else if (proyecto.tipo_inversion === "mensual") {
-        const adhesion = await Adhesion.findOne({
+        // Con varias suscripciones en el mismo proyecto, cada una lleva su propio
+        // contrato: se elige la más antigua que tenga adhesión pagada y SIN firmar.
+        // (Antes se tomaba siempre la adhesión más reciente; si esa ya estaba
+        // firmada, las demás nunca podían firmarse.)
+        const adhesiones = await Adhesion.findAll({
           where: {
             id_usuario: id_usuario_firmante,
             id_proyecto: id_proyecto,
             cuotas_pagadas: { [Op.gt]: 0 },
             estado: { [Op.in]: ["en_curso", "completada"] },
           },
-          order: [["id", "DESC"]],
+          include: [
+            {
+              model: SuscripcionProyecto,
+              as: "suscripcion",
+              where: { activo: true },
+              required: true,
+            },
+          ],
+          order: [["id_suscripcion", "ASC"]],
         });
-        if (adhesion && adhesion.id_suscripcion) {
-          suscripcionValida = await SuscripcionProyecto.findOne({
-            where: { id: adhesion.id_suscripcion, activo: true },
-          });
-        }
+        const idsSuscripcion = adhesiones.map((a) => a.id_suscripcion);
+        const firmados = idsSuscripcion.length
+          ? await ContratoFirmado.findAll({
+              where: {
+                id_suscripcion_asociada: idsSuscripcion,
+                estado_firma: "FIRMADO",
+              },
+              attributes: ["id_suscripcion_asociada"],
+            })
+          : [];
+        const yaFirmadas = new Set(
+          firmados.map((c) => c.id_suscripcion_asociada),
+        );
+        const pendiente = adhesiones.find(
+          (a) => !yaFirmadas.has(a.id_suscripcion),
+        );
+        // Si todas están firmadas se devuelve una igual: el paso 7 informa
+        // "Ya existe un contrato firmado para esta suscripción".
+        suscripcionValida = (pendiente || adhesiones[0])?.suscripcion || null;
       }
     }
 

@@ -1,7 +1,7 @@
 // Archivo: services/suscripcion_proyecto.service.js
 // VERSIÓN SIN FLUJO ANTIGUO DE PRIMER PAGO (pago_suscripcion_inicial)
 
-const SuscripcionProyecto = require("../models/suscripcion_proyecto");
+const SuscripcionProyecto = require("../models/suscripcion_proyecto");
 const { paginationOptions } = require("../utils/pagination");
 const Usuario = require("../models/usuario");
 const Proyecto = require("../models/proyecto");
@@ -179,7 +179,7 @@ const suscripcionProyectoService = {
   },
 
   async findByUserId(userId) {
-    return SuscripcionProyecto.findAll({
+    const suscripciones = await SuscripcionProyecto.findAll({
       where: { id_usuario: userId, activo: true },
       include: [
         {
@@ -204,6 +204,37 @@ const suscripcionProyectoService = {
       ],
       order: [["id", "DESC"]],
     });
+
+    // Estado de firma POR SUSCRIPCIÓN (en ahorrista cada suscripción lleva su
+    // propio contrato). Misma regla que contratoFirmado.validateContractEligibility:
+    // se puede firmar si la adhesión tiene ≥1 cuota pagada y aún no hay contrato FIRMADO.
+    if (suscripciones.length > 0) {
+      const Adhesion = require("../models/adhesion");
+      const ContratoFirmado = require("../models/ContratoFirmado");
+      const ids = suscripciones.map((s) => s.id);
+      const [adhesionesPagadas, firmados] = await Promise.all([
+        Adhesion.findAll({
+          where: {
+            id_suscripcion: ids,
+            cuotas_pagadas: { [Op.gt]: 0 },
+            estado: { [Op.in]: ["en_curso", "completada"] },
+          },
+          attributes: ["id_suscripcion"],
+        }),
+        ContratoFirmado.findAll({
+          where: { id_suscripcion_asociada: ids, estado_firma: "FIRMADO" },
+          attributes: ["id_suscripcion_asociada"],
+        }),
+      ]);
+      const conPago = new Set(adhesionesPagadas.map((a) => a.id_suscripcion));
+      const conFirma = new Set(firmados.map((c) => c.id_suscripcion_asociada));
+      suscripciones.forEach((s) => {
+        const firmado = conFirma.has(s.id);
+        s.setDataValue("tiene_contrato_firmado", firmado);
+        s.setDataValue("puede_firmar_contrato", conPago.has(s.id) && !firmado);
+      });
+    }
+    return suscripciones;
   },
 
   async update(id, data) {
