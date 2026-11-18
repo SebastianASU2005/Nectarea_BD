@@ -1,4 +1,4 @@
-const Puja = require("../models/puja");
+const Puja = require("../models/puja");
 const { paginationOptions } = require("../utils/pagination");
 const Lote = require("../models/lote");
 const SuscripcionProyecto = require("../models/suscripcion_proyecto");
@@ -45,21 +45,10 @@ const pujaService = {
 
       const id_proyecto = lote.id_proyecto;
 
-      // Validación de contrato
-      if (id_proyecto) {
-        const contratoFirmadoService = require("./contratoFirmado.service");
-        const { allSigned, missingContracts } =
-          await contratoFirmadoService.checkAllSubscriptionsHaveContract(
-            id_usuario,
-            id_proyecto,
-            { transaction: t }, // ⚡ misma conexión que la transacción (evita deadlock del pool)
-          );
-        if (!allSigned) {
-          throw new Error(
-            `❌ No puedes pujar. El proyecto requiere que todas tus suscripciones activas tengan contrato firmado. Te falta(n) la(s) suscripción(es) ID: ${missingContracts.join(", ")}.`,
-          );
-        }
-      }
+      // Validación de contrato: ya NO se exige que TODAS las suscripciones estén
+      // firmadas (las que aún no pagaron adhesión no pueden firmarse y bloqueaban
+      // la puja). Ahora el token se toma solo de una suscripción CON contrato
+      // FIRMADO — ver la selección de suscripción más abajo.
 
       // Verificar si ya existe una puja activa del usuario en este lote
       const pujaExistente = await Puja.findOne({
@@ -110,8 +99,8 @@ const pujaService = {
         );
         pujaActualizada = pujaExistente;
       } else {
-        // Buscar una suscripción ACTIVA con tokens disponibles y adhesión completada
-        const suscripcion = await SuscripcionProyecto.findOne({
+        // Suscripciones ACTIVAS con tokens disponibles y adhesión completada
+        const candidatas = await SuscripcionProyecto.findAll({
           where: {
             id_usuario,
             id_proyecto,
@@ -127,8 +116,29 @@ const pujaService = {
           ],
         });
 
-        if (!suscripcion) {
+        if (candidatas.length === 0) {
           throw new Error("No tienes tokens de subasta para este proyecto.");
+        }
+
+        // Solo se puede usar el token de una suscripción con contrato FIRMADO
+        const ContratoFirmado = require("../models/ContratoFirmado");
+        const firmados = await ContratoFirmado.findAll({
+          where: {
+            id_suscripcion_asociada: candidatas.map((s) => s.id),
+            estado_firma: "FIRMADO",
+          },
+          attributes: ["id_suscripcion_asociada"],
+          transaction: t,
+        });
+        const conFirma = new Set(
+          firmados.map((c) => c.id_suscripcion_asociada),
+        );
+        const suscripcion = candidatas.find((s) => conFirma.has(s.id));
+
+        if (!suscripcion) {
+          throw new Error(
+            `❌ No puedes pujar: tus suscripciones con token disponible no tienen contrato firmado. Firma el contrato de la(s) suscripción(es) ID: ${candidatas.map((s) => s.id).join(", ")} para usar su token.`,
+          );
         }
 
         // Consumir el token
