@@ -17,6 +17,13 @@ const PagoMercado = require("../models/pagoMercado");
 const { formatearMonto } = require("../utils/moneda");
 const { buildReturnUrls } = require("../config/paymentUrls");
 
+// Imagen que Mercado Pago muestra junto al ítem (checkout y comprobante).
+// Se cambia con la variable de entorno MP_ITEM_PICTURE_URL (URL pública https).
+const MP_ITEM_PICTURE_URL = (
+  process.env.MP_ITEM_PICTURE_URL ||
+  "https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg"
+).trim();
+
 const MP_LIVE_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_TEST_ACCESS_TOKEN = process.env.MP_TEST_ACCESS_TOKEN;
 const HOST_URL = (process.env.HOST_URL || "http://localhost:3000").trim();
@@ -120,7 +127,7 @@ const paymentService = {
             quantity: 1,
             currency_id: CURRENCY_ID,
             description: descripcionDetallada,
-            picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
+            picture_url: MP_ITEM_PICTURE_URL,
           },
         ],
         external_reference: String(transaccionId),
@@ -135,7 +142,7 @@ const paymentService = {
               id: String(transaccionId),
               title: titulo,
               description: descripcionDetallada,
-              picture_url: `https://res.cloudinary.com/dj7kcgf2z/image/upload/v1762267998/LoteplanLogo_dxbyo5.jpg`,
+              picture_url: MP_ITEM_PICTURE_URL,
               category_id: "services",
               quantity: 1,
               unit_price: monto,
